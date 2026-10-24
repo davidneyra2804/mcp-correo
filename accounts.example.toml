@@ -1,0 +1,67 @@
+# Ejemplo SIN contraseñas. Copia a accounts.toml (local) o a
+# /etc/vyr-mail-mcp/accounts.toml (servidor) y sustituye los datos ficticios.
+# La contraseña no va aquí: solo el nombre de la variable de entorno.
+
+[server]
+public_host = "mcp.ejemplo.test"
+bind_host = "127.0.0.1"
+bind_port = 8765
+max_results = 100
+max_chars = 20000
+max_attachment_bytes = 5000000
+max_message_bytes = 15000000
+imap_timeout = 20
+sent_scan_limit = 300
+# v1 ignora estos interruptores: no hay borradores ni envío.
+enable_drafts = false
+enable_send = false
+allowed_attachment_types = [
+  "text/plain",
+  "text/csv",
+  "text/html",
+  "application/pdf",
+  "application/json",
+  "image/png",
+  "image/jpeg",
+  "image/gif",
+  "image/webp",
+]
+allowed_hosts = [
+  "mcp.ejemplo.test",
+  "mcp.ejemplo.test:*",
+  "127.0.0.1",
+  "127.0.0.1:*",
+  "localhost",
+  "localhost:*",
+]
+allowed_origins = [
+  "https://mcp.ejemplo.test",
+  "http://127.0.0.1:*",
+  "http://localhost:*",
+]
+
+[accounts.vyrts]
+label = "VYR Tech (HestiaCP) — ejemplo ficticio"
+imap_host = "mail.ejemplo.test"
+imap_port = 993
+imap_ssl = true
+smtp_host = "mail.ejemplo.test"
+smtp_port = 465
+username = "david.neyra@ejemplo.test"
+password_env = "MAIL_VYRTS_PASSWORD"
+drafts_folder = "Drafts"
+sent_folder = "Sent"
+allow_send = false
+
+[accounts.carbonio]
+label = "Correo Carbonio — ejemplo ficticio"
+imap_host = "mail.carbonio.ejemplo.test"
+imap_port = 993
+imap_ssl = true
+smtp_host = "mail.carbonio.ejemplo.test"
+smtp_port = 465
+username = "dneyra@carbonio.ejemplo.test"
+password_env = "MAIL_CARBONIO_PASSWORD"
+drafts_folder = "Drafts"
+sent_folder = "Sent"
+allow_send = false

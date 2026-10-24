@@ -1,0 +1,38 @@
+# /etc/systemd/system/vyr-mail-mcp.service
+# El proceso escucha solo en 127.0.0.1. nginx es quien publica HTTPS.
+
+[Unit]
+Description=VYR mail MCP server (solo lectura)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mcpmail
+Group=mcpmail
+WorkingDirectory=/opt/vyr-mail-mcp
+EnvironmentFile=/etc/vyr-mail-mcp/env
+ExecStart=/opt/vyr-mail-mcp/.venv/bin/uvicorn server:app --host 127.0.0.1 --port 8765 --proxy-headers --forwarded-allow-ips=127.0.0.1 --workers 1
+Restart=on-failure
+RestartSec=5
+
+# Endurecimiento. Si el intérprete muriera con SIGSEGV al arrancar,
+# revisa MemoryDenyWriteExecute (algunas builds de CPython lo necesitan en no).
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+CapabilityBoundingSet=
+ReadWritePaths=/var/log/vyr-mail-mcp
+MemoryMax=512M
+
+[Install]
+WantedBy=multi-user.target

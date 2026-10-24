@@ -1,0 +1,4 @@
+# Versiones acotadas. Verificado con mcp 2.3.0 (clase MCPServer).
+mcp>=2.3,<3
+imapclient>=4.1,<5
+uvicorn>=0.30,<1
