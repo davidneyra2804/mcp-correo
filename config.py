@@ -189,14 +189,15 @@ def ensure_local_bind(bind_host: str) -> None:
     if os.environ.get("MCP_ALLOW_NONLOCAL_BIND") == "1":
         return
     raise SystemExit(
-        f"bind_host {bind_host!r} no es loopback. v1 escucha solo en 127.0.0.1, "
-        "::1 o localhost. Define MCP_ALLOW_NONLOCAL_BIND=1 solo si nginx no es "
-        "quien publica el puerto."
+        f"bind_host {bind_host!r} no es loopback. El proceso escucha en 127.0.0.1, "
+        "::1 o localhost. Dentro del contenedor define MCP_ALLOW_NONLOCAL_BIND=1 "
+        "para oír en 0.0.0.0 y publica el puerto solo en 127.0.0.1, con TLS en el proxy."
     )
 
 
 def _server_settings(raw: dict) -> ServerSettings:
-    public_host = str(raw.get("public_host") or "127.0.0.1")
+    env_public = os.environ.get("MCP_PUBLIC_HOST", "").strip()
+    public_host = env_public or str(raw.get("public_host") or "127.0.0.1")
     bind_host = os.environ.get("MCP_BIND_HOST") or str(raw.get("bind_host") or "127.0.0.1")
     bind_port = _port(_env_int("MCP_BIND_PORT") or raw.get("bind_port") or 8765, "bind_port")
     max_results = _positive_int(raw.get("max_results", 100), "max_results")
@@ -213,8 +214,8 @@ def _server_settings(raw: dict) -> ServerSettings:
         raw.get("allowed_attachment_types"),
         DEFAULT_ATTACHMENT_TYPES,
     )
-    hosts = _str_tuple(raw.get("allowed_hosts"), _default_hosts(public_host))
-    origins = _str_tuple(raw.get("allowed_origins"), _default_origins(public_host))
+    hosts = _hosts_from_env(env_public, public_host, raw)
+    origins = _origins_from_env(env_public, public_host, raw)
     audit_log = os.environ.get("MCP_AUDIT_LOG") or str(raw.get("audit_log") or "audit.jsonl")
     smtp_timeout = float(raw.get("smtp_timeout", 30))
     if smtp_timeout <= 0:
@@ -390,6 +391,32 @@ def _env_int(name: str) -> int | None:
     if raw is None or raw == "":
         return None
     return int(raw)
+
+
+def _hosts_from_env(env_public: str, public_host: str, raw: dict) -> tuple[str, ...]:
+    explicit = _csv_env("MCP_ALLOWED_HOSTS")
+    if explicit is not None:
+        return explicit
+    if env_public:
+        return _default_hosts(public_host)
+    return _str_tuple(raw.get("allowed_hosts"), _default_hosts(public_host))
+
+
+def _origins_from_env(env_public: str, public_host: str, raw: dict) -> tuple[str, ...]:
+    explicit = _csv_env("MCP_ALLOWED_ORIGINS")
+    if explicit is not None:
+        return explicit
+    if env_public:
+        return _default_origins(public_host)
+    return _str_tuple(raw.get("allowed_origins"), _default_origins(public_host))
+
+
+def _csv_env(name: str) -> tuple[str, ...] | None:
+    raw = os.environ.get(name)
+    if raw is None or not raw.strip():
+        return None
+    items = tuple(part.strip() for part in raw.split(",") if part.strip())
+    return items or None
 
 
 def _str_tuple(value: object, default: tuple[str, ...]) -> tuple[str, ...]:

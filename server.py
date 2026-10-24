@@ -142,6 +142,9 @@ class BearerAuth:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
+        if scope.get("path") in {"/health", "/health/"}:
+            await _health(send)
+            return
         if not _authorized(scope, self._expected):
             body = b'{"error":"unauthorized"}'
             await send(
@@ -586,6 +589,22 @@ def _register_write_tools(
             return run(action)
 
 
+async def _health(send: Send) -> None:
+    body = b'{"status":"ok"}'
+    await send(
+        {
+            "type": "http.response.start",
+            "status": 200,
+            "headers": [
+                (b"content-type", b"application/json"),
+                (b"content-length", str(len(body)).encode()),
+                (b"cache-control", b"no-store"),
+            ],
+        }
+    )
+    await send({"type": "http.response.body", "body": body, "more_body": False})
+
+
 def _authorized(scope: Scope, expected_digest: bytes) -> bool:
     headers = [value for name, value in scope.get("headers", []) if name == b"authorization"]
     if len(headers) != 1:
@@ -623,10 +642,12 @@ def main() -> None:
     if RUNTIME is None:
         raise SystemExit("El servidor no llegó a inicializarse")
     settings = RUNTIME.settings
+    # Un solo proceso: el token de confirmación y el cupo diario están en memoria.
     uvicorn.run(
         app,
         host=settings.bind_host,
         port=settings.bind_port,
+        workers=1,
         proxy_headers=True,
         forwarded_allow_ips="127.0.0.1",
         log_level="info",

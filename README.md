@@ -84,7 +84,10 @@ mail/mime.py              # cabeceras, texto y adjuntos
 mail/threads.py           # no respondidos e hilos
 accounts.example.toml     # datos ficticios, escritura apagada
 .env.example              # nombres de variables, valores ficticios
-deploy/                   # systemd, nginx y logrotate
+Dockerfile                # imagen slim, usuario mcp, sin secretos
+docker-compose.yml        # stack de Portainer
+docker/                   # entrada del contenedor y rotación del JSONL
+deploy/                   # systemd, nginx, Caddy opcional y logrotate
 tests/                    # pytest con IMAP y SMTP simulados, sin red
 ```
 
@@ -128,9 +131,13 @@ Variables:
 | --- | --- |
 | `MCP_BEARER_TOKEN` | Obligatoria. Mínimo 16 caracteres; en producción, `openssl rand -base64 48`. Sin ella el proceso termina. |
 | `MAIL_*_PASSWORD` | Contraseña o app password de cada cuenta. |
-| `MCP_CONFIG` | Ruta del TOML. Si falta, se prueba `./accounts.toml` y luego `/etc/vyr-mail-mcp/accounts.toml`. |
-| `MCP_AUDIT_LOG` | Ruta del JSONL. Por defecto `./audit.jsonl`. |
-| `MCP_BIND_HOST` / `MCP_BIND_PORT` | Por defecto `127.0.0.1` y `8765`. Otro host se rechaza salvo `MCP_ALLOW_NONLOCAL_BIND=1`. |
+| `MCP_CONFIG` | Ruta del TOML. Si falta, se prueba `./accounts.toml` y luego `/etc/vyr-mail-mcp/accounts.toml`. En el contenedor apunta a `/config/accounts.toml`. |
+| `MCP_AUDIT_LOG` | Ruta del JSONL. Por defecto `./audit.jsonl`. En el contenedor, `/var/log/vyr-mail-mcp/audit.jsonl`. |
+| `MCP_BIND_HOST` / `MCP_BIND_PORT` | Por defecto `127.0.0.1` y `8765`. Otro host se rechaza salvo `MCP_ALLOW_NONLOCAL_BIND=1`. El contenedor oye en `0.0.0.0` con ese permiso; el compose publica solo `127.0.0.1`. |
+| `MCP_PUBLIC_HOST` | Si está definida, sustituye `public_host` y reconstruye `allowed_hosts` y `allowed_origins` (incluye loopback y `https://` de ese nombre). Sin ella, manda el TOML. |
+| `MCP_ALLOWED_HOSTS` / `MCP_ALLOWED_ORIGINS` | Listas separadas por comas. Si se definen, tapan tanto al TOML como a las listas que arma `MCP_PUBLIC_HOST`. |
+| `MCP_ACCOUNTS_TOML_B64` | Solo contenedor. TOML en base64, una línea, sin clave `password`. Se usa si no hay fichero montado. |
+| `MCP_ACCOUNTS_TOML` | Solo contenedor. El mismo TOML en texto. En Portainer es más seguro el base64. |
 
 Límites en `[server]`: `max_results`, `max_chars`, `max_attachment_bytes`, `max_message_bytes`, `imap_timeout`, `sent_scan_limit`. El cliente no puede subir esos topes. `allowed_hosts` y `allowed_origins` activan la protección contra DNS rebinding del SDK. `allowed_attachment_types` es la lista blanca de `get_attachment` y de los adjuntos salientes.
 
@@ -244,7 +251,7 @@ Para comprobar a mano que un no leído sigue no leído: anota `\Seen` en Roundcu
 
 Cada llamada a una tool añade una línea JSON con `ts` (UTC), `tool`, `account` y `args`. En la escritura se anotan destinatarios o UID, asunto y nombres de adjunto. No se escriben cuerpos, base64, el `confirm_token` ni contraseñas. Si un argumento contiene una contraseña configurada, se sustituye por `***`. Los textos se cortan a 300 caracteres. Si no se puede escribir el fichero, la tool no llega a mutar el buzón ni a emitir un token.
 
-En el servidor el fichero vive en `/var/log/vyr-mail-mcp/audit.jsonl` (modo `0640`, usuario `mcpmail`). `deploy/logrotate.conf` lo rota cada semana y conserva 12 copias, con `copytruncate` porque el proceso mantiene el descriptor abierto.
+En el servidor con systemd el fichero vive en `/var/log/vyr-mail-mcp/audit.jsonl` (modo `0640`, usuario `mcpmail`). `deploy/logrotate.conf` lo rota cada semana y conserva 12 copias, con `copytruncate` porque el proceso mantiene el descriptor abierto. En Docker el mismo directorio es un volumen nombrado y el servicio `audit-rotate` lo renombra al superar el tamaño: el servidor abre el fichero en cada línea, así que el renombrado no pierde la línea siguiente.
 
 ## Despliegue
 
@@ -280,6 +287,94 @@ El firewall del VPS puede dejar 22 restringido a la IP de administración, más 
 
 Conexión desde el cliente MCP: URL `https://mcp.vyrts.com/mcp` y cabecera `Authorization: Bearer <token>`.
 
+La unidad systemd no cambia con el empaquetado Docker: sigue en `127.0.0.1:8765` y un solo worker. Host, puerto, ruta del TOML y ruta de auditoría se pueden fijar con las variables de la tabla anterior; si no están definidas, el comportamiento de systemd se mantiene.
+
+## Despliegue con Portainer
+
+David puede levantar este repositorio como Stack de Portainer. La imagen no se publica desde aquí y este cambio no despliega nada. El compose sirve para dos usos: Portainer clona el Git y construye con `build:`, o más adelante se apunta `MCP_IMAGE` a una imagen ya publicada y se comenta el bloque `build`.
+
+El contenedor escucha en `0.0.0.0:8765` (hace falta, porque el proxy llega por la red de Docker). El compose publica ese puerto solo en `127.0.0.1:8765`. `/mcp` sigue exigiendo Bearer. `GET /health` responde `{"status":"ok"}` sin token y no devuelve cuentas ni correo: es la sonda del `HEALTHCHECK`. Hacia Internet hace falta TLS en un proxy. No abras `8765` en `0.0.0.0`.
+
+Hay un solo worker de uvicorn. Los tokens de confirmación y el cupo diario viven en la memoria de ese proceso.
+
+### 1. Crear el stack desde Git
+
+En Portainer: **Stacks → Add stack → Repository**. URL del repositorio, rama `feat/v1-solo-lectura` (o `main` cuando este cambio esté fusionado), Compose path `docker-compose.yml`. Activa la reconstrucción al actualizar el stack. No hace falta un `env_file` ni una ruta absoluta del host.
+
+El servicio `caddy` lleva el perfil `tls` y no arranca con el stack normal. `mcp` y `audit-rotate` sí.
+
+### 2. Variables del stack
+
+En **Environment variables** de Portainer, define los nombres. Los valores no van en git ni en este README.
+
+| Nombre | Obligatoria | Qué es |
+| --- | --- | --- |
+| `MCP_BEARER_TOKEN` | sí | Secreto del cliente MCP. Mínimo 16 caracteres. |
+| `MAIL_VYRTS_PASSWORD` | si la cuenta vyrts está en el TOML | Contraseña o app password de esa cuenta. |
+| `MAIL_CARBONIO_PASSWORD` | si la cuenta carbonio está en el TOML | Igual para Carbonio. |
+| `MCP_PUBLIC_HOST` | para el dominio público | Nombre del MCP, por ejemplo el que irá en el certificado. Arma `allowed_hosts` y `allowed_origins`. |
+| `MCP_ALLOWED_HOSTS` | no | Lista separada por comas, si la generada no basta. |
+| `MCP_ALLOWED_ORIGINS` | no | Igual, para orígenes del navegador. |
+| `MCP_ACCOUNTS_TOML_B64` | si no montas el fichero | TOML en base64, una sola línea, sin contraseñas. |
+| `MCP_IMAGE` | no | Imagen ya publicada. Si la usas, comenta `build:` en el compose. |
+| `MCP_PUBLISH_BIND` / `MCP_PUBLISH_PORT` | no | Por defecto `127.0.0.1` y `8765`. |
+| `MCP_AUDIT_MAX_BYTES` / `MCP_AUDIT_KEEP` / `MCP_AUDIT_ROTATE_SECONDS` | no | Rotación: 10 MiB, 12 copias, cada hora. |
+
+Si añades otra cuenta, su `password_env` tiene que existir también como variable del servicio `mcp` en el compose y como variable del stack. Una línea vacía no sirve: el proceso no arranca si falta el secreto de una cuenta declarada.
+
+`MCP_BEARER_TOKEN` y las contraseñas por cuenta son secretos. Van solo en Environment variables de Portainer. No se copian al repositorio, no van dentro de la imagen y no se escriben en `accounts.toml`.
+
+### 3. De dónde sale accounts.toml
+
+El fichero montado gana. Si `/config/accounts.toml` existe, se usa ese y se ignoran las variables de texto. Si no existe, el entrypoint genera `/tmp/accounts.toml` (modo `0600`, tmpfs) y apunta `MCP_CONFIG` ahí. El texto generado no puede traer una clave `password`, solo `password_env`.
+
+Tres formas, elige una:
+
+1. **Variable, la más simple en Portainer.** Prepara el TOML en tu máquina (hosts reales, `password_env`, sin secretos) y codifícalo:
+
+   ```bash
+   base64 -w0 accounts.toml
+   ```
+
+   Pega el resultado en `MCP_ACCOUNTS_TOML_B64`. No hace falta ningún fichero en el host.
+
+2. **Bind relativo.** Descomenta en `docker-compose.yml` el volumen `./accounts.toml:/config/accounts.toml:ro`. El fichero tiene que estar junto al checkout del stack, no en una ruta absoluta escrita en el compose, y no se commitea.
+
+3. **Config de Docker.** Descomenta el bloque `configs:` del servicio y el de abajo del fichero (`file: ./accounts.toml`). Sirve en Swarm y en Compose con configs. El fichero tampoco lleva contraseñas.
+
+`docker-compose.ficticio.yml` monta `accounts.example.toml` para una prueba local. No lo uses en Portainer con datos reales.
+
+### 4. TLS
+
+El puerto publicado por defecto no lleva TLS: es loopback, para un proxy que ya esté en el mismo host.
+
+**(a) Proxy que ya existe.** nginx, Nginx Proxy Manager, Traefik o Caddy en el host pueden hacer proxy a `http://127.0.0.1:8765`. El ejemplo de nginx del repositorio es `deploy/nginx-mcp.conf`. Un proxy en otro contenedor no debe usar `127.0.0.1` (eso es el loopback de ese contenedor): únete a la red del stack y apunta a `http://mcp:8765`. Si Traefik llega solo por esa red, comenta el bloque `ports:` de `mcp` para no publicar 8765 en el host. Las etiquetas Traefik están comentadas en el servicio, con el dominio de ejemplo `mcp.ejemplo.test` y la red externa `proxy`.
+
+**(b) Caddy de este compose.** Perfil `tls`, apagado por defecto. En Portainer, si el formulario de despliegue tiene perfiles, añade `tls`. En la máquina:
+
+```bash
+docker compose --profile tls up -d --build
+```
+
+`deploy/Caddyfile` usa `tls internal` para no pedir un certificado público al arrancar. Para el dominio real, borra esa línea, define `MCP_PUBLIC_HOST` con un nombre que resuelva a este servidor y deja libres 80 y 443. Caddy no lleva `cap_drop: ALL`: tiene que abrir esos puertos. El proceso MCP sí va sin capacidades.
+
+Con el dominio público, `MCP_PUBLIC_HOST` deja pasar el `Host` de ese nombre y el origen `https://` correspondiente, y mantiene `127.0.0.1` para las pruebas en loopback. `MCP_ALLOWED_HOSTS` y `MCP_ALLOWED_ORIGINS` sustituyen esas listas si hace falta afinarlas.
+
+### 5. Logs, auditoría y actualización
+
+- Logs del proceso: en Portainer, el contenedor `mcp` → **Logs**. El driver `json-file` guarda como mucho 3 ficheros de 10 MiB.
+- Auditoría: volumen nombrado `audit`, montado en `/var/log/vyr-mail-mcp`. Desde el host, con el nombre de proyecto que Portainer haya puesto al stack:
+
+  ```bash
+  docker compose exec mcp python -c "print(open('/var/log/vyr-mail-mcp/audit.jsonl').read())"
+  ```
+
+  `audit-rotate` renombra `audit.jsonl` a `.1`, `.2`, … al pasar de `MCP_AUDIT_MAX_BYTES` y borra lo que exceda `MCP_AUDIT_KEEP`.
+
+- Actualizar: en el stack, **Pull and redeploy** (vuelve a clonar y reconstruye). Los secretos de Environment variables y el volumen `audit` se conservan. No hace falta reconstruir para cambiar el token o una contraseña: edita la variable y vuelve a desplegar el stack. La imagen sigue sin secretos.
+
+Límites del servicio `mcp`: 512 MiB, `pids_limit` 128, `restart: unless-stopped`, raíz de solo lectura, tmpfs en `/tmp` (`noexec`, `nosuid`), `cap_drop: ALL` y `no-new-privileges`. El usuario de la imagen es `mcp` (uid 10001).
+
 ## Checklist de seguridad
 
 Hecho en este código:
@@ -293,8 +388,9 @@ Hecho en este código:
 - Auditoría JSONL de cada acción, sin cuerpos, sin `confirm_token` y sin credenciales.
 - Instrucciones del servidor: el correo no es confiable y `send_message` / `delete_message` solo se ejecutan tras una orden explícita de David en la conversación.
 - Un solo worker. Los tokens y el cupo no salen del proceso.
-- DNS rebinding: `allowed_hosts` y `allowed_origins`.
-- Escucha por defecto en `127.0.0.1`.
+- DNS rebinding: `allowed_hosts` y `allowed_origins`. En Docker, `MCP_PUBLIC_HOST` o las listas `MCP_ALLOWED_*` los ajustan al dominio público sin tocar la unidad systemd.
+- Escucha por defecto en `127.0.0.1`. En el contenedor, `0.0.0.0` solo con `MCP_ALLOW_NONLOCAL_BIND=1`, y el compose publica `127.0.0.1:8765`.
+- Imagen sin token ni contraseñas. Usuario `mcp` no root, un worker, raíz de solo lectura, `cap_drop: ALL` y `no-new-privileges`. `GET /health` no pide token y no devuelve datos del buzón. `/mcp` sigue en 401 sin Bearer.
 
 Lo aplica quien despliegue (no está hecho en esta máquina):
 
@@ -303,12 +399,13 @@ Lo aplica quien despliegue (no está hecho en esta máquina):
 - Certificado TLS, rate limit y allowlist de IP en nginx si se conocen las salidas del cliente.
 - Usuario `mcpmail` sin shell, systemd endurecido, ufw y logrotate.
 - Revisar en Roundcube que `get_message` no pone `\Seen`.
-- No publicar el puerto 8765.
+- No publicar el puerto 8765 en una interfaz que no sea loopback, y no exponerlo sin Bearer ni sin TLS.
+- En Portainer, token y contraseñas solo en Environment variables. El TOML montado o en `MCP_ACCOUNTS_TOML_B64` no lleva la clave `password`.
 
 ## Pendiente
 
 - Host, usuario y app password de Carbonio. La cuenta de ejemplo sigue siendo ficticia.
-- Despliegue real: VPS, DNS, certificado y secretos fuera de este repositorio. Este cambio no despliega ni hace merge.
+- Despliegue real: crear el stack en Portainer (o el servicio systemd), DNS, certificado y secretos fuera de este repositorio. Este cambio no despliega ni hace merge. La imagen no se ha publicado en un registro.
 - Más adelante, si el cliente MCP no acepta un Bearer estático: OAuth 2.1 con el SDK como resource server. Pool de conexiones IMAP e IDLE quedan fuera.
 
 Preguntas que siguen abiertas: en qué VPS vive el MCP, si el nombre `mcp.vyrts.com` sirve, de qué IP sale el cliente, y qué tipos de adjunto hay que ampliar.

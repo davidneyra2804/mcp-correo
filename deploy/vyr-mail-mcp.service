@@ -1,5 +1,6 @@
 # /etc/systemd/system/vyr-mail-mcp.service
 # El proceso escucha solo en 127.0.0.1. nginx es quien publica HTTPS.
+# El despliegue con Portainer está en docker-compose.yml y no usa esta unidad.
 
 [Unit]
 Description=VYR mail MCP (lectura IMAP y escritura bajo confirmación)

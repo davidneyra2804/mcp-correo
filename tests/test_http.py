@@ -29,6 +29,13 @@ def client(tmp_path: Path) -> Iterator[TestClient]:
         yield http
 
 
+def test_salud_no_exige_token(client: TestClient) -> None:
+    response = client.get("/health")
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+    assert "unauthorized" not in response.text
+
+
 def test_sin_token_responde_401(client: TestClient) -> None:
     response = client.post("/mcp", json={}, headers={"Accept": "application/json"})
     assert response.status_code == 401
