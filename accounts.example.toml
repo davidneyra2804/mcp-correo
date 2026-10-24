@@ -12,9 +12,22 @@ max_attachment_bytes = 5000000
 max_message_bytes = 15000000
 imap_timeout = 20
 sent_scan_limit = 300
-# v1 ignora estos interruptores: no hay borradores ni envío.
-enable_drafts = false
+# Cada capacidad exige el interruptor global Y allow_* en la cuenta.
+# Si falta alguno, esa tool no se registra. Por defecto todo está apagado.
 enable_send = false
+enable_mark = false
+enable_delete = false
+enable_drafts = false
+confirm_ttl_seconds = 600
+max_recipients = 10
+max_sends_per_day = 30
+max_delete_per_call = 20
+max_mark_per_call = 50
+smtp_timeout = 30
+# ssl = SMTPS en el puerto 465. starttls = SMTP + STARTTLS, normalmente 587.
+smtp_security = "ssl"
+# Lista vacía: cualquier dominio. Si se rellena, solo esos dominios.
+allowed_recipient_domains = []
 allowed_attachment_types = [
   "text/plain",
   "text/csv",
@@ -51,7 +64,11 @@ username = "david.neyra@ejemplo.test"
 password_env = "MAIL_VYRTS_PASSWORD"
 drafts_folder = "Drafts"
 sent_folder = "Sent"
+# trash_folder = "Trash"
 allow_send = false
+allow_mark = false
+allow_delete = false
+allow_drafts = false
 
 [accounts.carbonio]
 label = "Correo Carbonio — ejemplo ficticio"
@@ -65,3 +82,6 @@ password_env = "MAIL_CARBONIO_PASSWORD"
 drafts_folder = "Drafts"
 sent_folder = "Sent"
 allow_send = false
+allow_mark = false
+allow_delete = false
+allow_drafts = false

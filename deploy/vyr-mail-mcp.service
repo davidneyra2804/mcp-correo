@@ -2,7 +2,7 @@
 # El proceso escucha solo en 127.0.0.1. nginx es quien publica HTTPS.
 
 [Unit]
-Description=VYR mail MCP server (solo lectura)
+Description=VYR mail MCP (lectura IMAP y escritura bajo confirmación)
 After=network-online.target
 Wants=network-online.target
 
@@ -12,6 +12,8 @@ User=mcpmail
 Group=mcpmail
 WorkingDirectory=/opt/vyr-mail-mcp
 EnvironmentFile=/etc/vyr-mail-mcp/env
+# --workers 1 es obligatorio: los tokens de confirmación y el tope diario
+# de envíos viven en la memoria de este proceso. Más workers los duplicarían.
 ExecStart=/opt/vyr-mail-mcp/.venv/bin/uvicorn server:app --host 127.0.0.1 --port 8765 --proxy-headers --forwarded-allow-ips=127.0.0.1 --workers 1
 Restart=on-failure
 RestartSec=5

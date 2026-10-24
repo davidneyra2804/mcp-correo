@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import imaplib
+import smtplib
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from email.message import EmailMessage
@@ -91,8 +92,6 @@ class FakeIMAP:
         if folder not in self.folders:
             raise imaplib.IMAP4.error("Mailbox doesn't exist")
         self.selected = folder
-        if not readonly:
-            self.mutated = True
         return {b"EXISTS": len(self.folders[folder].messages)}
 
     def search(self, criteria: object = "ALL", charset: str | None = None) -> list[int]:
@@ -135,21 +134,67 @@ class FakeIMAP:
 
     def remove_flags(self, messages, flags, silent: bool = False) -> None:
         self.mutated = True
+        self.calls.append("remove_flags")
+        assert self.selected is not None
+        normalized = _flag_bytes(flags)
+        folder = self.folders[self.selected]
+        for uid in messages:
+            folder.messages[int(uid)].flags.difference_update(normalized)
 
-    def append(self, *args, **kwargs) -> None:
+    def append(self, folder, msg, flags=(), msg_time=None) -> int:
         self.mutated = True
+        self.calls.append("append")
+        if folder not in self.folders:
+            raise imaplib.IMAP4.error("Mailbox doesn't exist")
+        dest = self.folders[folder]
+        next_uid = (max(dest.messages) if dest.messages else 0) + 1
+        raw = msg if isinstance(msg, bytes) else bytes(msg)
+        dest.messages[next_uid] = StoredMessage(raw=raw, flags=_flag_bytes(flags))
+        return next_uid
 
-    def copy(self, *args, **kwargs) -> None:
+    def copy(self, messages, folder) -> None:
         self.mutated = True
+        self.calls.append("copy")
+        if self.selected is None or folder not in self.folders:
+            raise imaplib.IMAP4.error("Mailbox doesn't exist")
+        src = self.folders[self.selected]
+        dest = self.folders[folder]
+        for uid in messages:
+            stored = src.messages.get(int(uid))
+            if stored is None:
+                raise imaplib.IMAP4.error("No such message")
+            next_uid = (max(dest.messages) if dest.messages else 0) + 1
+            dest.messages[next_uid] = StoredMessage(raw=stored.raw, flags=set(stored.flags))
 
-    def move(self, *args, **kwargs) -> None:
-        self.mutated = True
+    def move(self, messages, folder) -> None:
+        self.calls.append("move")
+        uids = [int(uid) for uid in messages]
+        self.copy(messages, folder)
+        assert self.selected is not None
+        src = self.folders[self.selected]
+        for uid in uids:
+            src.messages.pop(uid, None)
 
-    def delete_messages(self, *args, **kwargs) -> None:
-        self.mutated = True
+    def delete_messages(self, messages) -> None:
+        self.add_flags(messages, [b"\\Deleted"])
 
-    def expunge(self, *args, **kwargs) -> None:
+    def expunge(self, messages=None) -> None:
         self.mutated = True
+        self.calls.append("expunge")
+        assert self.selected is not None
+        folder = self.folders[self.selected]
+        if messages is None:
+            victims = [
+                uid for uid, stored in folder.messages.items() if b"\\Deleted" in stored.flags
+            ]
+        else:
+            victims = []
+            for uid in messages:
+                stored = folder.messages.get(int(uid))
+                if stored is not None and b"\\Deleted" in stored.flags:
+                    victims.append(int(uid))
+        for uid in victims:
+            del folder.messages[uid]
 
     def store(self, *args, **kwargs) -> None:
         self.mutated = True
@@ -174,7 +219,12 @@ class FakeIMAP:
                 current.update(normalized)
 
 
-def sample_mailbox(settings: ServerSettings | None = None) -> tuple[FakeIMAP, MailService, Account]:
+def sample_mailbox(
+    settings: ServerSettings | None = None,
+    *,
+    with_trash: bool = False,
+    with_drafts: bool = False,
+) -> tuple[FakeIMAP, MailService, Account]:
     when = datetime(2026, 10, 20, 10, 0, 0)
     inbox = StoredFolder(
         flags=(b"\\HasNoChildren",),
@@ -250,7 +300,12 @@ def sample_mailbox(settings: ServerSettings | None = None) -> tuple[FakeIMAP, Ma
             )
         },
     )
-    fake = FakeIMAP({"INBOX": inbox, "Sent": sent})
+    folders = {"INBOX": inbox, "Sent": sent}
+    if with_trash:
+        folders["Trash"] = StoredFolder(flags=(b"\\Trash", b"\\HasNoChildren"), messages={})
+    if with_drafts:
+        folders["Drafts"] = StoredFolder(flags=(b"\\Drafts", b"\\HasNoChildren"), messages={})
+    fake = FakeIMAP(folders)
     account = Account(
         key="vyrts",
         label="VYR de prueba",
@@ -448,6 +503,44 @@ def _parse(raw: bytes) -> EmailMessage:
     message = message_from_bytes(raw, policy=default_policy)
     assert isinstance(message, EmailMessage)
     return message
+
+
+class FakeSMTP:
+    """SMTP en memoria. No guarda la contraseña."""
+
+    def __init__(self) -> None:
+        self.sent: list[bytes] = []
+        self.authenticated = False
+        self.quit_called = False
+        self.fail_send = False
+
+    def login(self, username: str, password: str) -> None:
+        if not password:
+            raise smtplib.SMTPAuthenticationError(535, b"auth")
+        self.authenticated = True
+        del username
+
+    def send_message(self, message, from_addr=None, to_addrs=None) -> None:
+        if self.fail_send:
+            raise smtplib.SMTPException("rechazo de prueba")
+        self.sent.append(message.as_bytes())
+        del from_addr, to_addrs
+
+    def quit(self) -> None:
+        self.quit_called = True
+
+    def ehlo(self) -> None:
+        return None
+
+    def starttls(self) -> None:
+        return None
+
+
+def _flag_bytes(flags) -> set[bytes]:
+    found: set[bytes] = set()
+    for flag in flags or ():
+        found.add(flag if isinstance(flag, bytes) else str(flag).encode())
+    return found
 
 
 def _text(value: object) -> str:

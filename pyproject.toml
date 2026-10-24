@@ -1,7 +1,7 @@
 [project]
 name = "vyr-mail-mcp"
-version = "0.1.0"
-description = "Servidor MCP de solo lectura para el correo laboral"
+version = "0.2.0"
+description = "Servidor MCP de correo: lectura IMAP y escritura bajo confirmación"
 requires-python = ">=3.11"
 
 [tool.pytest.ini_options]

@@ -114,3 +114,5 @@ def test_instrucciones_avisan_de_contenido_no_confiable() -> None:
     assert "no confiables" in text
     assert "inyección" in text
     assert "solo lectura" in text
+    assert "orden explícita" in text
+    assert "confirm_token" in text

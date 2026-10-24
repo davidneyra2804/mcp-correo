@@ -9,7 +9,22 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-_REDACT_KEYS = frozenset({"password", "token", "authorization", "body", "content", "raw", "secret"})
+_REDACT_KEYS = frozenset(
+    {
+        "password",
+        "token",
+        "confirm_token",
+        "authorization",
+        "body",
+        "body_preview",
+        "content",
+        "content_base64",
+        "attachments",
+        "raw",
+        "raw_message",
+        "secret",
+    }
+)
 _MAX_ARG_CHARS = 300
 
 

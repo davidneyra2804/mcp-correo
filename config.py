@@ -37,7 +37,12 @@ _ACCOUNT_KEYS = {
     "password_env",
     "drafts_folder",
     "sent_folder",
+    "trash_folder",
+    "smtp_security",
     "allow_send",
+    "allow_mark",
+    "allow_delete",
+    "allow_drafts",
 }
 
 _SERVER_KEYS = {
@@ -52,6 +57,16 @@ _SERVER_KEYS = {
     "sent_scan_limit",
     "enable_drafts",
     "enable_send",
+    "enable_mark",
+    "enable_delete",
+    "confirm_ttl_seconds",
+    "max_recipients",
+    "max_sends_per_day",
+    "max_delete_per_call",
+    "max_mark_per_call",
+    "smtp_timeout",
+    "smtp_security",
+    "allowed_recipient_domains",
     "allowed_attachment_types",
     "allowed_hosts",
     "allowed_origins",
@@ -78,6 +93,16 @@ class ServerSettings:
     audit_log: str
     enable_drafts: bool = False
     enable_send: bool = False
+    enable_mark: bool = False
+    enable_delete: bool = False
+    confirm_ttl_seconds: int = 600
+    max_recipients: int = 10
+    max_sends_per_day: int = 30
+    max_delete_per_call: int = 20
+    max_mark_per_call: int = 50
+    smtp_timeout: float = 30
+    smtp_security: str = "ssl"
+    allowed_recipient_domains: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -95,7 +120,12 @@ class Account:
     smtp_port: int = 465
     drafts_folder: str = "Drafts"
     sent_folder: str = "Sent"
+    trash_folder: str = ""
+    smtp_security: str = ""
     allow_send: bool = False
+    allow_mark: bool = False
+    allow_delete: bool = False
+    allow_drafts: bool = False
 
 
 def require_bearer_token() -> str:
@@ -186,6 +216,9 @@ def _server_settings(raw: dict) -> ServerSettings:
     hosts = _str_tuple(raw.get("allowed_hosts"), _default_hosts(public_host))
     origins = _str_tuple(raw.get("allowed_origins"), _default_origins(public_host))
     audit_log = os.environ.get("MCP_AUDIT_LOG") or str(raw.get("audit_log") or "audit.jsonl")
+    smtp_timeout = float(raw.get("smtp_timeout", 30))
+    if smtp_timeout <= 0:
+        raise SystemExit("smtp_timeout debe ser mayor que 0")
     return ServerSettings(
         public_host=public_host,
         bind_host=bind_host,
@@ -200,8 +233,22 @@ def _server_settings(raw: dict) -> ServerSettings:
         allowed_origins=origins,
         allowed_attachment_types=tuple(item.lower() for item in attachment_types),
         audit_log=audit_log,
-        enable_drafts=bool(raw.get("enable_drafts", False)),
-        enable_send=bool(raw.get("enable_send", False)),
+        enable_drafts=_as_bool(raw.get("enable_drafts"), "enable_drafts"),
+        enable_send=_as_bool(raw.get("enable_send"), "enable_send"),
+        enable_mark=_as_bool(raw.get("enable_mark"), "enable_mark"),
+        enable_delete=_as_bool(raw.get("enable_delete"), "enable_delete"),
+        confirm_ttl_seconds=_positive_int(
+            raw.get("confirm_ttl_seconds", 600), "confirm_ttl_seconds"
+        ),
+        max_recipients=_positive_int(raw.get("max_recipients", 10), "max_recipients"),
+        max_sends_per_day=_positive_int(raw.get("max_sends_per_day", 30), "max_sends_per_day"),
+        max_delete_per_call=_positive_int(
+            raw.get("max_delete_per_call", 20), "max_delete_per_call"
+        ),
+        max_mark_per_call=_positive_int(raw.get("max_mark_per_call", 50), "max_mark_per_call"),
+        smtp_timeout=smtp_timeout,
+        smtp_security=_smtp_security(raw.get("smtp_security", "ssl"), "smtp_security"),
+        allowed_recipient_domains=_domains(raw.get("allowed_recipient_domains")),
     )
 
 
@@ -243,8 +290,25 @@ def _account(key: str, raw: object) -> Account:
         password=password,
         drafts_folder=str(raw.get("drafts_folder") or "Drafts"),
         sent_folder=str(raw.get("sent_folder") or "Sent"),
-        allow_send=bool(raw.get("allow_send", False)),
+        trash_folder=_optional_folder(raw.get("trash_folder"), f"{key}.trash_folder"),
+        smtp_security=_optional_security(raw.get("smtp_security"), f"{key}.smtp_security"),
+        allow_send=_as_bool(raw.get("allow_send"), f"{key}.allow_send"),
+        allow_mark=_as_bool(raw.get("allow_mark"), f"{key}.allow_mark"),
+        allow_delete=_as_bool(raw.get("allow_delete"), f"{key}.allow_delete"),
+        allow_drafts=_as_bool(raw.get("allow_drafts"), f"{key}.allow_drafts"),
     )
+
+
+def write_capabilities(settings: ServerSettings, accounts: dict[str, Account]) -> dict[str, bool]:
+    """Una tool de escritura existe solo si el interruptor global y alguna cuenta lo permiten."""
+    return {
+        "send": settings.enable_send and any(account.allow_send for account in accounts.values()),
+        "mark": settings.enable_mark and any(account.allow_mark for account in accounts.values()),
+        "delete": settings.enable_delete
+        and any(account.allow_delete for account in accounts.values()),
+        "drafts": settings.enable_drafts
+        and any(account.allow_drafts for account in accounts.values()),
+    }
 
 
 def _reject_unknown(where: str, raw: dict, allowed: set[str]) -> None:
@@ -258,6 +322,53 @@ def _required_str(raw: dict, field_name: str, key: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise SystemExit(f"La cuenta {key!r} necesita {field_name}")
     return value.strip()
+
+
+def _as_bool(value: object, field_name: str) -> bool:
+    """Solo un booleano TOML. Un texto no puede encender un interruptor."""
+    if value is None:
+        return False
+    if isinstance(value, bool):
+        return value
+    raise SystemExit(f"{field_name} debe ser true o false, no un texto")
+
+
+def _smtp_security(value: object, field_name: str) -> str:
+    if not isinstance(value, str):
+        raise SystemExit(f"{field_name} debe ser ssl o starttls")
+    text = value.strip().lower()
+    if text not in {"ssl", "starttls"}:
+        raise SystemExit(f"{field_name} debe ser ssl o starttls")
+    return text
+
+
+def _optional_security(value: object, field_name: str) -> str:
+    if value is None or value == "":
+        return ""
+    return _smtp_security(value, field_name)
+
+
+def _optional_folder(value: object, field_name: str) -> str:
+    if value is None or value == "":
+        return ""
+    if not isinstance(value, str) or len(value) > 200 or any(char in value for char in "\r\n\x00"):
+        raise SystemExit(f"{field_name} no es un nombre de carpeta válido")
+    return value
+
+
+def _domains(value: object) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    items = _str_tuple(value, ())
+    domains: list[str] = []
+    for item in items:
+        domain = item.strip().lower().lstrip("@")
+        if not domain:
+            continue
+        if any(char in domain for char in " \t\r\n\x00/@"):
+            raise SystemExit(f"Dominio de destinatario no válido: {item!r}")
+        domains.append(domain)
+    return tuple(domains)
 
 
 def _positive_int(value: object, field_name: str) -> int:

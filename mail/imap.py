@@ -1,4 +1,8 @@
-"""Sesiones IMAP de solo lectura: EXAMINE y BODY.PEEK, nunca STORE ni APPEND."""
+"""Sesiones IMAP. La lectura usa EXAMINE y BODY.PEEK.
+
+Una sesión de escritura solo la abre `mail.mutate` y solo dentro de la
+operación que necesita STORE, MOVE o EXPUNGE. APPEND no selecciona carpeta.
+"""
 
 from __future__ import annotations
 
@@ -21,7 +25,7 @@ from mail.mime import (
     parse_header_block,
     parse_message,
 )
-from mail.readonly import ReadOnlyIMAP
+from mail.readonly import ReadOnlyIMAP, WritableIMAP
 from mail.threads import group_threads, normalize_message_id, replied_ids_from_header_block
 
 logger = logging.getLogger("vyr.mail.imap")
@@ -56,7 +60,15 @@ class MailService:
     def list_accounts(self) -> dict:
         return {
             "accounts": [
-                {"account": account.key, "label": account.label, "user": account.username}
+                {
+                    "account": account.key,
+                    "label": account.label,
+                    "user": account.username,
+                    "can_send": self.settings.enable_send and account.allow_send,
+                    "can_mark": self.settings.enable_mark and account.allow_mark,
+                    "can_delete": self.settings.enable_delete and account.allow_delete,
+                    "can_draft": self.settings.enable_drafts and account.allow_drafts,
+                }
                 for account in self.accounts.values()
             ]
         }
@@ -271,6 +283,10 @@ class MailService:
 
         return self._with_account(account, run)
 
+    def session(self, account_key: str, *, writable: bool = False) -> Iterator[Any]:
+        """Abre IMAP. `writable=False` envuelve el cliente en solo lectura."""
+        return self._session(account_key, writable=writable)
+
     def _with_account(self, account: str, action: Callable[[ReadOnlyIMAP], dict]) -> dict:
         with self._session(account) as client:
             try:
@@ -281,7 +297,7 @@ class MailService:
                 self._raise_imap(self._account(account), exc)
 
     @contextmanager
-    def _session(self, account_key: str) -> Iterator[ReadOnlyIMAP]:
+    def _session(self, account_key: str, *, writable: bool = False) -> Iterator[Any]:
         account = self._account(account_key)
         raw = self._factory(account, self.settings)
         try:
@@ -289,7 +305,7 @@ class MailService:
                 raw.login(account.username, account.password)
             except (IMAPClientError, imaplib.IMAP4.error, TimeoutError, OSError) as exc:
                 self._raise_imap(account, exc)
-            client = ReadOnlyIMAP(raw)
+            client: Any = WritableIMAP(raw) if writable else ReadOnlyIMAP(raw)
             try:
                 yield client
             finally:

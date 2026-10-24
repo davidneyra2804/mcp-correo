@@ -16,6 +16,16 @@ def test_ejemplo_carga_sin_mostrar_la_clave(monkeypatch: pytest.MonkeyPatch) -> 
     settings, accounts = load_config(ROOT / "accounts.example.toml")
     assert settings.bind_host == "127.0.0.1"
     assert settings.enable_send is False
+    assert settings.enable_mark is False
+    assert settings.enable_delete is False
+    assert settings.enable_drafts is False
+    assert settings.smtp_security == "ssl"
+    assert settings.confirm_ttl_seconds == 600
+    assert settings.max_sends_per_day == 30
+    assert accounts["vyrts"].allow_send is False
+    assert accounts["vyrts"].allow_mark is False
+    assert accounts["vyrts"].allow_delete is False
+    assert accounts["vyrts"].allow_drafts is False
     assert set(accounts) == {"vyrts", "carbonio"}
     assert "clave-ficticia-vyrts" not in repr(accounts["vyrts"])
     assert accounts["vyrts"].password == "clave-ficticia-vyrts"
@@ -67,6 +77,25 @@ def test_token_obligatorio(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MCP_BEARER_TOKEN", "corto")
     with pytest.raises(SystemExit, match="demasiado corto"):
         require_bearer_token()
+
+
+def test_un_texto_no_enciende_un_interruptor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "accounts.toml"
+    path.write_text(
+        """
+        [accounts.vyrts]
+        imap_host = "mail.ejemplo.test"
+        username = "david.neyra@ejemplo.test"
+        password_env = "MAIL_VYRTS_PASSWORD"
+        allow_send = "false"
+        """,
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("MAIL_VYRTS_PASSWORD", "clave-ficticia-vyrts")
+    with pytest.raises(SystemExit, match="true o false"):
+        load_config(path)
 
 
 def test_repr_de_la_cuenta_oculta_el_secreto() -> None:
