@@ -1,0 +1,24 @@
+# Secretos y configuración real. El ejemplo versionado es .env.example.
+.env
+.env.*
+!.env.example
+accounts.toml
+*.pem
+*.key
+
+# Auditoría local (puede contener asuntos usados como filtro, nunca cuerpos).
+audit.jsonl
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.venv/
+venv/
+dist/
+*.egg-info/
+.coverage
+htmlcov/

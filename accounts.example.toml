@@ -1,0 +1,87 @@
+# Ejemplo SIN contraseñas. Copia a accounts.toml (local) o a
+# /etc/mcp-correo/accounts.toml (servidor) y sustituye los datos ficticios.
+# La contraseña no va aquí: solo el nombre de la variable de entorno.
+
+[server]
+public_host = "mcp.example.com"
+bind_host = "127.0.0.1"
+bind_port = 8765
+max_results = 100
+max_chars = 20000
+max_attachment_bytes = 5000000
+max_message_bytes = 15000000
+imap_timeout = 20
+sent_scan_limit = 300
+# Cada capacidad exige el interruptor global Y allow_* en la cuenta.
+# Si falta alguno, esa tool no se registra. Por defecto todo está apagado.
+enable_send = false
+enable_mark = false
+enable_delete = false
+enable_drafts = false
+confirm_ttl_seconds = 600
+max_recipients = 10
+max_sends_per_day = 30
+max_delete_per_call = 20
+max_mark_per_call = 50
+smtp_timeout = 30
+# ssl = SMTPS en el puerto 465. starttls = SMTP + STARTTLS, normalmente 587.
+smtp_security = "ssl"
+# Lista vacía: cualquier dominio. Si se rellena, solo esos dominios.
+allowed_recipient_domains = []
+allowed_attachment_types = [
+  "text/plain",
+  "text/csv",
+  "text/html",
+  "application/pdf",
+  "application/json",
+  "image/png",
+  "image/jpeg",
+  "image/gif",
+  "image/webp",
+]
+allowed_hosts = [
+  "mcp.example.com",
+  "mcp.example.com:*",
+  "127.0.0.1",
+  "127.0.0.1:*",
+  "localhost",
+  "localhost:*",
+]
+allowed_origins = [
+  "https://mcp.example.com",
+  "http://127.0.0.1:*",
+  "http://localhost:*",
+]
+
+[accounts.principal]
+label = "Correo principal — ejemplo ficticio"
+imap_host = "mail.example.com"
+imap_port = 993
+imap_ssl = true
+smtp_host = "mail.example.com"
+smtp_port = 465
+username = "ada@example.com"
+password_env = "MAIL_PRINCIPAL_PASSWORD"
+drafts_folder = "Drafts"
+sent_folder = "Sent"
+# trash_folder = "Trash"
+allow_send = false
+allow_mark = false
+allow_delete = false
+allow_drafts = false
+
+[accounts.archivo]
+label = "Correo de archivo — ejemplo ficticio"
+imap_host = "mail.archivo.example.com"
+imap_port = 993
+imap_ssl = true
+smtp_host = "mail.archivo.example.com"
+smtp_port = 465
+username = "ada.archivo@example.com"
+password_env = "MAIL_ARCHIVO_PASSWORD"
+drafts_folder = "Drafts"
+sent_folder = "Sent"
+allow_send = false
+allow_mark = false
+allow_delete = false
+allow_drafts = false
