@@ -13,7 +13,7 @@ from typing import Any
 from config import Account, ServerSettings
 from mail.errors import MailError
 
-logger = logging.getLogger("vyr.mail.smtp")
+logger = logging.getLogger("mcp_correo.smtp")
 
 SmtpFactory = Callable[[Account, ServerSettings], Any]
 

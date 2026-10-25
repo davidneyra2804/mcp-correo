@@ -149,7 +149,7 @@ def resolve_config_path() -> Path:
     local = Path("accounts.toml")
     if local.is_file():
         return local
-    system = Path("/etc/vyr-mail-mcp/accounts.toml")
+    system = Path("/etc/mcp-correo/accounts.toml")
     if system.is_file():
         return system
     raise SystemExit(
@@ -268,7 +268,7 @@ def _account(key: str, raw: object) -> Account:
     if "PASSWORD" not in env_name.upper() and "PASS" not in env_name.upper():
         raise SystemExit(
             f"password_env de {key!r} debería ser el nombre de una variable "
-            "(por ejemplo MAIL_VYRTS_PASSWORD), no un secreto"
+            "(por ejemplo MAIL_PRINCIPAL_PASSWORD), no un secreto"
         )
     password = os.environ.get(env_name)
     if password is None or password == "":

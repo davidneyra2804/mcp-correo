@@ -11,14 +11,14 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_ejemplo_carga_sin_mostrar_la_clave(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("MAIL_VYRTS_PASSWORD", "clave-ficticia-vyrts")
-    monkeypatch.setenv("MAIL_CARBONIO_PASSWORD", "clave-ficticia-carbonio")
+    monkeypatch.setenv("MAIL_PRINCIPAL_PASSWORD", "clave-ficticia-principal")
+    monkeypatch.setenv("MAIL_ARCHIVO_PASSWORD", "clave-ficticia-archivo")
     monkeypatch.delenv("MCP_PUBLIC_HOST", raising=False)
     monkeypatch.delenv("MCP_ALLOWED_HOSTS", raising=False)
     monkeypatch.delenv("MCP_ALLOWED_ORIGINS", raising=False)
     settings, accounts = load_config(ROOT / "accounts.example.toml")
     assert settings.bind_host == "127.0.0.1"
-    assert "mcp.ejemplo.test" in settings.allowed_hosts
+    assert "mcp.example.com" in settings.allowed_hosts
     assert settings.enable_send is False
     assert settings.enable_mark is False
     assert settings.enable_delete is False
@@ -26,14 +26,14 @@ def test_ejemplo_carga_sin_mostrar_la_clave(monkeypatch: pytest.MonkeyPatch) -> 
     assert settings.smtp_security == "ssl"
     assert settings.confirm_ttl_seconds == 600
     assert settings.max_sends_per_day == 30
-    assert accounts["vyrts"].allow_send is False
-    assert accounts["vyrts"].allow_mark is False
-    assert accounts["vyrts"].allow_delete is False
-    assert accounts["vyrts"].allow_drafts is False
-    assert set(accounts) == {"vyrts", "carbonio"}
-    assert "clave-ficticia-vyrts" not in repr(accounts["vyrts"])
-    assert accounts["vyrts"].password == "clave-ficticia-vyrts"
-    assert accounts["vyrts"].imap_ssl is True
+    assert accounts["principal"].allow_send is False
+    assert accounts["principal"].allow_mark is False
+    assert accounts["principal"].allow_delete is False
+    assert accounts["principal"].allow_drafts is False
+    assert set(accounts) == {"principal", "archivo"}
+    assert "clave-ficticia-principal" not in repr(accounts["principal"])
+    assert accounts["principal"].password == "clave-ficticia-principal"
+    assert accounts["principal"].imap_ssl is True
 
 
 def test_rechaza_contraseña_en_el_toml(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -42,15 +42,15 @@ def test_rechaza_contraseña_en_el_toml(tmp_path: Path, monkeypatch: pytest.Monk
         """
         [server]
         bind_host = "127.0.0.1"
-        [accounts.vyrts]
-        imap_host = "mail.ejemplo.test"
-        username = "david.neyra@ejemplo.test"
+        [accounts.principal]
+        imap_host = "mail.example.com"
+        username = "ada@example.com"
         password = "no-va-aqui"
-        password_env = "MAIL_VYRTS_PASSWORD"
+        password_env = "MAIL_PRINCIPAL_PASSWORD"
         """,
         encoding="utf-8",
     )
-    monkeypatch.setenv("MAIL_VYRTS_PASSWORD", "clave-ficticia-vyrts")
+    monkeypatch.setenv("MAIL_PRINCIPAL_PASSWORD", "clave-ficticia-principal")
     with pytest.raises(SystemExit, match="contraseña"):
         load_config(path)
 
@@ -59,15 +59,15 @@ def test_falta_variable_de_la_cuenta(tmp_path: Path, monkeypatch: pytest.MonkeyP
     path = tmp_path / "accounts.toml"
     path.write_text(
         """
-        [accounts.vyrts]
-        imap_host = "mail.ejemplo.test"
-        username = "david.neyra@ejemplo.test"
-        password_env = "MAIL_VYRTS_PASSWORD"
+        [accounts.principal]
+        imap_host = "mail.example.com"
+        username = "ada@example.com"
+        password_env = "MAIL_PRINCIPAL_PASSWORD"
         """,
         encoding="utf-8",
     )
-    monkeypatch.delenv("MAIL_VYRTS_PASSWORD", raising=False)
-    with pytest.raises(SystemExit, match="MAIL_VYRTS_PASSWORD"):
+    monkeypatch.delenv("MAIL_PRINCIPAL_PASSWORD", raising=False)
+    with pytest.raises(SystemExit, match="MAIL_PRINCIPAL_PASSWORD"):
         load_config(path)
 
 
@@ -89,15 +89,15 @@ def test_un_texto_no_enciende_un_interruptor(
     path = tmp_path / "accounts.toml"
     path.write_text(
         """
-        [accounts.vyrts]
-        imap_host = "mail.ejemplo.test"
-        username = "david.neyra@ejemplo.test"
-        password_env = "MAIL_VYRTS_PASSWORD"
+        [accounts.principal]
+        imap_host = "mail.example.com"
+        username = "ada@example.com"
+        password_env = "MAIL_PRINCIPAL_PASSWORD"
         allow_send = "false"
         """,
         encoding="utf-8",
     )
-    monkeypatch.setenv("MAIL_VYRTS_PASSWORD", "clave-ficticia-vyrts")
+    monkeypatch.setenv("MAIL_PRINCIPAL_PASSWORD", "clave-ficticia-principal")
     with pytest.raises(SystemExit, match="true o false"):
         load_config(path)
 
@@ -106,13 +106,13 @@ def _toml_minimo(path: Path) -> None:
     path.write_text(
         """
         [server]
-        public_host = "mcp.ejemplo.test"
-        allowed_hosts = ["otro.ejemplo.test"]
-        allowed_origins = ["https://otro.ejemplo.test"]
-        [accounts.vyrts]
-        imap_host = "mail.ejemplo.test"
-        username = "david.neyra@ejemplo.test"
-        password_env = "MAIL_VYRTS_PASSWORD"
+        public_host = "mcp.example.com"
+        allowed_hosts = ["otro.example.com"]
+        allowed_origins = ["https://otro.example.com"]
+        [accounts.principal]
+        imap_host = "mail.example.com"
+        username = "ada@example.com"
+        password_env = "MAIL_PRINCIPAL_PASSWORD"
         """,
         encoding="utf-8",
     )
@@ -123,16 +123,16 @@ def test_el_dominio_publico_viene_del_entorno(
 ) -> None:
     path = tmp_path / "accounts.toml"
     _toml_minimo(path)
-    monkeypatch.setenv("MAIL_VYRTS_PASSWORD", "clave-ficticia-vyrts")
-    monkeypatch.setenv("MCP_PUBLIC_HOST", "mcp.vyrts.com")
+    monkeypatch.setenv("MAIL_PRINCIPAL_PASSWORD", "clave-ficticia-principal")
+    monkeypatch.setenv("MCP_PUBLIC_HOST", "mcp.example.com")
     monkeypatch.delenv("MCP_ALLOWED_HOSTS", raising=False)
     monkeypatch.delenv("MCP_ALLOWED_ORIGINS", raising=False)
     settings, _accounts = load_config(path)
-    assert settings.public_host == "mcp.vyrts.com"
-    assert "mcp.vyrts.com" in settings.allowed_hosts
+    assert settings.public_host == "mcp.example.com"
+    assert "mcp.example.com" in settings.allowed_hosts
     assert "127.0.0.1:*" in settings.allowed_hosts
-    assert "https://mcp.vyrts.com" in settings.allowed_origins
-    assert "otro.ejemplo.test" not in settings.allowed_hosts
+    assert "https://mcp.example.com" in settings.allowed_origins
+    assert "otro.example.com" not in settings.allowed_hosts
 
 
 def test_las_listas_explicitas_tapan_al_dominio(
@@ -140,22 +140,22 @@ def test_las_listas_explicitas_tapan_al_dominio(
 ) -> None:
     path = tmp_path / "accounts.toml"
     _toml_minimo(path)
-    monkeypatch.setenv("MAIL_VYRTS_PASSWORD", "clave-ficticia-vyrts")
-    monkeypatch.setenv("MCP_PUBLIC_HOST", "mcp.vyrts.com")
-    monkeypatch.setenv("MCP_ALLOWED_HOSTS", "mcp.vyrts.com, mcp.vyrts.com:*")
-    monkeypatch.setenv("MCP_ALLOWED_ORIGINS", "https://mcp.vyrts.com")
+    monkeypatch.setenv("MAIL_PRINCIPAL_PASSWORD", "clave-ficticia-principal")
+    monkeypatch.setenv("MCP_PUBLIC_HOST", "mcp.example.com")
+    monkeypatch.setenv("MCP_ALLOWED_HOSTS", "mcp.example.com, mcp.example.com:*")
+    monkeypatch.setenv("MCP_ALLOWED_ORIGINS", "https://mcp.example.com")
     settings, _accounts = load_config(path)
-    assert settings.allowed_hosts == ("mcp.vyrts.com", "mcp.vyrts.com:*")
-    assert settings.allowed_origins == ("https://mcp.vyrts.com",)
+    assert settings.allowed_hosts == ("mcp.example.com", "mcp.example.com:*")
+    assert settings.allowed_origins == ("https://mcp.example.com",)
 
 
 def test_repr_de_la_cuenta_oculta_el_secreto() -> None:
     account = Account(
-        key="vyrts",
+        key="principal",
         label="Prueba",
-        imap_host="mail.ejemplo.test",
+        imap_host="mail.example.com",
         imap_port=993,
-        username="david.neyra@ejemplo.test",
+        username="ada@example.com",
         password="super-secreto-no-loguear",
     )
     try:

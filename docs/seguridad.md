@@ -1,0 +1,27 @@
+# Checklist de seguridad
+
+Hecho en el código:
+
+- Bearer obligatorio, comparado con `hmac.compare_digest` sobre el SHA-256 del token. Sin token, el proceso no arranca. `/mcp` sin Bearer responde 401.
+- Contraseñas solo en el entorno. El TOML guarda el nombre de la variable. `.gitignore` deja fuera `.env`, `accounts.toml` y `audit.jsonl`.
+- `Account.password` con `repr=False`. Los errores que ve el modelo no incluyen la clave ni el texto crudo de IMAP o SMTP.
+- Lectura: `EXAMINE`, `BODY.PEEK[]`, lista blanca de tipos y topes de tamaño. El proxy de lectura rechaza comandos de escritura.
+- Escritura apagada por defecto, global y por cuenta. Con el interruptor apagado la tool no se registra.
+- Enviar y borrar exigen un token de un solo uso, de 10 minutos, ligado a la cuenta y a la operación. El borrado definitivo es un parámetro de la preparación y viaja dentro del token. Marcar es directo y queda auditado.
+- Cupo diario, máximo de destinatarios, dominios opcionales, tope de UID por borrado o marcado, y tamaño de adjuntos.
+- Auditoría JSONL de cada acción, sin cuerpos, sin `confirm_token` y sin credenciales. Si no se puede escribir, no hay efecto en el buzón.
+- Instrucciones del servidor: el correo no es confiable y `send_message` / `delete_message` solo se ejecutan tras una orden explícita en la conversación.
+- Un solo worker. Los tokens y el cupo no salen del proceso.
+- DNS rebinding: `allowed_hosts` y `allowed_origins`. En Docker, `MCP_PUBLIC_HOST` o las listas `MCP_ALLOWED_*` los ajustan al dominio público.
+- Escucha por defecto en `127.0.0.1`. En el contenedor, `0.0.0.0` solo con `MCP_ALLOW_NONLOCAL_BIND=1`, y el compose publica `127.0.0.1:8765`.
+- Imagen sin token ni contraseñas. Usuario `mcp` no root, raíz de solo lectura, `cap_drop: ALL` y `no-new-privileges`. `GET /health` no pide token y no devuelve datos del buzón.
+
+Lo aplica quien despliega:
+
+- Token aleatorio (`openssl rand -base64 48`) y rotación. Archivo de entorno `0600`. TOML `0640`.
+- App password del buzón. La escritura sigue apagada hasta que se encienda a propósito.
+- Certificado TLS, rate limit y, si se conocen, las IP de salida del cliente en el proxy.
+- Usuario de servicio sin shell, systemd endurecido o el compose con los límites del repositorio, y rotación del JSONL.
+- No publicar el puerto 8765 en una interfaz que no sea loopback, y no exponerlo sin Bearer ni sin TLS.
+- En Portainer, token y contraseñas solo en Environment variables. El TOML montado o en `MCP_ACCOUNTS_TOML_B64` no lleva la clave `password`.
+- Comprobar en el cliente de correo que `get_message` no pone `\Seen`.

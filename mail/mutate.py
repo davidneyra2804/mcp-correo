@@ -21,7 +21,7 @@ from mail.imap import MailService, _folder
 from mail.mime import decode_header_value, format_addresses
 from mail.smtp_out import SmtpFactory, open_smtp, transmit
 
-logger = logging.getLogger("vyr.mail.mutate")
+logger = logging.getLogger("mcp_correo.mutate")
 
 _TRASH_NAMES = ("Trash", "Papelera", "Deleted Items", "Deleted", "INBOX.Trash", "INBOX/Trash")
 
@@ -33,13 +33,13 @@ _GATES = {
 }
 
 NOTICE_SEND = (
-    "Vista previa. No llames a send_message hasta que David lo ordene "
-    "de forma explícita en esta conversación."
+    "Vista previa. No llames a send_message hasta una orden explícita "
+    "de quien opera el asistente en esta conversación."
 )
 NOTICE_DELETE = (
-    "Vista previa. No llames a delete_message hasta que David lo ordene "
-    "de forma explícita en esta conversación. El modo (Papelera o definitivo) "
-    "queda fijado en este token."
+    "Vista previa. No llames a delete_message hasta una orden explícita "
+    "de quien opera el asistente en esta conversación. El modo "
+    "(Papelera o definitivo) queda fijado en este token."
 )
 
 

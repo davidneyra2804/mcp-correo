@@ -58,7 +58,8 @@ class ConfirmationStore:
     def _lookup(self, token: str, kind: str, account: str, *, pop: bool) -> PendingAction:
         if not isinstance(token, str) or not token.strip():
             raise MailError(
-                "Falta confirm_token. Prepara la operación y espera la orden explícita de David."
+                "Falta confirm_token. Prepara la operación y espera "
+                "la orden explícita de quien opera el asistente."
             )
         pending = self._pending.get(token)
         if pending is None:

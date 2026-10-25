@@ -28,7 +28,7 @@ from mail.mime import (
 from mail.readonly import ReadOnlyIMAP, WritableIMAP
 from mail.threads import group_threads, normalize_message_id, replied_ids_from_header_block
 
-logger = logging.getLogger("vyr.mail.imap")
+logger = logging.getLogger("mcp_correo.imap")
 
 ClientFactory = Callable[[Account, ServerSettings], Any]
 

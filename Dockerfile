@@ -14,8 +14,8 @@ FROM python:3.12-slim
 RUN groupadd --system --gid 10001 mcp \
     && useradd --system --uid 10001 --gid 10001 \
         --no-create-home --shell /usr/sbin/nologin mcp \
-    && mkdir -p /var/log/vyr-mail-mcp /app \
-    && chown mcp:mcp /var/log/vyr-mail-mcp
+    && mkdir -p /var/log/mcp-correo /app \
+    && chown mcp:mcp /var/log/mcp-correo
 
 COPY --from=build /opt/venv /opt/venv
 WORKDIR /app
@@ -33,7 +33,7 @@ ENV PATH=/opt/venv/bin:$PATH \
     MCP_BIND_PORT=8765 \
     MCP_ALLOW_NONLOCAL_BIND=1 \
     MCP_CONFIG=/config/accounts.toml \
-    MCP_AUDIT_LOG=/var/log/vyr-mail-mcp/audit.jsonl
+    MCP_AUDIT_LOG=/var/log/mcp-correo/audit.jsonl
 
 EXPOSE 8765
 

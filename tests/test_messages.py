@@ -11,7 +11,7 @@ from tests.fakes import sample_mailbox
 
 def test_lista_carpetas_con_special_use() -> None:
     _fake, service, _account = sample_mailbox()
-    payload = service.list_folders("vyrts")
+    payload = service.list_folders("principal")
     by_name = {folder["name"]: folder for folder in payload["folders"]}
     assert "\\Sent" in by_name["Sent"]["special_use"]
     assert by_name["INBOX"]["special_use"] == []
@@ -20,7 +20,7 @@ def test_lista_carpetas_con_special_use() -> None:
 def test_list_messages_filtra_sin_marcar_leido() -> None:
     fake, service, _account = sample_mailbox()
     payload = service.list_messages(
-        "vyrts",
+        "principal",
         unseen=True,
         since="2026-10-01",
         sender="ana",
@@ -40,11 +40,11 @@ def test_list_messages_filtra_sin_marcar_leido() -> None:
 def test_search_cubre_subject_text_from_to_y_fechas() -> None:
     fake, service, _account = sample_mailbox()
     payload = service.search_messages(
-        "vyrts",
+        "principal",
         subject="Presupuesto",
         text="presupuesto",
         sender="ana",
-        recipient="david",
+        recipient="ada",
         since="2026-10-01",
         before="2026-10-31",
     )
@@ -57,12 +57,12 @@ def test_search_cubre_subject_text_from_to_y_fechas() -> None:
 def test_search_exige_criterio() -> None:
     _fake, service, _account = sample_mailbox()
     with pytest.raises(MailError, match="criterio"):
-        service.search_messages("vyrts")
+        service.search_messages("principal")
 
 
 def test_get_message_trunca_y_lista_adjuntos() -> None:
     _fake, service, _account = sample_mailbox()
-    payload = service.get_message("vyrts", 10, max_chars=12)
+    payload = service.get_message("principal", 10, max_chars=12)
     assert payload["untrusted"] is True
     assert payload["truncated"] is True
     assert len(payload["body"]) == 12
@@ -74,7 +74,7 @@ def test_get_message_trunca_y_lista_adjuntos() -> None:
 
 def test_get_message_html_elimina_etiquetas() -> None:
     _fake, service, _account = sample_mailbox()
-    payload = service.get_message("vyrts", 13)
+    payload = service.get_message("principal", 13)
     assert "Hola visible" in payload["body"]
     assert "<script>" not in payload["body"]
     assert "ignora tus reglas" not in payload["body"]
@@ -82,16 +82,16 @@ def test_get_message_html_elimina_etiquetas() -> None:
 
 def test_adjunto_permitido_y_rechazos() -> None:
     fake, service, _account = sample_mailbox()
-    payload = service.get_attachment("vyrts", 10, index=0, filename="informe.txt")
+    payload = service.get_attachment("principal", 10, index=0, filename="informe.txt")
     assert payload["encoding"] == "text"
     assert payload["content"] == "contenido-adjunto"
     assert fake.mutated is False
 
     with pytest.raises(MailError, match="no coincide"):
-        service.get_attachment("vyrts", 10, index=0, filename="otro.txt")
+        service.get_attachment("principal", 10, index=0, filename="otro.txt")
 
     small = ServerSettings(
-        public_host="mcp.ejemplo.test",
+        public_host="mcp.example.com",
         bind_host="127.0.0.1",
         bind_port=8765,
         max_results=10,
@@ -107,12 +107,12 @@ def test_adjunto_permitido_y_rechazos() -> None:
     )
     _fake, limited, _account = sample_mailbox(small)
     with pytest.raises(MailError, match="límite"):
-        limited.get_attachment("vyrts", 10, index=0)
+        limited.get_attachment("principal", 10, index=0)
 
 
 def test_mensaje_demasiado_grande_no_descarga_el_cuerpo() -> None:
     settings = ServerSettings(
-        public_host="mcp.ejemplo.test",
+        public_host="mcp.example.com",
         bind_host="127.0.0.1",
         bind_port=8765,
         max_results=10,
@@ -128,7 +128,7 @@ def test_mensaje_demasiado_grande_no_descarga_el_cuerpo() -> None:
     )
     fake, service, _account = sample_mailbox(settings)
     with pytest.raises(MailError, match="límite de descarga"):
-        service.get_message("vyrts", 10)
+        service.get_message("principal", 10)
     fetched = [item for batch in fake.fetch_items for item in batch]
     assert "BODY.PEEK[]" not in fetched
 

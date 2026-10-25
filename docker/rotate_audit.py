@@ -25,7 +25,7 @@ def rotate_once(path: Path, max_bytes: int, keep: int) -> bool:
 
 
 def main() -> None:
-    path = Path(os.environ.get("MCP_AUDIT_LOG", "/var/log/vyr-mail-mcp/audit.jsonl"))
+    path = Path(os.environ.get("MCP_AUDIT_LOG", "/var/log/mcp-correo/audit.jsonl"))
     max_bytes = int(os.environ.get("MCP_AUDIT_MAX_BYTES", "10485760"))
     keep = int(os.environ.get("MCP_AUDIT_KEEP", "12"))
     interval = int(os.environ.get("MCP_AUDIT_ROTATE_SECONDS", "3600"))

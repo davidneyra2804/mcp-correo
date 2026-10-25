@@ -5,7 +5,7 @@ from tests.fakes import sample_mailbox
 
 def test_find_unanswered_cruza_enviados() -> None:
     _fake, service, _account = sample_mailbox()
-    payload = service.find_unanswered("vyrts", since="2026-10-01")
+    payload = service.find_unanswered("principal", since="2026-10-01")
     uids = [item["uid"] for item in payload["messages"]]
     assert 10 in uids
     assert 13 in uids
@@ -26,18 +26,18 @@ def test_find_unanswered_sin_carpeta_enviados() -> None:
         password=account.password,
         sent_folder="Sent",
     )
-    service.accounts["vyrts"] = renamed
-    payload = service.find_unanswered("vyrts")
+    service.accounts["principal"] = renamed
+    payload = service.find_unanswered("principal")
     assert payload["sent_crosscheck"] is False
     assert 12 in [item["uid"] for item in payload["messages"]]
 
 
 def test_list_threads_agrupa_por_references() -> None:
     _fake, service, _account = sample_mailbox()
-    payload = service.list_threads("vyrts", limit=20)
+    payload = service.list_threads("principal", limit=20)
     groups = {
         thread["root"]: [item["uid"] for item in thread["messages"]]
         for thread in payload["threads"]
     }
-    assert groups["<presupuesto@ejemplo.test>"] == [10, 11]
+    assert groups["<presupuesto@example.com>"] == [10, 11]
     assert payload["threading"] == "references"

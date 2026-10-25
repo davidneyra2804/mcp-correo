@@ -48,9 +48,9 @@ def test_ninguna_tool_cambia_flags(tmp_path: Path) -> None:
 
     calls = {
         "list_accounts": {},
-        "list_folders": {"account": "vyrts"},
+        "list_folders": {"account": "principal"},
         "list_messages": {
-            "account": "vyrts",
+            "account": "principal",
             "folder": "INBOX",
             "unseen": True,
             "since": "2026-10-01",
@@ -58,18 +58,18 @@ def test_ninguna_tool_cambia_flags(tmp_path: Path) -> None:
             "limit": 10,
         },
         "search_messages": {
-            "account": "vyrts",
+            "account": "principal",
             "subject": "Presupuesto",
             "text": "presupuesto",
             "sender": "ana",
-            "recipient": "david",
+            "recipient": "ada",
             "since": "2026-10-01",
             "before": "2026-10-31",
         },
-        "get_message": {"account": "vyrts", "uid": 10, "folder": "INBOX"},
-        "get_attachment": {"account": "vyrts", "uid": 10, "index": 0},
-        "find_unanswered": {"account": "vyrts", "since": "2026-10-01"},
-        "list_threads": {"account": "vyrts", "limit": 20},
+        "get_message": {"account": "principal", "uid": 10, "folder": "INBOX"},
+        "get_attachment": {"account": "principal", "uid": 10, "index": 0},
+        "find_unanswered": {"account": "principal", "since": "2026-10-01"},
+        "list_threads": {"account": "principal", "limit": 20},
     }
     assert set(calls) == set(TOOL_NAMES)
 

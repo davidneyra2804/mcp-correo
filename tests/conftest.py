@@ -12,7 +12,7 @@ os.environ.setdefault(
     "token-de-prueba-no-real-0123456789abcdef",
 )
 os.environ.setdefault("MCP_CONFIG", str(ROOT / "accounts.example.toml"))
-os.environ.setdefault("MCP_AUDIT_LOG", "/tmp/vyr-mail-mcp-test-audit.jsonl")
-os.environ.setdefault("MAIL_VYRTS_PASSWORD", "clave-ficticia-vyrts")
-os.environ.setdefault("MAIL_CARBONIO_PASSWORD", "clave-ficticia-carbonio")
+os.environ.setdefault("MCP_AUDIT_LOG", "/tmp/mcp-correo-test-audit.jsonl")
+os.environ.setdefault("MAIL_PRINCIPAL_PASSWORD", "clave-ficticia-principal")
+os.environ.setdefault("MAIL_ARCHIVO_PASSWORD", "clave-ficticia-archivo")
 os.environ.setdefault("MCP_BIND_HOST", "127.0.0.1")

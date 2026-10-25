@@ -66,7 +66,7 @@ class Rig:
             **options,  # type: ignore[arg-type]
         )
         service.settings = settings
-        service.accounts = {"vyrts": account}
+        service.accounts = {"principal": account}
         self.service = service
         self.account = account
         self.clock = Clock()
@@ -91,8 +91,8 @@ def _json(result: object) -> dict:
 
 def _send(**extra: object) -> dict:
     payload: dict = {
-        "account": "vyrts",
-        "to": ["ana@ejemplo.test"],
+        "account": "principal",
+        "to": ["ana@example.com"],
         "subject": "Hola",
         "body": "CUERPO-SECRETO-DE-ENVIO",
     }
@@ -117,7 +117,7 @@ def test_con_interruptores_apagados_la_tool_no_existe(tmp_path: Path) -> None:
         assert {tool.name for tool in listed} == set(TOOL_NAMES)
         for name in missing:
             with pytest.raises(ToolError, match="Unknown tool"):
-                await rig.mcp.call_tool(name, {"account": "vyrts"})
+                await rig.mcp.call_tool(name, {"account": "principal"})
 
     asyncio.run(run())
 
@@ -148,13 +148,13 @@ def test_lecturas_siguen_sin_cambiar_flags(tmp_path: Path) -> None:
     before = rig.fake.flag_snapshot()
     calls = {
         "list_accounts": {},
-        "list_folders": {"account": "vyrts"},
-        "list_messages": {"account": "vyrts", "unseen": True, "since": "2026-10-01"},
-        "search_messages": {"account": "vyrts", "subject": "Presupuesto"},
-        "get_message": {"account": "vyrts", "uid": 10},
-        "get_attachment": {"account": "vyrts", "uid": 10, "index": 0},
-        "find_unanswered": {"account": "vyrts"},
-        "list_threads": {"account": "vyrts"},
+        "list_folders": {"account": "principal"},
+        "list_messages": {"account": "principal", "unseen": True, "since": "2026-10-01"},
+        "search_messages": {"account": "principal", "subject": "Presupuesto"},
+        "get_message": {"account": "principal", "uid": 10},
+        "get_attachment": {"account": "principal", "uid": 10, "index": 0},
+        "find_unanswered": {"account": "principal"},
+        "list_threads": {"account": "principal"},
     }
 
     async def run() -> None:
@@ -202,36 +202,45 @@ def test_envio_exige_token_de_un_solo_uso(tmp_path: Path) -> None:
 
     async def run() -> None:
         with pytest.raises(ToolError, match="confirm_token"):
-            await rig.mcp.call_tool("send_message", {"account": "vyrts", "confirm_token": "   "})
+            await rig.mcp.call_tool(
+                "send_message",
+                {"account": "principal", "confirm_token": "   "},
+            )
         prepared = _json(
             await rig.mcp.call_tool(
                 "prepare_send",
                 _send(
-                    in_reply_to="<factura@ejemplo.test>",
-                    references="<factura@ejemplo.test>",
+                    in_reply_to="<factura@example.com>",
+                    references="<factura@example.com>",
                 ),
             )
         )
         token = prepared["confirm_token"]
-        assert prepared["from"] == "david.neyra@ejemplo.test"
+        assert prepared["from"] == "ada@example.com"
         assert "CUERPO-SECRETO-DE-ENVIO" in prepared["body_preview"]
         assert prepared["notice"]
         sent = _json(
-            await rig.mcp.call_tool("send_message", {"account": "vyrts", "confirm_token": token})
+            await rig.mcp.call_tool(
+                "send_message",
+                {"account": "principal", "confirm_token": token},
+            )
         )
         assert sent["sent"] is True
         assert sent["copy_in_sent"] is True
         with pytest.raises(ToolError, match="ya usado"):
-            await rig.mcp.call_tool("send_message", {"account": "vyrts", "confirm_token": token})
+            await rig.mcp.call_tool(
+                "send_message",
+                {"account": "principal", "confirm_token": token},
+            )
 
     asyncio.run(run())
     assert len(rig.smtp.sent) == 1
     assert rig.smtp.quit_called is True
     wire = message_from_bytes(rig.smtp.sent[0])
-    assert wire["To"] == "ana@ejemplo.test"
-    assert wire["In-Reply-To"] == "<factura@ejemplo.test>"
-    assert wire["References"] == "<factura@ejemplo.test>"
-    assert wire["From"] == "david.neyra@ejemplo.test"
+    assert wire["To"] == "ana@example.com"
+    assert wire["In-Reply-To"] == "<factura@example.com>"
+    assert wire["References"] == "<factura@example.com>"
+    assert wire["From"] == "ada@example.com"
     stored = rig.fake.folders["Sent"].messages[2]
     assert b"\\Seen" in stored.flags
     copied = message_from_bytes(stored.raw)
@@ -241,10 +250,10 @@ def test_envio_exige_token_de_un_solo_uso(tmp_path: Path) -> None:
 
 def test_el_token_caduca_y_no_cruza_cuenta_ni_operacion(tmp_path: Path) -> None:
     rig = Rig(tmp_path)
-    rig.service.accounts["carbonio"] = replace(
+    rig.service.accounts["archivo"] = replace(
         rig.account,
-        key="carbonio",
-        username="dneyra@carbonio.ejemplo.test",
+        key="archivo",
+        username="ada.archivo@example.com",
         allow_send=True,
         allow_delete=True,
     )
@@ -254,16 +263,25 @@ def test_el_token_caduca_y_no_cruza_cuenta_ni_operacion(tmp_path: Path) -> None:
         token = prepared["confirm_token"]
         rig.clock.now += 601
         with pytest.raises(ToolError, match="caducado"):
-            await rig.mcp.call_tool("send_message", {"account": "vyrts", "confirm_token": token})
+            await rig.mcp.call_tool(
+                "send_message",
+                {"account": "principal", "confirm_token": token},
+            )
         rig.clock.now -= 601
         fresh = _json(await rig.mcp.call_tool("prepare_send", _send(subject="Otro")))
         other = fresh["confirm_token"]
         with pytest.raises(ToolError, match="no corresponde"):
-            await rig.mcp.call_tool("send_message", {"account": "carbonio", "confirm_token": other})
+            await rig.mcp.call_tool("send_message", {"account": "archivo", "confirm_token": other})
         with pytest.raises(ToolError, match="no corresponde"):
-            await rig.mcp.call_tool("delete_message", {"account": "vyrts", "confirm_token": other})
+            await rig.mcp.call_tool(
+                "delete_message",
+                {"account": "principal", "confirm_token": other},
+            )
         sent = _json(
-            await rig.mcp.call_tool("send_message", {"account": "vyrts", "confirm_token": other})
+            await rig.mcp.call_tool(
+                "send_message",
+                {"account": "principal", "confirm_token": other},
+            )
         )
         assert sent["sent"] is True
 
@@ -278,7 +296,7 @@ def test_borrado_va_a_la_papelera_y_el_definitivo_es_aparte(tmp_path: Path) -> N
     async def run() -> None:
         prepared = _json(
             await rig.mcp.call_tool(
-                "prepare_delete", {"account": "vyrts", "uids": [10], "folder": "INBOX"}
+                "prepare_delete", {"account": "principal", "uids": [10], "folder": "INBOX"}
             )
         )
         assert prepared["permanent"] is False
@@ -289,7 +307,7 @@ def test_borrado_va_a_la_papelera_y_el_definitivo_es_aparte(tmp_path: Path) -> N
         deleted = _json(
             await rig.mcp.call_tool(
                 "delete_message",
-                {"account": "vyrts", "confirm_token": prepared["confirm_token"]},
+                {"account": "principal", "confirm_token": prepared["confirm_token"]},
             )
         )
         assert deleted["permanent"] is False
@@ -297,7 +315,7 @@ def test_borrado_va_a_la_papelera_y_el_definitivo_es_aparte(tmp_path: Path) -> N
         with pytest.raises(ToolError, match="ya usado"):
             await rig.mcp.call_tool(
                 "delete_message",
-                {"account": "vyrts", "confirm_token": prepared["confirm_token"]},
+                {"account": "principal", "confirm_token": prepared["confirm_token"]},
             )
 
     asyncio.run(run())
@@ -314,14 +332,14 @@ def test_borrado_va_a_la_papelera_y_el_definitivo_es_aparte(tmp_path: Path) -> N
         prepared = _json(
             await rig.mcp.call_tool(
                 "prepare_delete",
-                {"account": "vyrts", "uids": [13], "permanent": True},
+                {"account": "principal", "uids": [13], "permanent": True},
             )
         )
         assert prepared["permanent"] is True
         assert prepared["trash_folder"] == ""
         await rig.mcp.call_tool(
             "delete_message",
-            {"account": "vyrts", "confirm_token": prepared["confirm_token"]},
+            {"account": "principal", "confirm_token": prepared["confirm_token"]},
         )
 
     asyncio.run(definitive())
@@ -339,16 +357,16 @@ def test_sin_papelera_no_hay_borrado_salvo_permanent(tmp_path: Path) -> None:
 
     async def run() -> None:
         with pytest.raises(ToolError, match="Papelera"):
-            await rig.mcp.call_tool("prepare_delete", {"account": "vyrts", "uids": [10]})
+            await rig.mcp.call_tool("prepare_delete", {"account": "principal", "uids": [10]})
         prepared = _json(
             await rig.mcp.call_tool(
                 "prepare_delete",
-                {"account": "vyrts", "uids": [10], "permanent": True},
+                {"account": "principal", "uids": [10], "permanent": True},
             )
         )
         await rig.mcp.call_tool(
             "delete_message",
-            {"account": "vyrts", "confirm_token": prepared["confirm_token"]},
+            {"account": "principal", "confirm_token": prepared["confirm_token"]},
         )
 
     asyncio.run(run())
@@ -367,11 +385,11 @@ def test_si_no_hay_move_copia_y_expunge_solo_esos_uid(tmp_path: Path) -> None:
 
     async def run() -> None:
         prepared = _json(
-            await rig.mcp.call_tool("prepare_delete", {"account": "vyrts", "uids": [10]})
+            await rig.mcp.call_tool("prepare_delete", {"account": "principal", "uids": [10]})
         )
         await rig.mcp.call_tool(
             "delete_message",
-            {"account": "vyrts", "confirm_token": prepared["confirm_token"]},
+            {"account": "principal", "confirm_token": prepared["confirm_token"]},
         )
 
     asyncio.run(run())
@@ -387,11 +405,13 @@ def test_marcar_leido_y_no_leido(tmp_path: Path) -> None:
     rig = Rig(tmp_path)
 
     async def run() -> None:
-        read = _json(await rig.mcp.call_tool("mark_read", {"account": "vyrts", "uids": [10, 13]}))
+        read = _json(
+            await rig.mcp.call_tool("mark_read", {"account": "principal", "uids": [10, 13]})
+        )
         assert read["action"] == "add"
         unread = _json(
             await rig.mcp.call_tool(
-                "mark_unread", {"account": "vyrts", "uids": [11], "folder": "INBOX"}
+                "mark_unread", {"account": "principal", "uids": [11], "folder": "INBOX"}
             )
         )
         assert unread["action"] == "remove"
@@ -434,7 +454,7 @@ def test_auditoria_de_escritura_sin_cuerpo_ni_token(tmp_path: Path) -> None:
         )
         await rig.mcp.call_tool(
             "send_message",
-            {"account": "vyrts", "confirm_token": prepared["confirm_token"]},
+            {"account": "principal", "confirm_token": prepared["confirm_token"]},
         )
         return prepared["confirm_token"]
 
@@ -460,14 +480,14 @@ def test_limites_cupo_dominio_y_adjunto(tmp_path: Path) -> None:
         max_recipients=2,
         max_sends_per_day=1,
         max_attachment_bytes=4,
-        allowed_recipient_domains=("ejemplo.test",),
+        allowed_recipient_domains=("example.com",),
     )
 
     async def run() -> None:
         with pytest.raises(ToolError, match="destinatarios"):
             await rig.mcp.call_tool(
                 "prepare_send",
-                _send(to=["ana@ejemplo.test", "luis@ejemplo.test", "bea@ejemplo.test"]),
+                _send(to=["ana@example.com", "luis@example.com", "bea@example.com"]),
             )
         with pytest.raises(ToolError, match="dominio"):
             await rig.mcp.call_tool("prepare_send", _send(to=["ana@otro.test"]))
@@ -488,22 +508,22 @@ def test_limites_cupo_dominio_y_adjunto(tmp_path: Path) -> None:
         first = _json(await rig.mcp.call_tool("prepare_send", _send(subject="Uno")))
         second = _json(await rig.mcp.call_tool("prepare_send", _send(subject="Dos")))
         await rig.mcp.call_tool(
-            "send_message", {"account": "vyrts", "confirm_token": first["confirm_token"]}
+            "send_message", {"account": "principal", "confirm_token": first["confirm_token"]}
         )
         with pytest.raises(ToolError, match="Tope diario"):
             await rig.mcp.call_tool(
-                "send_message", {"account": "vyrts", "confirm_token": second["confirm_token"]}
+                "send_message", {"account": "principal", "confirm_token": second["confirm_token"]}
             )
         with pytest.raises(ToolError, match="ya usado"):
             await rig.mcp.call_tool(
-                "send_message", {"account": "vyrts", "confirm_token": second["confirm_token"]}
+                "send_message", {"account": "principal", "confirm_token": second["confirm_token"]}
             )
         with pytest.raises(ToolError, match="Tope diario"):
             await rig.mcp.call_tool("prepare_send", _send(subject="Tres"))
 
     asyncio.run(run())
     assert len(rig.smtp.sent) == 1
-    assert rig.writer.quota.remaining("vyrts") == 0
+    assert rig.writer.quota.remaining("principal") == 0
 
 
 def test_fallo_smtp_gasta_el_token_y_no_el_cupo(tmp_path: Path) -> None:
@@ -515,21 +535,21 @@ def test_fallo_smtp_gasta_el_token_y_no_el_cupo(tmp_path: Path) -> None:
         with pytest.raises(ToolError, match="SMTP") as caught:
             await rig.mcp.call_tool(
                 "send_message",
-                {"account": "vyrts", "confirm_token": prepared["confirm_token"]},
+                {"account": "principal", "confirm_token": prepared["confirm_token"]},
             )
         assert "rechazo de prueba" not in str(caught.value)
         assert rig.account.password not in str(caught.value)
         with pytest.raises(ToolError, match="ya usado"):
             await rig.mcp.call_tool(
                 "send_message",
-                {"account": "vyrts", "confirm_token": prepared["confirm_token"]},
+                {"account": "principal", "confirm_token": prepared["confirm_token"]},
             )
-        assert rig.writer.quota.remaining("vyrts") == 1
+        assert rig.writer.quota.remaining("principal") == 1
         rig.smtp.fail_send = False
         again = _json(await rig.mcp.call_tool("prepare_send", _send(subject="Reintento")))
         sent = _json(
             await rig.mcp.call_tool(
-                "send_message", {"account": "vyrts", "confirm_token": again["confirm_token"]}
+                "send_message", {"account": "principal", "confirm_token": again["confirm_token"]}
             )
         )
         assert sent["sent"] is True
@@ -541,14 +561,14 @@ def test_fallo_smtp_gasta_el_token_y_no_el_cupo(tmp_path: Path) -> None:
 def test_si_falla_la_copia_en_enviados_el_correo_sigue_enviado(tmp_path: Path) -> None:
     rig = Rig(tmp_path)
     rig.account = replace(rig.account, sent_folder="NoExiste")
-    rig.service.accounts["vyrts"] = rig.account
+    rig.service.accounts["principal"] = rig.account
 
     async def run() -> None:
         prepared = _json(await rig.mcp.call_tool("prepare_send", _send()))
         sent = _json(
             await rig.mcp.call_tool(
                 "send_message",
-                {"account": "vyrts", "confirm_token": prepared["confirm_token"]},
+                {"account": "principal", "confirm_token": prepared["confirm_token"]},
             )
         )
         assert sent["sent"] is True
@@ -564,7 +584,7 @@ def test_la_cuenta_sin_permiso_no_opera(tmp_path: Path) -> None:
     rig.service.accounts["otra"] = replace(
         rig.account,
         key="otra",
-        username="otra@ejemplo.test",
+        username="otra@example.com",
         allow_send=True,
         allow_delete=True,
         allow_mark=True,
@@ -583,9 +603,9 @@ def test_la_cuenta_sin_permiso_no_opera(tmp_path: Path) -> None:
         with pytest.raises(ToolError, match="desactivado"):
             await rig.mcp.call_tool("prepare_send", _send())
         with pytest.raises(ToolError, match="desactivado"):
-            await rig.mcp.call_tool("mark_read", {"account": "vyrts", "uids": [10]})
+            await rig.mcp.call_tool("mark_read", {"account": "principal", "uids": [10]})
         with pytest.raises(ToolError, match="desactivado"):
-            await rig.mcp.call_tool("prepare_delete", {"account": "vyrts", "uids": [10]})
+            await rig.mcp.call_tool("prepare_delete", {"account": "principal", "uids": [10]})
 
     asyncio.run(run())
     assert rig.fake.mutated is False
@@ -606,8 +626,8 @@ def test_borrador_hace_append_sin_abrir_en_escritura(tmp_path: Path) -> None:
             await rig.mcp.call_tool(
                 "create_draft",
                 {
-                    "account": "vyrts",
-                    "to": ["ana@ejemplo.test"],
+                    "account": "principal",
+                    "to": ["ana@example.com"],
                     "subject": "Borrador",
                     "body": "texto que no debe auditarse",
                 },
@@ -619,14 +639,14 @@ def test_borrador_hace_append_sin_abrir_en_escritura(tmp_path: Path) -> None:
             await rig.mcp.call_tool(
                 "create_draft",
                 {
-                    "account": "vyrts",
+                    "account": "principal",
                     "to": [
-                        "a@ejemplo.test",
-                        "b@ejemplo.test",
-                        "c@ejemplo.test",
-                        "d@ejemplo.test",
-                        "e@ejemplo.test",
-                        "f@ejemplo.test",
+                        "a@example.com",
+                        "b@example.com",
+                        "c@example.com",
+                        "d@example.com",
+                        "e@example.com",
+                        "f@example.com",
                     ],
                     "subject": "Demasiados",
                     "body": "x",
@@ -648,7 +668,7 @@ def test_demasiados_mensajes_en_un_borrado(tmp_path: Path) -> None:
 
     async def run() -> None:
         with pytest.raises(ToolError, match="máximo"):
-            await rig.mcp.call_tool("prepare_delete", {"account": "vyrts", "uids": [10, 13]})
+            await rig.mcp.call_tool("prepare_delete", {"account": "principal", "uids": [10, 13]})
 
     asyncio.run(run())
     assert 10 in rig.fake.folders["INBOX"].messages
@@ -674,17 +694,17 @@ def test_smtp_ssl_y_starttls_no_abren_red(monkeypatch: pytest.MonkeyPatch) -> No
         smtplib, "SMTP", lambda host, port, timeout=None: Dummy(host, port, timeout)
     )
     account = Account(
-        key="vyrts",
+        key="principal",
         label="Prueba",
-        imap_host="mail.ejemplo.test",
+        imap_host="mail.example.com",
         imap_port=993,
-        username="david.neyra@ejemplo.test",
+        username="ada@example.com",
         password="clave-de-prueba-no-real",
-        smtp_host="mail.ejemplo.test",
+        smtp_host="mail.example.com",
         smtp_port=465,
     )
     settings = ServerSettings(
-        public_host="mcp.ejemplo.test",
+        public_host="mcp.example.com",
         bind_host="127.0.0.1",
         bind_port=8765,
         max_results=10,
@@ -701,10 +721,10 @@ def test_smtp_ssl_y_starttls_no_abren_red(monkeypatch: pytest.MonkeyPatch) -> No
         smtp_timeout=12,
     )
     open_smtp(account, settings)
-    assert seen["endpoint"] == ("mail.ejemplo.test", 465, 12)
+    assert seen["endpoint"] == ("mail.example.com", 465, 12)
     assert "starttls" not in seen
     open_smtp(replace(account, smtp_port=587, smtp_security="starttls"), settings)
-    assert seen["endpoint"] == ("mail.ejemplo.test", 587, 12)
+    assert seen["endpoint"] == ("mail.example.com", 587, 12)
     assert seen["starttls"] is True
     assert seen["ehlo"] == 2
 

@@ -96,7 +96,7 @@ def test_host_no_permitido(client: TestClient) -> None:
         headers={
             **JSON_HEADERS,
             "Authorization": f"Bearer {TOKEN}",
-            "Host": "evil.ejemplo.test",
+            "Host": "evil.example.com",
         },
     )
     assert response.status_code == 421
@@ -110,7 +110,7 @@ def test_origin_no_permitido(client: TestClient) -> None:
         headers={
             **JSON_HEADERS,
             "Authorization": f"Bearer {TOKEN}",
-            "Origin": "https://evil.ejemplo.test",
+            "Origin": "https://evil.example.com",
         },
     )
     assert response.status_code == 403

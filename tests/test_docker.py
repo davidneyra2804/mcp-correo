@@ -32,7 +32,7 @@ def test_el_fichero_montado_tiene_prioridad(
 
 def test_genera_toml_desde_base64(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     entry = _load("entrypoint", "docker/entrypoint.py")
-    text = '[server]\npublic_host = "mcp.ejemplo.test"\n'
+    text = '[server]\npublic_host = "mcp.example.com"\n'
     monkeypatch.setenv("MCP_CONFIG", str(tmp_path / "no-existe.toml"))
     monkeypatch.setenv("MCP_ACCOUNTS_TOML_B64", base64.b64encode(text.encode()).decode())
     monkeypatch.setenv("MCP_GENERATED_CONFIG", str(tmp_path / "generado.toml"))
@@ -50,7 +50,7 @@ def test_rechaza_una_contraseña_en_el_texto(
     monkeypatch.setenv("MCP_ACCOUNTS_TOML_B64", "")
     monkeypatch.setenv(
         "MCP_ACCOUNTS_TOML",
-        '[accounts.vyrts]\npassword = "no-va-aqui"\npassword_env = "MAIL_VYRTS_PASSWORD"\n',
+        '[accounts.principal]\npassword = "no-va-aqui"\npassword_env = "MAIL_PRINCIPAL_PASSWORD"\n',
     )
     with pytest.raises(SystemExit, match="contraseña"):
         entry.resolve_accounts_file()

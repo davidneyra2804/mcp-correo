@@ -5,7 +5,7 @@
 
 services:
   mcp:
-    image: ${MCP_IMAGE:-vyr-mail-mcp:local}
+    image: ${MCP_IMAGE:-mcp-correo:local}
     build:
       context: .
       dockerfile: Dockerfile
@@ -27,19 +27,19 @@ services:
       MCP_BIND_PORT: "8765"
       MCP_ALLOW_NONLOCAL_BIND: "1"
       MCP_CONFIG: /config/accounts.toml
-      MCP_AUDIT_LOG: /var/log/vyr-mail-mcp/audit.jsonl
+      MCP_AUDIT_LOG: /var/log/mcp-correo/audit.jsonl
       MCP_PUBLIC_HOST: ${MCP_PUBLIC_HOST:-}
       MCP_ALLOWED_HOSTS: ${MCP_ALLOWED_HOSTS:-}
       MCP_ALLOWED_ORIGINS: ${MCP_ALLOWED_ORIGINS:-}
       MCP_ACCOUNTS_TOML_B64: ${MCP_ACCOUNTS_TOML_B64:-}
       MCP_ACCOUNTS_TOML: ${MCP_ACCOUNTS_TOML:-}
       # Cada password_env del TOML tiene que estar aquí. Añade otra línea si hay más cuentas.
-      MAIL_VYRTS_PASSWORD: ${MAIL_VYRTS_PASSWORD:-}
-      MAIL_CARBONIO_PASSWORD: ${MAIL_CARBONIO_PASSWORD:-}
+      MAIL_PRINCIPAL_PASSWORD: ${MAIL_PRINCIPAL_PASSWORD:-}
+      MAIL_ARCHIVO_PASSWORD: ${MAIL_ARCHIVO_PASSWORD:-}
     ports:
       - "${MCP_PUBLISH_BIND:-127.0.0.1}:${MCP_PUBLISH_PORT:-8765}:8765"
     volumes:
-      - audit:/var/log/vyr-mail-mcp
+      - audit:/var/log/mcp-correo
       # accounts.toml sin contraseñas. Descomenta una de las dos formas:
       # - type: bind
       #   source: ./accounts.toml
@@ -52,11 +52,11 @@ services:
     # Etiquetas Traefik, opcionales. Sustituye el dominio y la red del proxy.
     # labels:
     #   - "traefik.enable=true"
-    #   - "traefik.http.routers.vyr-mail.rule=Host(`mcp.ejemplo.test`)"
-    #   - "traefik.http.routers.vyr-mail.entrypoints=websecure"
-    #   - "traefik.http.routers.vyr-mail.tls=true"
-    #   - "traefik.http.routers.vyr-mail.tls.certresolver=letsencrypt"
-    #   - "traefik.http.services.vyr-mail.loadbalancer.server.port=8765"
+    #   - "traefik.http.routers.mcp-correo.rule=Host(`mcp.example.com`)"
+    #   - "traefik.http.routers.mcp-correo.entrypoints=websecure"
+    #   - "traefik.http.routers.mcp-correo.tls=true"
+    #   - "traefik.http.routers.mcp-correo.tls.certresolver=letsencrypt"
+    #   - "traefik.http.services.mcp-correo.loadbalancer.server.port=8765"
     #   - "traefik.docker.network=proxy"
     # networks:
     #   - default
@@ -75,7 +75,7 @@ services:
           memory: 64M
 
   audit-rotate:
-    image: ${MCP_IMAGE:-vyr-mail-mcp:local}
+    image: ${MCP_IMAGE:-mcp-correo:local}
     build:
       context: .
       dockerfile: Dockerfile
@@ -92,12 +92,12 @@ services:
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=16m
     environment:
-      MCP_AUDIT_LOG: /var/log/vyr-mail-mcp/audit.jsonl
+      MCP_AUDIT_LOG: /var/log/mcp-correo/audit.jsonl
       MCP_AUDIT_MAX_BYTES: ${MCP_AUDIT_MAX_BYTES:-10485760}
       MCP_AUDIT_KEEP: ${MCP_AUDIT_KEEP:-12}
       MCP_AUDIT_ROTATE_SECONDS: ${MCP_AUDIT_ROTATE_SECONDS:-3600}
     volumes:
-      - audit:/var/log/vyr-mail-mcp
+      - audit:/var/log/mcp-correo
     deploy:
       resources:
         limits:
