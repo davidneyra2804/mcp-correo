@@ -167,6 +167,9 @@ def test_repr_de_la_cuenta_oculta_el_secreto() -> None:
 def test_el_proceso_no_arranca_sin_token() -> None:
     env = os.environ.copy()
     env.pop("MCP_BEARER_TOKEN", None)
+    # PYTHONSAFEPATH (Actions) no añade el cwd. PYTHONPATH sí entra en sys.path.
+    previous = env.get("PYTHONPATH")
+    env["PYTHONPATH"] = str(ROOT) if not previous else os.pathsep.join((str(ROOT), previous))
     import subprocess
     import sys
 
