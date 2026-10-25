@@ -96,6 +96,11 @@ def test_el_compose_publica_solo_loopback_y_no_lleva_secretos() -> None:
     assert "profiles:" in text
     assert "caddy:2-alpine" in text
     assert "traefik.enable" in text
+    assert "mcp-correo:local" in text
+    assert "pull_policy: ${MCP_PULL_POLICY:-build}" in text
+    assert "pull_policy: ${MCP_PULL_POLICY:-never}" in text
+    assert text.count("dockerfile: Dockerfile") == 1
+    assert "depends_on:" in text
     assert "USER mcp" in dockerfile
     assert "HEALTHCHECK" in dockerfile
     assert "python:3.12-slim" in dockerfile

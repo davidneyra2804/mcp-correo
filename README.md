@@ -102,7 +102,7 @@ export MAIL_ARCHIVO_PASSWORD='contraseña-ficticia-archivo'
 docker compose -f docker-compose.yml -f docker-compose.ficticio.yml up --build
 ```
 
-`docker-compose.ficticio.yml` solo monta `accounts.example.toml`. No lo uses con un buzón real. El despliegue en un servidor está en [docs/despliegue-portainer.md](docs/despliegue-portainer.md) y en [docs/despliegue-systemd.md](docs/despliegue-systemd.md).
+`docker-compose.ficticio.yml` solo monta `accounts.example.toml`. No lo uses con un buzón real. Sin `MCP_IMAGE`, la imagen construida se llama `mcp-correo:local` y no está en ningún registro. Portainer igual anuncia un `docker compose pull`: no falla, porque esa imagen local no se descarga. El despliegue está en [docs/despliegue-portainer.md](docs/despliegue-portainer.md) y en [docs/despliegue-systemd.md](docs/despliegue-systemd.md).
 
 ## Configuración
 

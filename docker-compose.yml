@@ -1,4 +1,7 @@
-# Stack de Portainer (Git repository, build) o imagen ya publicada (MCP_IMAGE).
+# Stack de Portainer desde Git. La imagen local se llama mcp-correo:local
+# y no está en un registro. Portainer ejecuta `docker compose pull` antes
+# de `up`: pull_policy build/never hace que ese pull no la busque.
+# Imagen ya publicada: MCP_IMAGE=registro/mcp-correo:1 y MCP_PULL_POLICY=always.
 # El contenedor escucha en 0.0.0.0:8765. El puerto del host sale solo en
 # 127.0.0.1. Hace falta Bearer y, hacia fuera, TLS en un proxy.
 # No pongas secretos en este archivo: Portainer los rellena como ${VAR}.
@@ -6,6 +9,7 @@
 services:
   mcp:
     image: ${MCP_IMAGE:-mcp-correo:local}
+    pull_policy: ${MCP_PULL_POLICY:-build}
     build:
       context: .
       dockerfile: Dockerfile
@@ -76,9 +80,11 @@ services:
 
   audit-rotate:
     image: ${MCP_IMAGE:-mcp-correo:local}
-    build:
-      context: .
-      dockerfile: Dockerfile
+    # Misma imagen que mcp. Sin build propio: se construye una sola vez.
+    # never: el pull de Portainer no busca mcp-correo:local en un registro.
+    pull_policy: ${MCP_PULL_POLICY:-never}
+    depends_on:
+      - mcp
     entrypoint: ["python", "/app/docker/rotate_audit.py"]
     command: ["--loop"]
     restart: unless-stopped
@@ -106,8 +112,10 @@ services:
   # Perfil desactivable: docker compose --profile tls up
   # o en Portainer, marca el perfil "tls" si el formulario lo ofrece.
   # Si no, deja este servicio sin arrancar y usa el proxy que ya tengas.
+  # Imagen pública. El pull del stack, sin el perfil tls, no la incluye.
   caddy:
     image: caddy:2-alpine
+    pull_policy: missing
     profiles: ["tls"]
     restart: unless-stopped
     ports:
