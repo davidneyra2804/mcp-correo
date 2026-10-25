@@ -4,7 +4,11 @@ Stack Docker para quien administra el servidor. Los nombres de host de esta pág
 
 La imagen es multi-stage, `python:3.12-slim`, usuario `mcp` (uid 10001), sin secretos. Un solo worker de uvicorn: los tokens de confirmación y el cupo diario viven en memoria. El `HEALTHCHECK` llama a `GET /health`.
 
-`docker-compose.yml` sirve de dos maneras. Portainer clona el Git y construye con `build:`. Si más adelante publicas la imagen, define `MCP_IMAGE` y comenta el bloque `build`.
+`docker-compose.yml` sirve de dos maneras. Desde Git no hace falta publicar nada: la imagen local se llama `mcp-correo:local`. Solo `mcp` tiene `build:`; `audit-rotate` usa esa misma imagen (`pull_policy: never` y `depends_on: mcp`), así que no se construye dos veces. El contexto de build es el propio repositorio: el Dockerfile no copia nada de fuera.
+
+Portainer ejecuta `docker compose pull` y después `up`. El mensaje del despliegue puede decir «pull». Ese pull no busca `mcp-correo:local` en un registro, porque `mcp` lleva `pull_policy: build` y `audit-rotate` lleva `never`. Compose construye `mcp-correo:local` al levantar el servicio. Si el pull fallara con «pull access denied for mcp-correo», la política no está aplicada (hace falta este compose, no uno que deje la imagen sin `pull_policy`).
+
+Para una imagen ya publicada, define `MCP_IMAGE` con su nombre completo y `MCP_PULL_POLICY=always`. Las dos hacen falta: sin la segunda, Compose seguiría construyendo en local y no descargaría la del registro.
 
 El contenedor escucha en `0.0.0.0:8765` porque el proxy llega por la red de Docker. El compose publica ese puerto solo en `127.0.0.1:8765`. `/mcp` exige Bearer. Hacia Internet hace falta TLS. No abras `8765` en `0.0.0.0`.
 
@@ -27,7 +31,8 @@ En **Environment variables** define los nombres. Los valores no se documentan aq
 | `MCP_ALLOWED_HOSTS` | no | Lista separada por comas, si la generada no basta. |
 | `MCP_ALLOWED_ORIGINS` | no | Igual, para orígenes del navegador. |
 | `MCP_ACCOUNTS_TOML_B64` | si no montas el fichero | TOML en base64, una sola línea, sin contraseñas. |
-| `MCP_IMAGE` | no | Imagen ya publicada. Si la usas, comenta `build:`. |
+| `MCP_IMAGE` | no | Imagen ya publicada. Junto con `MCP_PULL_POLICY=always`. Si no se define, la imagen es `mcp-correo:local`. |
+| `MCP_PULL_POLICY` | no | Vacía: `build` en `mcp` y `never` en `audit-rotate`. `always` solo si `MCP_IMAGE` apunta a un registro. |
 | `MCP_PUBLISH_BIND` / `MCP_PUBLISH_PORT` | no | Por defecto `127.0.0.1` y `8765`. |
 | `MCP_AUDIT_MAX_BYTES` / `MCP_AUDIT_KEEP` / `MCP_AUDIT_ROTATE_SECONDS` | no | Rotación: 10 MiB, 12 copias, cada hora. |
 
