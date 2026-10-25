@@ -1,0 +1,148 @@
+# Stack de Portainer (Git repository, build) o imagen ya publicada (MCP_IMAGE).
+# El contenedor escucha en 0.0.0.0:8765. El puerto del host sale solo en
+# 127.0.0.1. Hace falta Bearer y, hacia fuera, TLS en un proxy.
+# No pongas secretos en este archivo: Portainer los rellena como ${VAR}.
+
+services:
+  mcp:
+    image: ${MCP_IMAGE:-mcp-correo:local}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    init: true
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 512m
+    memswap_limit: 512m
+    pids_limit: 128
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    environment:
+      MCP_BEARER_TOKEN: ${MCP_BEARER_TOKEN:?Define MCP_BEARER_TOKEN en las variables del stack}
+      MCP_BIND_HOST: 0.0.0.0
+      MCP_BIND_PORT: "8765"
+      MCP_ALLOW_NONLOCAL_BIND: "1"
+      MCP_CONFIG: /config/accounts.toml
+      MCP_AUDIT_LOG: /var/log/mcp-correo/audit.jsonl
+      MCP_PUBLIC_HOST: ${MCP_PUBLIC_HOST:-}
+      MCP_ALLOWED_HOSTS: ${MCP_ALLOWED_HOSTS:-}
+      MCP_ALLOWED_ORIGINS: ${MCP_ALLOWED_ORIGINS:-}
+      MCP_ACCOUNTS_TOML_B64: ${MCP_ACCOUNTS_TOML_B64:-}
+      MCP_ACCOUNTS_TOML: ${MCP_ACCOUNTS_TOML:-}
+      # Cada password_env del TOML tiene que estar aquí. Añade otra línea si hay más cuentas.
+      MAIL_PRINCIPAL_PASSWORD: ${MAIL_PRINCIPAL_PASSWORD:-}
+      MAIL_ARCHIVO_PASSWORD: ${MAIL_ARCHIVO_PASSWORD:-}
+    ports:
+      - "${MCP_PUBLISH_BIND:-127.0.0.1}:${MCP_PUBLISH_PORT:-8765}:8765"
+    volumes:
+      - audit:/var/log/mcp-correo
+      # accounts.toml sin contraseñas. Descomenta una de las dos formas:
+      # - type: bind
+      #   source: ./accounts.toml
+      #   target: /config/accounts.toml
+      #   read_only: true
+    # configs:
+    #   - source: accounts
+    #     target: /config/accounts.toml
+    #     mode: 0440
+    # Etiquetas Traefik, opcionales. Sustituye el dominio y la red del proxy.
+    # labels:
+    #   - "traefik.enable=true"
+    #   - "traefik.http.routers.mcp-correo.rule=Host(`mcp.example.com`)"
+    #   - "traefik.http.routers.mcp-correo.entrypoints=websecure"
+    #   - "traefik.http.routers.mcp-correo.tls=true"
+    #   - "traefik.http.routers.mcp-correo.tls.certresolver=letsencrypt"
+    #   - "traefik.http.services.mcp-correo.loadbalancer.server.port=8765"
+    #   - "traefik.docker.network=proxy"
+    # networks:
+    #   - default
+    #   - proxy
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          pids: 128
+        reservations:
+          memory: 64M
+
+  audit-rotate:
+    image: ${MCP_IMAGE:-mcp-correo:local}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    entrypoint: ["python", "/app/docker/rotate_audit.py"]
+    command: ["--loop"]
+    restart: unless-stopped
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 64m
+    memswap_limit: 64m
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    environment:
+      MCP_AUDIT_LOG: /var/log/mcp-correo/audit.jsonl
+      MCP_AUDIT_MAX_BYTES: ${MCP_AUDIT_MAX_BYTES:-10485760}
+      MCP_AUDIT_KEEP: ${MCP_AUDIT_KEEP:-12}
+      MCP_AUDIT_ROTATE_SECONDS: ${MCP_AUDIT_ROTATE_SECONDS:-3600}
+    volumes:
+      - audit:/var/log/mcp-correo
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+
+  # Perfil desactivable: docker compose --profile tls up
+  # o en Portainer, marca el perfil "tls" si el formulario lo ofrece.
+  # Si no, deja este servicio sin arrancar y usa el proxy que ya tengas.
+  caddy:
+    image: caddy:2-alpine
+    profiles: ["tls"]
+    restart: unless-stopped
+    ports:
+      - "${CADDY_HTTP_BIND:-0.0.0.0}:80:80"
+      - "${CADDY_HTTPS_BIND:-0.0.0.0}:443:443"
+    environment:
+      MCP_PUBLIC_HOST: ${MCP_PUBLIC_HOST:-localhost}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - mcp
+    # Sin cap_drop: Caddy tiene que abrir 80 y 443. El proceso MCP sí va sin capacidades.
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 128m
+    memswap_limit: 128m
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+volumes:
+  audit:
+  caddy-data:
+  caddy-config:
+
+# Red externa de un Traefik ya creado. Descomenta junto con las etiquetas.
+# networks:
+#   proxy:
+#     external: true
+#     name: proxy
+
+# Config de Docker (Compose / Swarm). El fichero no lleva contraseñas.
+# configs:
+#   accounts:
+#     file: ./accounts.toml

@@ -1,0 +1,9 @@
+# Proxy opcional del perfil "tls". Por defecto el certificado es interno,
+# así el stack no pide un certificado público al arrancar.
+# Para el dominio real, borra la línea "tls internal" y define MCP_PUBLIC_HOST
+# con un nombre que resuelva a este servidor (Caddy usará Let's Encrypt).
+
+{$MCP_PUBLIC_HOST:localhost} {
+	tls internal
+	reverse_proxy mcp:8765
+}

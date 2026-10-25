@@ -1,0 +1,7 @@
+# Solo para probar el stack con accounts.example.toml. No lo uses en Portainer
+# con datos reales y no pongas contraseñas en este archivo.
+
+services:
+  mcp:
+    volumes:
+      - ./accounts.example.toml:/config/accounts.toml:ro

@@ -1,0 +1,41 @@
+# /etc/systemd/system/mcp-correo.service
+# El proceso escucha solo en 127.0.0.1. nginx es quien publica HTTPS.
+# El despliegue con Portainer está en docker-compose.yml y no usa esta unidad.
+
+[Unit]
+Description=MCP de correo (lectura IMAP y escritura bajo confirmación)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mcpmail
+Group=mcpmail
+WorkingDirectory=/opt/mcp-correo
+EnvironmentFile=/etc/mcp-correo/env
+# --workers 1 es obligatorio: los tokens de confirmación y el tope diario
+# de envíos viven en la memoria de este proceso. Más workers los duplicarían.
+ExecStart=/opt/mcp-correo/.venv/bin/uvicorn server:app --host 127.0.0.1 --port 8765 --proxy-headers --forwarded-allow-ips=127.0.0.1 --workers 1
+Restart=on-failure
+RestartSec=5
+
+# Endurecimiento. Si el intérprete muriera con SIGSEGV al arrancar,
+# revisa MemoryDenyWriteExecute (algunas builds de CPython lo necesitan en no).
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+CapabilityBoundingSet=
+ReadWritePaths=/var/log/mcp-correo
+MemoryMax=512M
+
+[Install]
+WantedBy=multi-user.target
