@@ -1,15 +1,41 @@
-"""Carga de cuentas y límites. Las contraseñas solo entran por el entorno."""
+"""Carga de configuración. Las contraseñas solo entran por el entorno.
+
+Dos fuentes, con precedencia clara:
+
+1. **Variables de entorno** (fuente primaria). Cada clave de ``[server]``
+   tiene su variable ``MCP_*``. Las cuentas se declaran con ``MCP_ACCOUNTS``
+   y una variable por campo: ``MCP_ACCOUNT_<CLAVE>_<CAMPO>``.
+2. **``accounts.toml``** (fuente alternativa, para lo que ya lo use, como el
+   despliegue con systemd).
+
+La precedencia es entorno > TOML > default. Las cuentas vienen de una sola
+fuente: si ``MCP_ACCOUNTS`` existe, del entorno; si no, del TOML. Nunca se
+mezclan, porque una cuenta a medio configurar es peor que no tenerla.
+
+Todo valor mal escrito aborta el arranque. Un interruptor de escritura que
+no se puede interpretar no puede quedarse en "apagado" sin que nadie se
+entere.
+"""
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
+logger = logging.getLogger("mcp_correo.config")
+
 ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+ACCOUNT_KEY = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_]*$")
 MIN_TOKEN_LENGTH = 16
+
+#: Variable que enumera las cuentas configuradas por entorno.
+ACCOUNTS_LIST = "MCP_ACCOUNTS"
+#: Prefijo de las variables de una cuenta: MCP_ACCOUNT_<CLAVE>_<CAMPO>
+ACCOUNT_PREFIX = "MCP_ACCOUNT_"
 
 DEFAULT_ATTACHMENT_TYPES: tuple[str, ...] = (
     "text/plain",
@@ -26,24 +52,28 @@ DEFAULT_ATTACHMENT_TYPES: tuple[str, ...] = (
     "application/vnd.openxmlformats-officedocument.presentationml.presentation",
 )
 
-_ACCOUNT_KEYS = {
+#: Campos que admite una cuenta, en TOML y por entorno.
+_ACCOUNT_FIELDS: tuple[str, ...] = (
     "label",
     "imap_host",
     "imap_port",
     "imap_ssl",
     "smtp_host",
     "smtp_port",
+    "smtp_security",
     "username",
+    "password",
     "password_env",
     "drafts_folder",
     "sent_folder",
     "trash_folder",
-    "smtp_security",
     "allow_send",
     "allow_mark",
     "allow_delete",
     "allow_drafts",
-}
+)
+
+_ACCOUNT_KEYS = frozenset(_ACCOUNT_FIELDS)
 
 _SERVER_KEYS = {
     "public_host",
@@ -73,7 +103,39 @@ _SERVER_KEYS = {
     "audit_log",
 }
 
+#: Clave de ``[server]`` -> variable de entorno que la sobrescribe.
+_SERVER_ENV: dict[str, str] = {
+    "public_host": "MCP_PUBLIC_HOST",
+    "bind_host": "MCP_BIND_HOST",
+    "bind_port": "MCP_BIND_PORT",
+    "max_results": "MCP_MAX_RESULTS",
+    "max_chars": "MCP_MAX_CHARS",
+    "max_attachment_bytes": "MCP_MAX_ATTACHMENT_BYTES",
+    "max_message_bytes": "MCP_MAX_MESSAGE_BYTES",
+    "imap_timeout": "MCP_IMAP_TIMEOUT",
+    "sent_scan_limit": "MCP_SENT_SCAN_LIMIT",
+    "enable_drafts": "MCP_ENABLE_DRAFTS",
+    "enable_send": "MCP_ENABLE_SEND",
+    "enable_mark": "MCP_ENABLE_MARK",
+    "enable_delete": "MCP_ENABLE_DELETE",
+    "confirm_ttl_seconds": "MCP_CONFIRM_TTL_SECONDS",
+    "max_recipients": "MCP_MAX_RECIPIENTS",
+    "max_sends_per_day": "MCP_MAX_SENDS_PER_DAY",
+    "max_delete_per_call": "MCP_MAX_DELETE_PER_CALL",
+    "max_mark_per_call": "MCP_MAX_MARK_PER_CALL",
+    "smtp_timeout": "MCP_SMTP_TIMEOUT",
+    "smtp_security": "MCP_SMTP_SECURITY",
+    "allowed_recipient_domains": "MCP_ALLOWED_RECIPIENT_DOMAINS",
+    "allowed_attachment_types": "MCP_ALLOWED_ATTACHMENT_TYPES",
+    "allowed_hosts": "MCP_ALLOWED_HOSTS",
+    "allowed_origins": "MCP_ALLOWED_ORIGINS",
+    "audit_log": "MCP_AUDIT_LOG",
+}
+
 LOCAL_BIND_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
+
+_BOOL_TRUE = ("true", "1")
+_BOOL_FALSE = ("false", "0")
 
 
 @dataclass(frozen=True)
@@ -103,6 +165,8 @@ class ServerSettings:
     smtp_timeout: float = 30
     smtp_security: str = "ssl"
     allowed_recipient_domains: tuple[str, ...] = ()
+    #: "env" o "toml": de dónde salieron las cuentas.
+    config_source: str = "toml"
 
 
 @dataclass(frozen=True)
@@ -142,44 +206,48 @@ def require_bearer_token() -> str:
     return token
 
 
-def resolve_config_path() -> Path:
+def resolve_config_path() -> Path | None:
+    """Ruta del TOML, o None si la configuración va solo por entorno."""
     env_path = os.environ.get("MCP_CONFIG")
     if env_path:
-        return Path(env_path)
+        path = Path(env_path)
+        if path.is_file():
+            return path
+        if _env_text(ACCOUNTS_LIST) is not None:
+            logger.warning(
+                "MCP_CONFIG apunta a %s, que no existe. La configuración va por entorno.", path
+            )
+            return None
+        raise SystemExit(f"No se encuentra la configuración: {path}")
     local = Path("accounts.toml")
     if local.is_file():
         return local
     system = Path("/etc/mcp-correo/accounts.toml")
     if system.is_file():
         return system
-    raise SystemExit(
-        "No hay configuración. Define MCP_CONFIG o crea accounts.toml "
-        "(puedes partir de accounts.example.toml)."
-    )
+    return None
 
 
 def load_config(path: Path | None = None) -> tuple[ServerSettings, dict[str, Account]]:
-    config_path = path or resolve_config_path()
-    if not config_path.is_file():
-        raise SystemExit(f"No se encuentra la configuración: {config_path}")
-    try:
-        data = tomllib.loads(config_path.read_text(encoding="utf-8"))
-    except tomllib.TOMLDecodeError as exc:
-        raise SystemExit(f"TOML inválido en {config_path}: {exc}") from None
-
-    if not isinstance(data, dict):
-        raise SystemExit("La configuración debe ser una tabla TOML")
-
-    server_raw = data.get("server") or {}
-    accounts_raw = data.get("accounts") or {}
-    if not isinstance(server_raw, dict) or not isinstance(accounts_raw, dict):
-        raise SystemExit("Las secciones [server] y [accounts] deben ser tablas")
-    if not accounts_raw:
-        raise SystemExit("No hay cuentas en la configuración")
-
-    _reject_unknown("server", server_raw, _SERVER_KEYS)
-    settings = _server_settings(server_raw)
-    accounts = {key: _account(str(key), value) for key, value in accounts_raw.items()}
+    """Carga servidor y cuentas. Entorno primero, TOML como alternativa."""
+    config_path = path if path is not None else resolve_config_path()
+    server_raw, accounts_raw = _read_toml(config_path)
+    env_accounts = _accounts_from_env()
+    source = "env" if env_accounts else "toml"
+    settings = _server_settings(server_raw, source)
+    if env_accounts:
+        accounts = env_accounts
+        if accounts_raw:
+            logger.warning("Hay cuentas en el TOML y en %s. Mandan las del entorno.", ACCOUNTS_LIST)
+    else:
+        accounts = {key: _account(str(key), value) for key, value in accounts_raw.items()}
+    if not accounts:
+        raise SystemExit(
+            "No hay cuentas. Define "
+            f"{ACCOUNTS_LIST} con la lista de claves y una variable por campo "
+            "(MCP_ACCOUNT_<CLAVE>_<CAMPO>), o añade una sección [accounts.<clave>] "
+            "al accounts.toml."
+        )
     return settings, accounts
 
 
@@ -195,31 +263,153 @@ def ensure_local_bind(bind_host: str) -> None:
     )
 
 
-def _server_settings(raw: dict) -> ServerSettings:
-    env_public = os.environ.get("MCP_PUBLIC_HOST", "").strip()
-    public_host = env_public or str(raw.get("public_host") or "127.0.0.1")
-    bind_host = os.environ.get("MCP_BIND_HOST") or str(raw.get("bind_host") or "127.0.0.1")
-    bind_port = _port(_env_int("MCP_BIND_PORT") or raw.get("bind_port") or 8765, "bind_port")
-    max_results = _positive_int(raw.get("max_results", 100), "max_results")
-    max_chars = _positive_int(raw.get("max_chars", 20_000), "max_chars")
-    max_attachment_bytes = _positive_int(
-        raw.get("max_attachment_bytes", 5_000_000), "max_attachment_bytes"
+# --- Lectura del TOML -------------------------------------------------------
+
+
+def _read_toml(path: Path | None) -> tuple[dict, dict]:
+    """Lee el TOML si lo hay. Sin TOML, la configuración puede venir del entorno."""
+    if path is None:
+        return {}, {}
+    if not path.is_file():
+        raise SystemExit(f"No se encuentra la configuración: {path}")
+    try:
+        data = tomllib.loads(path.read_text(encoding="utf-8"))
+    except tomllib.TOMLDecodeError as exc:
+        raise SystemExit(f"TOML inválido en {path}: {exc}") from None
+
+    if not isinstance(data, dict):
+        raise SystemExit("La configuración debe ser una tabla TOML")
+
+    server_raw = data.get("server") or {}
+    accounts_raw = data.get("accounts") or {}
+    if not isinstance(server_raw, dict) or not isinstance(accounts_raw, dict):
+        raise SystemExit("Las secciones [server] y [accounts] deben ser tablas")
+
+    _reject_unknown("server", server_raw, _SERVER_KEYS)
+    return server_raw, accounts_raw
+
+
+# --- Lectura del entorno -----------------------------------------------------
+
+
+def _env_text(name: str) -> str | None:
+    """Valor recortado de una variable, o None si no existe o está vacía."""
+    raw = os.environ.get(name)
+    if raw is None:
+        return None
+    text = raw.strip()
+    return text or None
+
+
+def _env_bool(name: str) -> bool | None:
+    value = _env_text(name)
+    if value is None:
+        return None
+    return _parse_bool(value, name)
+
+
+def _env_int(name: str) -> int | None:
+    value = _env_text(name)
+    if value is None:
+        return None
+    return _parse_int(value, name)
+
+
+def _env_float(name: str) -> float | None:
+    value = _env_text(name)
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except ValueError:
+        raise SystemExit(f"{name} debe ser un número (no {value!r})") from None
+
+
+def _env_csv(name: str) -> tuple[str, ...] | None:
+    value = _env_text(name)
+    if value is None:
+        return None
+    items = tuple(part.strip() for part in value.split(",") if part.strip())
+    return items or None
+
+
+def _parse_bool(value: str, name: str) -> bool:
+    """Solo true, false, 1 y 0. Nada más puede encender un interruptor."""
+    low = value.strip().lower()
+    if low in _BOOL_TRUE:
+        return True
+    if low in _BOOL_FALSE:
+        return False
+    raise SystemExit(
+        f"{name} debe ser true, false, 1 o 0 (no {value!r}). "
+        "Un interruptor mal escrito no puede quedar ambiguo."
     )
-    max_message_bytes = _positive_int(raw.get("max_message_bytes", 15_000_000), "max_message_bytes")
-    imap_timeout = float(raw.get("imap_timeout", 20))
+
+
+def _parse_int(value: str, name: str) -> int:
+    try:
+        return int(value.strip())
+    except ValueError:
+        raise SystemExit(f"{name} debe ser un entero (no {value!r})") from None
+
+
+def _pick(env_value, toml_value, default):  # type: ignore[no-untyped-def]
+    """Entorno > TOML > default."""
+    if env_value is not None:
+        return env_value
+    if toml_value is not None:
+        return toml_value
+    return default
+
+
+# --- Servidor ----------------------------------------------------------------
+
+
+def _server_settings(raw: dict, source: str) -> ServerSettings:
+    env_public = _env_text("MCP_PUBLIC_HOST") or ""
+    public_host = env_public or str(raw.get("public_host") or "127.0.0.1")
+    bind_host = str(_pick(_env_text("MCP_BIND_HOST"), raw.get("bind_host"), "127.0.0.1"))
+    bind_port = _port(_pick(_env_int("MCP_BIND_PORT"), raw.get("bind_port"), 8765), "bind_port")
+    max_results = _positive_int(
+        _pick(_env_int("MCP_MAX_RESULTS"), raw.get("max_results"), 100), "max_results"
+    )
+    max_chars = _positive_int(
+        _pick(_env_int("MCP_MAX_CHARS"), raw.get("max_chars"), 20_000), "max_chars"
+    )
+    max_attachment_bytes = _positive_int(
+        _pick(_env_int("MCP_MAX_ATTACHMENT_BYTES"), raw.get("max_attachment_bytes"), 5_000_000),
+        "max_attachment_bytes",
+    )
+    max_message_bytes = _positive_int(
+        _pick(_env_int("MCP_MAX_MESSAGE_BYTES"), raw.get("max_message_bytes"), 15_000_000),
+        "max_message_bytes",
+    )
+    imap_timeout = float(_pick(_env_float("MCP_IMAP_TIMEOUT"), raw.get("imap_timeout"), 20))
     if imap_timeout <= 0:
         raise SystemExit("imap_timeout debe ser mayor que 0")
-    sent_scan_limit = _positive_int(raw.get("sent_scan_limit", 300), "sent_scan_limit")
+    sent_scan_limit = _positive_int(
+        _pick(_env_int("MCP_SENT_SCAN_LIMIT"), raw.get("sent_scan_limit"), 300), "sent_scan_limit"
+    )
     attachment_types = _str_tuple(
-        raw.get("allowed_attachment_types"),
+        _pick(_env_csv("MCP_ALLOWED_ATTACHMENT_TYPES"), raw.get("allowed_attachment_types"), None),
         DEFAULT_ATTACHMENT_TYPES,
     )
     hosts = _hosts_from_env(env_public, public_host, raw)
     origins = _origins_from_env(env_public, public_host, raw)
-    audit_log = os.environ.get("MCP_AUDIT_LOG") or str(raw.get("audit_log") or "audit.jsonl")
-    smtp_timeout = float(raw.get("smtp_timeout", 30))
+    audit_log = str(_pick(_env_text("MCP_AUDIT_LOG"), raw.get("audit_log"), "audit.jsonl"))
+    smtp_timeout = float(_pick(_env_float("MCP_SMTP_TIMEOUT"), raw.get("smtp_timeout"), 30))
     if smtp_timeout <= 0:
         raise SystemExit("smtp_timeout debe ser mayor que 0")
+    smtp_security = _smtp_security(
+        _pick(_env_text("MCP_SMTP_SECURITY"), raw.get("smtp_security"), "ssl"), "smtp_security"
+    )
+    domains = _domains(
+        _pick(
+            _env_csv("MCP_ALLOWED_RECIPIENT_DOMAINS"),
+            raw.get("allowed_recipient_domains"),
+            None,
+        )
+    )
     return ServerSettings(
         public_host=public_host,
         bind_host=bind_host,
@@ -234,23 +424,264 @@ def _server_settings(raw: dict) -> ServerSettings:
         allowed_origins=origins,
         allowed_attachment_types=tuple(item.lower() for item in attachment_types),
         audit_log=audit_log,
-        enable_drafts=_as_bool(raw.get("enable_drafts"), "enable_drafts"),
-        enable_send=_as_bool(raw.get("enable_send"), "enable_send"),
-        enable_mark=_as_bool(raw.get("enable_mark"), "enable_mark"),
-        enable_delete=_as_bool(raw.get("enable_delete"), "enable_delete"),
+        enable_drafts=_switch("MCP_ENABLE_DRAFTS", raw, "enable_drafts"),
+        enable_send=_switch("MCP_ENABLE_SEND", raw, "enable_send"),
+        enable_mark=_switch("MCP_ENABLE_MARK", raw, "enable_mark"),
+        enable_delete=_switch("MCP_ENABLE_DELETE", raw, "enable_delete"),
         confirm_ttl_seconds=_positive_int(
-            raw.get("confirm_ttl_seconds", 600), "confirm_ttl_seconds"
+            _pick(_env_int("MCP_CONFIRM_TTL_SECONDS"), raw.get("confirm_ttl_seconds"), 600),
+            "confirm_ttl_seconds",
         ),
-        max_recipients=_positive_int(raw.get("max_recipients", 10), "max_recipients"),
-        max_sends_per_day=_positive_int(raw.get("max_sends_per_day", 30), "max_sends_per_day"),
+        max_recipients=_positive_int(
+            _pick(_env_int("MCP_MAX_RECIPIENTS"), raw.get("max_recipients"), 10), "max_recipients"
+        ),
+        max_sends_per_day=_positive_int(
+            _pick(_env_int("MCP_MAX_SENDS_PER_DAY"), raw.get("max_sends_per_day"), 30),
+            "max_sends_per_day",
+        ),
         max_delete_per_call=_positive_int(
-            raw.get("max_delete_per_call", 20), "max_delete_per_call"
+            _pick(_env_int("MCP_MAX_DELETE_PER_CALL"), raw.get("max_delete_per_call"), 20),
+            "max_delete_per_call",
         ),
-        max_mark_per_call=_positive_int(raw.get("max_mark_per_call", 50), "max_mark_per_call"),
+        max_mark_per_call=_positive_int(
+            _pick(_env_int("MCP_MAX_MARK_PER_CALL"), raw.get("max_mark_per_call"), 50),
+            "max_mark_per_call",
+        ),
         smtp_timeout=smtp_timeout,
-        smtp_security=_smtp_security(raw.get("smtp_security", "ssl"), "smtp_security"),
-        allowed_recipient_domains=_domains(raw.get("allowed_recipient_domains")),
+        smtp_security=smtp_security,
+        allowed_recipient_domains=domains,
+        config_source=source,
     )
+
+
+def _switch(env_name: str, raw: dict, toml_key: str) -> bool:
+    """Interruptor: entorno > TOML > apagado. Un texto no lo enciende."""
+    from_toml = _as_bool(raw.get(toml_key), toml_key)
+    return bool(_pick(_env_bool(env_name), from_toml, False))
+
+
+def _hosts_from_env(env_public: str, public_host: str, raw: dict) -> tuple[str, ...]:
+    explicit = _env_csv("MCP_ALLOWED_HOSTS")
+    if explicit is not None:
+        return explicit
+    if env_public:
+        return _default_hosts(public_host)
+    return _str_tuple(raw.get("allowed_hosts"), _default_hosts(public_host))
+
+
+def _origins_from_env(env_public: str, public_host: str, raw: dict) -> tuple[str, ...]:
+    explicit = _env_csv("MCP_ALLOWED_ORIGINS")
+    if explicit is not None:
+        return explicit
+    if env_public:
+        return _default_origins(public_host)
+    return _str_tuple(raw.get("allowed_origins"), _default_origins(public_host))
+
+
+def _default_hosts(public_host: str) -> tuple[str, ...]:
+    return (
+        public_host,
+        f"{public_host}:*",
+        "127.0.0.1",
+        "127.0.0.1:*",
+        "localhost",
+        "localhost:*",
+        "[::1]",
+        "[::1]:*",
+    )
+
+
+def _default_origins(public_host: str) -> tuple[str, ...]:
+    return (
+        f"https://{public_host}",
+        "http://127.0.0.1:*",
+        "http://localhost:*",
+        "http://[::1]:*",
+    )
+
+
+# --- Cuentas por entorno -----------------------------------------------------
+
+
+def _accounts_from_env() -> dict[str, Account]:
+    """Cuentas declaradas con MCP_ACCOUNTS y MCP_ACCOUNT_<CLAVE>_<CAMPO>."""
+    keys = _declared_account_keys()
+    if not keys:
+        return {}
+    fields = _collect_account_fields(keys)
+    return {key: _account_from_env(key, fields.get(key, {})) for key in keys}
+
+
+def _declared_account_keys() -> list[str]:
+    raw = _env_text(ACCOUNTS_LIST)
+    if raw is None:
+        return []
+    keys: list[str] = []
+    for part in raw.split(","):
+        key = part.strip()
+        if not key:
+            continue
+        if not ACCOUNT_KEY.fullmatch(key):
+            raise SystemExit(
+                f"{ACCOUNTS_LIST} tiene una clave de cuenta inválida: {key!r}. "
+                "Usa letras, dígitos y guion bajo, empezando por letra o dígito."
+            )
+        if key in keys:
+            raise SystemExit(f"{ACCOUNTS_LIST} repite la cuenta {key!r}.")
+        keys.append(key)
+    if not keys:
+        raise SystemExit(f"{ACCOUNTS_LIST} está definida pero no lista ninguna cuenta.")
+    upper = [key.upper() for key in keys]
+    if len(set(upper)) != len(upper):
+        raise SystemExit(
+            f"{ACCOUNTS_LIST} tiene dos cuentas que se escriben igual en mayúsculas: "
+            f"{', '.join(upper)}. Cada cuenta necesita un prefijo de variable distinto."
+        )
+    return keys
+
+
+def _account_prefix(key: str) -> str:
+    return f"{ACCOUNT_PREFIX}{key.upper()}_"
+
+
+def _collect_account_fields(keys: list[str]) -> dict[str, dict[str, str]]:
+    """Agrupa MCP_ACCOUNT_* por cuenta. El prefijo más largo gana."""
+    prefixes = sorted(((_account_prefix(key), key) for key in keys), key=lambda item: -len(item[0]))
+    collected: dict[str, dict[str, str]] = {key: {} for key in keys}
+    for name, value in os.environ.items():
+        if not name.startswith(ACCOUNT_PREFIX):
+            continue
+        for prefix, key in prefixes:
+            if not name.startswith(prefix):
+                continue
+            field_name = name[len(prefix) :].lower()
+            if field_name not in _ACCOUNT_KEYS:
+                raise SystemExit(
+                    f"Variable de cuenta desconocida: {name}. "
+                    f"Para la cuenta {key!r} son válidas: "
+                    + ", ".join(
+                        _account_prefix(key) + item.upper() for item in sorted(_ACCOUNT_FIELDS)
+                    )
+                    + "."
+                )
+            collected[key][field_name] = value
+            break
+        else:
+            _reject_orphan_account_var(name)
+    return collected
+
+
+def _reject_orphan_account_var(name: str) -> None:
+    """Una variable de una cuenta no declarada es un error, no un silencio."""
+    key = _guess_account_key(name)
+    if key:
+        raise SystemExit(
+            f"{name} define la cuenta {key!r}, que no está en {ACCOUNTS_LIST}. "
+            f"Añádela: {ACCOUNTS_LIST}={key}."
+        )
+    raise SystemExit(
+        f"Variable de cuenta desconocida: {name}. El formato es {ACCOUNT_PREFIX}<CLAVE>_<CAMPO>."
+    )
+
+
+def _guess_account_key(name: str) -> str | None:
+    body = name[len(ACCOUNT_PREFIX) :]
+    for field_name in sorted(_ACCOUNT_FIELDS, key=len, reverse=True):
+        suffix = "_" + field_name.upper()
+        if body.endswith(suffix) and len(body) > len(suffix):
+            return body[: -len(suffix)].lower()
+    return None
+
+
+def _account_from_env(key: str, fields: dict[str, str]) -> Account:
+    prefix = _account_prefix(key)
+
+    def text(name: str) -> str | None:
+        value = fields.get(name)
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None
+
+    def flag(name: str) -> bool:
+        value = text(name)
+        if value is None:
+            return False
+        return _parse_bool(value, prefix + name.upper())
+
+    def number(name: str, default: int) -> int:
+        value = text(name)
+        if value is None:
+            return default
+        return _parse_int(value, prefix + name.upper())
+
+    username = text("username")
+    if not username:
+        raise SystemExit(f"La cuenta {key!r} necesita {prefix}USERNAME.")
+    imap_host = text("imap_host")
+    if not imap_host:
+        raise SystemExit(f"La cuenta {key!r} necesita {prefix}IMAP_HOST.")
+    smtp_host = text("smtp_host") or imap_host
+    smtp_security = ""
+    if text("smtp_security"):
+        smtp_security = _smtp_security(str(text("smtp_security")), f"{prefix}SMTP_SECURITY")
+
+    return Account(
+        key=key,
+        label=text("label") or key,
+        imap_host=imap_host,
+        imap_port=_port(number("imap_port", 993), f"{key}.imap_port"),
+        imap_ssl=True if text("imap_ssl") is None else flag("imap_ssl"),
+        smtp_host=smtp_host,
+        smtp_port=_port(number("smtp_port", 465), f"{key}.smtp_port"),
+        username=username,
+        password=_account_password(key, fields),
+        drafts_folder=text("drafts_folder") or "Drafts",
+        sent_folder=text("sent_folder") or "Sent",
+        trash_folder=_optional_folder(text("trash_folder"), f"{key}.trash_folder"),
+        smtp_security=smtp_security,
+        allow_send=flag("allow_send"),
+        allow_mark=flag("allow_mark"),
+        allow_delete=flag("allow_delete"),
+        allow_drafts=flag("allow_drafts"),
+    )
+
+
+def _account_password(key: str, fields: dict[str, str]) -> str:
+    prefix = _account_prefix(key)
+    direct = fields.get("password")
+    indirect = fields.get("password_env")
+    direct = direct if direct else None
+    indirect = indirect.strip() if indirect else None
+    if direct and indirect:
+        raise SystemExit(
+            f"La cuenta {key!r} define {prefix}PASSWORD y {prefix}PASSWORD_ENV. "
+            "Usa solo una de las dos."
+        )
+    if indirect:
+        if not ENV_NAME.fullmatch(indirect):
+            raise SystemExit(f"{prefix}PASSWORD_ENV no es un nombre de variable válido.")
+        if "PASSWORD" not in indirect.upper() and "PASS" not in indirect.upper():
+            raise SystemExit(
+                f"{prefix}PASSWORD_ENV debería ser el nombre de una variable "
+                "(por ejemplo MAIL_PRINCIPAL_PASSWORD), no un secreto"
+            )
+        password = os.environ.get(indirect)
+        if password is None or password == "":
+            raise SystemExit(
+                f"Falta la variable de entorno {indirect} para la cuenta {key!r}. "
+                "El servidor no arranca con cuentas sin secreto."
+            )
+        return password
+    if direct:
+        return direct
+    raise SystemExit(
+        f"La cuenta {key!r} no tiene contraseña. Define {prefix}PASSWORD "
+        f"o {prefix}PASSWORD_ENV con el nombre de otra variable."
+    )
+
+
+# --- Cuentas por TOML --------------------------------------------------------
 
 
 def _account(key: str, raw: object) -> Account:
@@ -310,6 +741,9 @@ def write_capabilities(settings: ServerSettings, accounts: dict[str, Account]) -
         "drafts": settings.enable_drafts
         and any(account.allow_drafts for account in accounts.values()),
     }
+
+
+# --- Validadores -------------------------------------------------------------
 
 
 def _reject_unknown(where: str, raw: dict, allowed: set[str]) -> None:
@@ -386,39 +820,6 @@ def _port(value: object, field_name: str) -> int:
     return number
 
 
-def _env_int(name: str) -> int | None:
-    raw = os.environ.get(name)
-    if raw is None or raw == "":
-        return None
-    return int(raw)
-
-
-def _hosts_from_env(env_public: str, public_host: str, raw: dict) -> tuple[str, ...]:
-    explicit = _csv_env("MCP_ALLOWED_HOSTS")
-    if explicit is not None:
-        return explicit
-    if env_public:
-        return _default_hosts(public_host)
-    return _str_tuple(raw.get("allowed_hosts"), _default_hosts(public_host))
-
-
-def _origins_from_env(env_public: str, public_host: str, raw: dict) -> tuple[str, ...]:
-    explicit = _csv_env("MCP_ALLOWED_ORIGINS")
-    if explicit is not None:
-        return explicit
-    if env_public:
-        return _default_origins(public_host)
-    return _str_tuple(raw.get("allowed_origins"), _default_origins(public_host))
-
-
-def _csv_env(name: str) -> tuple[str, ...] | None:
-    raw = os.environ.get(name)
-    if raw is None or not raw.strip():
-        return None
-    items = tuple(part.strip() for part in raw.split(",") if part.strip())
-    return items or None
-
-
 def _str_tuple(value: object, default: tuple[str, ...]) -> tuple[str, ...]:
     if value is None:
         return default
@@ -427,25 +828,3 @@ def _str_tuple(value: object, default: tuple[str, ...]) -> tuple[str, ...]:
     if isinstance(value, list | tuple):
         return tuple(str(item) for item in value)
     raise SystemExit("Se esperaba una lista de textos en la configuración")
-
-
-def _default_hosts(public_host: str) -> tuple[str, ...]:
-    return (
-        public_host,
-        f"{public_host}:*",
-        "127.0.0.1",
-        "127.0.0.1:*",
-        "localhost",
-        "localhost:*",
-        "[::1]",
-        "[::1]:*",
-    )
-
-
-def _default_origins(public_host: str) -> tuple[str, ...]:
-    return (
-        f"https://{public_host}",
-        "http://127.0.0.1:*",
-        "http://localhost:*",
-        "http://[::1]:*",
-    )

@@ -633,6 +633,11 @@ def _bootstrap() -> BearerAuth:
         settings.bind_port,
         ",".join(name for name, enabled in active.items() if enabled) or "apagada",
     )
+    logger.info(
+        "Configuración: %s. Cuentas: %s",
+        "variables de entorno" if settings.config_source == "env" else "accounts.toml",
+        ", ".join(sorted(accounts)),
+    )
     return application
 
 

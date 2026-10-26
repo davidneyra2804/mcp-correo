@@ -32,7 +32,6 @@ ENV PATH=/opt/venv/bin:$PATH \
     MCP_BIND_HOST=0.0.0.0 \
     MCP_BIND_PORT=8765 \
     MCP_ALLOW_NONLOCAL_BIND=1 \
-    MCP_CONFIG=/config/accounts.toml \
     MCP_AUDIT_LOG=/var/log/mcp-correo/audit.jsonl
 
 EXPOSE 8765

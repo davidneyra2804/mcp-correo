@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import importlib.util
+import os
 from pathlib import Path
 
 import pytest
@@ -58,11 +59,47 @@ def test_rechaza_una_contraseña_en_el_texto(
 
 def test_sin_config_no_arranca(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     entry = _load("entrypoint", "docker/entrypoint.py")
+    monkeypatch.delenv("MCP_CONFIG", raising=False)
+    monkeypatch.setenv("MCP_ACCOUNTS_TOML_B64", "")
+    monkeypatch.setenv("MCP_ACCOUNTS_TOML", "   ")
+    monkeypatch.delenv("MCP_ACCOUNTS", raising=False)
+    with pytest.raises(SystemExit, match="Falta la configuración"):
+        entry.resolve_accounts_file()
+
+
+def test_mcp_config_inexistente_sin_cuentas_no_arranca(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    entry = _load("entrypoint", "docker/entrypoint.py")
     monkeypatch.setenv("MCP_CONFIG", str(tmp_path / "no-existe.toml"))
     monkeypatch.setenv("MCP_ACCOUNTS_TOML_B64", "")
     monkeypatch.setenv("MCP_ACCOUNTS_TOML", "   ")
-    with pytest.raises(SystemExit, match="Falta accounts.toml"):
+    monkeypatch.delenv("MCP_ACCOUNTS", raising=False)
+    with pytest.raises(SystemExit, match="No se encuentra la configuración"):
         entry.resolve_accounts_file()
+
+
+def test_las_cuentas_por_entorno_no_necesitan_toml(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    entry = _load("entrypoint", "docker/entrypoint.py")
+    monkeypatch.setenv("MCP_CONFIG", str(tmp_path / "no-existe.toml"))
+    monkeypatch.setenv("MCP_ACCOUNTS", "principal")
+    monkeypatch.setenv("MCP_ACCOUNTS_TOML_B64", "")
+    monkeypatch.setenv("MCP_ACCOUNTS_TOML", "   ")
+    assert entry.resolve_accounts_file() is None
+    assert "MCP_CONFIG" not in os.environ
+
+
+def test_el_toml_montado_gana_a_las_cuentas_por_entorno(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    entry = _load("entrypoint", "docker/entrypoint.py")
+    mounted = tmp_path / "accounts.toml"
+    mounted.write_text("[server]\npublic_host='x'\n", encoding="utf-8")
+    monkeypatch.setenv("MCP_CONFIG", str(mounted))
+    monkeypatch.setenv("MCP_ACCOUNTS", "principal")
+    assert entry.resolve_accounts_file() == str(mounted)
 
 
 def test_la_rotacion_conserva_el_numero_pedido(tmp_path: Path) -> None:
