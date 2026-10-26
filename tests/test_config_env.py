@@ -295,3 +295,35 @@ def test_un_limite_de_cero_no_arranca(monkeypatch: pytest.MonkeyPatch) -> None:
     _cuenta_principal(monkeypatch, MCP_MAX_CHARS="0")
     with pytest.raises(SystemExit, match="mayor o igual que 1"):
         load_config()
+
+
+def _leer_env_ejemplo() -> dict[str, str]:
+    """Un .env de verdad: líneas KEY=VALOR, con comentarios y comillas."""
+    env: dict[str, str] = {}
+    for raw in (ROOT / ".env.example").read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        key, _, value = line.partition("=")
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+        env[key.strip()] = value
+    return env
+
+
+def test_el_ejemplo_de_env_arranca_el_servidor(monkeypatch: pytest.MonkeyPatch) -> None:
+    """El .env.example tiene que ser pegable tal cual en Portainer."""
+    for name, value in _leer_env_ejemplo().items():
+        monkeypatch.setenv(name, value)
+    settings, accounts = load_config()
+    assert settings.config_source == "env"
+    assert set(accounts) == {"principal", "archivo"}
+    # La escritura sale apagada: el ejemplo no habilita nada por accidente.
+    assert settings.enable_send is False
+    assert settings.enable_mark is False
+    assert settings.enable_delete is False
+    assert settings.enable_drafts is False
+    assert all(not account.allow_send for account in accounts.values())
+    assert len(settings.allowed_hosts) > 0
+    assert len(settings.allowed_origins) > 0

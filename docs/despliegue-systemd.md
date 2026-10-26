@@ -35,6 +35,11 @@ El contrato de variables es el mismo que en Docker, y está en
 alternativa válida, pero no hace falta: con el `EnvironmentFile` de la unidad
 todo cabe en `/etc/mcp-correo/env`.
 
+Ojo con `MCP_BIND_HOST` y `MCP_BIND_PORT` aquí: la unidad fija el bind en
+loopback en su `ExecStart` y no los lee. Déjalos sin definir, o a `127.0.0.1`
+y `8765`. Poner `0.0.0.0` hace que el proceso se niegue a arrancar, aunque
+nginx no vaya a publicar ese puerto.
+
 `deploy/mcp-correo.service` corre como `mcpmail`, sin privilegios nuevos, con el sistema de archivos en solo lectura salvo `/var/log/mcp-correo`, un tope de 512 MiB y un solo worker. Ese `--workers 1` sujeta los tokens de confirmación y el cupo diario, que no se comparten entre procesos.
 
 `deploy/nginx-mcp.conf` ofrece TLS 1.2+, limita a 60 peticiones por minuto por IP y solo hace proxy de `/mcp` hacia `127.0.0.1:8765`. El `server_name` de ejemplo es `mcp.example.com`. La IP comentada `203.0.113.10` es de documentación (TEST-NET, RFC 5737), no una dirección de nadie.
