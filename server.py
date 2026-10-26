@@ -43,6 +43,7 @@ from mail.imap import ClientFactory, MailService
 from mail.mutate import MailboxWriter
 from mail.smtp_out import SmtpFactory
 from scope import reset_scope, set_scope
+from version import __version__
 
 logger = logging.getLogger("mcp_correo.server")
 
@@ -242,7 +243,12 @@ def build_mcp(
 ) -> MCPServer:
     caps = write_capabilities(service.settings, service.accounts)
     title = "Correo laboral" if any(caps.values()) else "Correo laboral (solo lectura)"
-    mcp = MCPServer("mcp-correo", title=title, instructions=INSTRUCTIONS)
+    mcp = MCPServer(
+        "mcp-correo",
+        title=title,
+        instructions=INSTRUCTIONS,
+        version=__version__,
+    )
     _register_tools(mcp, service, audit)
     if writer is not None:
         _register_write_tools(mcp, writer, audit, caps)
@@ -741,7 +747,8 @@ def _bootstrap() -> BearerAuth:
         ",".join(name for name, enabled in active.items() if enabled) or "apagada",
     )
     logger.info(
-        "Configuración: %s. Cuentas: %s",
+        "mcp-correo %s | Configuración: %s. Cuentas: %s",
+        __version__,
         "variables de entorno" if settings.config_source == "env" else "accounts.toml",
         ", ".join(sorted(accounts)),
     )

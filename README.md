@@ -255,3 +255,38 @@ Los ejemplos de este repositorio no contienen un buzón real. El token y las con
 - [Cloudflare Tunnel](docs/despliegue-tunel-cloudflare.md)
 - [systemd y nginx](docs/despliegue-systemd.md)
 - [Checklist de seguridad](docs/seguridad.md)
+
+## Versionado
+
+SemVer. `version.py` es la fuente de verdad: un test la sincroniza con
+`pyproject.toml` y con la etiqueta de la imagen, así que no se pueden
+separar. La versión aparece en el handshake MCP y en el log de arranque.
+
+Las etiquetas `vX.Y.Z` disparan [release.yml](.github/workflows/release.yml),
+que hace tres cosas: pasa los tests, publica la imagen en GHCR y crea el
+Release con las notas de los commits.
+
+```bash
+# Publicar una versión
+sed -i 's/__version__ = ".*"/__version__ = "1.1.0"/' version.py
+sed -i 's/^version = ".*"/version = "1.1.0"/' pyproject.toml
+sed -i 's/ARG MCP_VERSION=.*/ARG MCP_VERSION=1.1.0/' Dockerfile
+git commit -am "version 1.1.0"
+git tag v1.1.0 && git push origin v1.1.0
+```
+
+La imagen publicada se usa en Portainer sin reconstruir:
+
+```
+MCP_IMAGE=ghcr.io/davidneyra2804/mcp-correo:1.0.0
+MCP_PULL_POLICY=always
+```
+
+Un detalle de GHCR: el paquete se crea **privado**. Para que Portainer pueda
+descargarlo sin credenciales hay que hacerlo público en *Settings → Packages
+→ mcp-correo → Change visibility → Public*. Si prefieres dejarlo privado,
+registra el token en Portainer (*Settings → Registry*) y déjalo en `docker.io`
+con las credenciales de GHCR.
+
+Con `MCP_PULL_POLICY` vacío, el compose construye la imagen localmente y
+`audit-rotate` usa esa misma imagen sin volver a construirla.
