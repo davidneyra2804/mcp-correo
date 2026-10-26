@@ -31,7 +31,7 @@ desplegarlo sin tocar ficheros.
 **Tunnel → tu túnel → Routes → Add route → Published application**.
 
 - **Subdomain y dominio**: el hostname público, por ejemplo
-  `mailproxy.davidneyra.dev`.
+  `mcp.example.com`.
 - **Service URL**: `http://mcp:8765`.
 
 El Service URL es el nombre del servicio en la red de Compose, no
@@ -40,8 +40,8 @@ El Service URL es el nombre del servicio en la red de Compose, no
 El túnel publica un solo hostname. Las dos rutas del MCP cuelgan de él:
 
 ```
-https://mailproxy.davidneyra.dev/mcp                   -> todas las cuentas
-https://mailproxy.davidneyra.dev/mcp/ada@example.com   -> solo esa
+https://mcp.example.com/mcp                   -> todas las cuentas
+https://mcp.example.com/mcp/ada@example.com   -> solo esa
 ```
 
 No hace falta una ruta de tunnel por cada cuenta: el subpath lo decide el
@@ -53,7 +53,7 @@ En las variables del stack de Portainer:
 
 ```bash
 # El hostname público. Tiene que coincidir con la ruta de arriba.
-MCP_PUBLIC_HOST=mailproxy.davidneyra.dev
+MCP_PUBLIC_HOST=mcp.example.com
 
 # El token del panel.
 CLOUDFLARE_TUNNEL_TOKEN=eyJhIjoiXXXX...
@@ -70,15 +70,15 @@ MCP_ACCOUNT_BEARER_1=bearer-solo-de-la-cuenta-1-0123456789abcdef
 - `cloudflared` reenvía la cabecera `Host` original del cliente. El transporte
   MCP la valida contra `allowed_hosts`. Si `MCP_PUBLIC_HOST` no es el hostname
   público, la respuesta es **421 Misdirected Request**.
-- El origen `https://mailproxy.davidneyra.dev` tiene que estar en
+- El origen `https://mcp.example.com` tiene que estar en
   `allowed_origins`. `MCP_PUBLIC_HOST` lo añade solo. Si lo sustituyes por
   `MCP_ALLOWED_ORIGINS`, incluye el origen con esquema.
 
 Si necesitas más hosts, defínelos explícitamente:
 
 ```bash
-MCP_ALLOWED_HOSTS=mailproxy.davidneyra.dev,mailproxy.davidneyra.dev:*,127.0.0.1:*
-MCP_ALLOWED_ORIGINS=https://mailproxy.davidneyra.dev,http://127.0.0.1:*
+MCP_ALLOWED_HOSTS=mcp.example.com,mcp.example.com:*,127.0.0.1:*
+MCP_ALLOWED_ORIGINS=https://mcp.example.com,http://127.0.0.1:*
 ```
 
 Un `Host` que no esté permitido responde 421. Un `Origin` que no esté
@@ -116,14 +116,14 @@ Los contenedores quedan con nombre fijo: `mcp-correo` y
 docker compose logs cloudflared
 
 # El MCP responde por el túnel, con todas las cuentas
-curl -i https://mailproxy.davidneyra.dev/mcp \
+curl -i https://mcp.example.com/mcp \
   -H "Authorization: Bearer $MCP_BEARER_TOKEN" \
   -H 'Content-Type: application/json' \
   -H 'Accept: application/json, text/event-stream' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
 
 # Y con una sola cuenta, con la credencial de esa cuenta
-curl -i https://mailproxy.davidneyra.dev/mcp/ada@example.com \
+curl -i https://mcp.example.com/mcp/ada@example.com \
   -H "Authorization: Bearer $BEARER_DE_LA_CUENTA" \
   -H 'Content-Type: application/json' \
   -H 'Accept: application/json, text/event-stream' \
@@ -149,7 +149,7 @@ quién pasa, con reglas por IP, por correo o por identidad.
 Para un agente automatizado, lo que funciona es un **Service Token**:
 
 1. En el panel: **Access → Applications → Add an application** →
-   *Self-hosted*, con el hostname `mailproxy.davidneyra.dev`.
+   *Self-hosted*, con el hostname `mcp.example.com`.
 2. En la política, en vez de un correo o un grupo, elige **Service Token** y
    crea uno.
 3. El cliente MCP tiene que enviar las dos cabeceras del token además del
