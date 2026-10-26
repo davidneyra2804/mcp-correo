@@ -168,14 +168,14 @@ def test_el_compose_declara_todas_las_variables_fijas_del_servidor() -> None:
 
 
 def test_el_ejemplo_de_env_documenta_todas_las_variables() -> None:
-    from config import _ACCOUNT_FIELDS, _SERVER_ENV
+    from config import _ACCOUNT_ENV_BASES, _SERVER_ENV
 
     text = (ROOT / ".env.example").read_text(encoding="utf-8")
     missing = sorted(name for name in _SERVER_ENV.values() if name not in text)
     assert not missing, f"El ejemplo no documenta: {', '.join(missing)}"
-    missing_fields = sorted(field for field in _ACCOUNT_FIELDS if field.upper() not in text)
+    missing_fields = sorted(base for base in _ACCOUNT_ENV_BASES if base not in text)
     assert not missing_fields, f"El ejemplo no documenta: {', '.join(missing_fields)}"
-    assert "MCP_ACCOUNTS=" in text
+    assert "MCP_ACCOUNT_USERNAME_1=" in text
 
 
 def test_el_overlay_del_tunel_no_lleva_el_token_dentro() -> None:
@@ -191,9 +191,9 @@ def test_el_overlay_del_tunel_no_lleva_el_token_dentro() -> None:
 
 def test_el_compose_local_no_necesita_el_toml() -> None:
     text = (ROOT / "docker-compose.local.yml").read_text(encoding="utf-8")
-    assert "MCP_ACCOUNTS:" in text
-    assert "MCP_ACCOUNT_PRINCIPAL_IMAP_HOST:" in text
-    assert "MCP_ACCOUNT_ARCHIVO_PASSWORD:" in text
+    assert "MCP_ACCOUNT_USERNAME_1:" in text
+    assert "MCP_ACCOUNT_INBOX_HOST_1:" in text
+    assert "MCP_ACCOUNT_PASSWORD_2:" in text
     assert "accounts.toml" not in text
 
 

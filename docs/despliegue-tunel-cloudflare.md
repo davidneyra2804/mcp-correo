@@ -30,11 +30,22 @@ desplegarlo sin tocar ficheros.
 
 **Tunnel → tu túnel → Routes → Add route → Published application**.
 
-- **Subdomain y dominio**: el hostname público, por ejemplo `mcp.example.com`.
+- **Subdomain y dominio**: el hostname público, por ejemplo
+  `mailproxy.davidneyra.dev`.
 - **Service URL**: `http://mcp:8765`.
 
 El Service URL es el nombre del servicio en la red de Compose, no
 `127.0.0.1`: dentro del contenedor `cloudflared`, el loopback es el suyo.
+
+El túnel publica un solo hostname. Las dos rutas del MCP cuelgan de él:
+
+```
+https://mailproxy.davidneyra.dev/mcp                   -> todas las cuentas
+https://mailproxy.davidneyra.dev/mcp/ada@example.com   -> solo esa
+```
+
+No hace falta una ruta de tunnel por cada cuenta: el subpath lo decide el
+servidor, no Cloudflare.
 
 ## 3. Las variables
 
@@ -42,10 +53,16 @@ En las variables del stack de Portainer:
 
 ```bash
 # El hostname público. Tiene que coincidir con la ruta de arriba.
-MCP_PUBLIC_HOST=mcp.example.com
+MCP_PUBLIC_HOST=mailproxy.davidneyra.dev
 
 # El token del panel.
 CLOUDFLARE_TUNNEL_TOKEN=eyJhIjoiXXXX...
+
+# Las cuentas, numeradas.
+MCP_ACCOUNT_USERNAME_1=ada@example.com
+MCP_ACCOUNT_INBOX_HOST_1=imap.corp.example.com
+MCP_ACCOUNT_PASSWORD_1=la-clave
+MCP_ACCOUNT_BEARER_1=bearer-solo-de-la-cuenta-1-0123456789abcdef
 ```
 
 `MCP_PUBLIC_HOST` no es opcional en este escenario, y no es cosmético:
@@ -53,15 +70,15 @@ CLOUDFLARE_TUNNEL_TOKEN=eyJhIjoiXXXX...
 - `cloudflared` reenvía la cabecera `Host` original del cliente. El transporte
   MCP la valida contra `allowed_hosts`. Si `MCP_PUBLIC_HOST` no es el hostname
   público, la respuesta es **421 Misdirected Request**.
-- El origen `https://mcp.example.com` tiene que estar en `allowed_origins`.
-  `MCP_PUBLIC_HOST` lo añade solo. Si lo sustituyes por
+- El origen `https://mailproxy.davidneyra.dev` tiene que estar en
+  `allowed_origins`. `MCP_PUBLIC_HOST` lo añade solo. Si lo sustituyes por
   `MCP_ALLOWED_ORIGINS`, incluye el origen con esquema.
 
 Si necesitas más hosts, defínelos explícitamente:
 
 ```bash
-MCP_ALLOWED_HOSTS=mcp.example.com,mcp.example.com:*,127.0.0.1:*
-MCP_ALLOWED_ORIGINS=https://mcp.example.com,http://127.0.0.1:*
+MCP_ALLOWED_HOSTS=mailproxy.davidneyra.dev,mailproxy.davidneyra.dev:*,127.0.0.1:*
+MCP_ALLOWED_ORIGINS=https://mailproxy.davidneyra.dev,http://127.0.0.1:*
 ```
 
 Un `Host` que no esté permitido responde 421. Un `Origin` que no esté
@@ -90,9 +107,16 @@ exista en absoluto, quita el bloque `ports:` del servicio `mcp` en
 # El túnel está conectado
 docker compose logs cloudflared
 
-# El MCP responde por el túnel
-curl -i https://mcp.example.com/mcp \
+# El MCP responde por el túnel, con todas las cuentas
+curl -i https://mailproxy.davidneyra.dev/mcp \
   -H "Authorization: Bearer $MCP_BEARER_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
+
+# Y con una sola cuenta, con la credencial de esa cuenta
+curl -i https://mailproxy.davidneyra.dev/mcp/ada@example.com \
+  -H "Authorization: Bearer $BEARER_DE_LA_CUENTA" \
   -H 'Content-Type: application/json' \
   -H 'Accept: application/json, text/event-stream' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
@@ -102,7 +126,7 @@ Y en los logs del contenedor, la línea de arranque:
 
 ```
 INFO     Servidor listo: 2 cuentas, escucha 0.0.0.0:8765, escritura=apagada
-INFO     Configuración: variables de entorno. Cuentas: archivo, principal
+INFO     Configuración: variables de entorno. Cuentas: ada@example.com, luis@example.com
 ```
 
 Si el `curl` responde **421**, `MCP_PUBLIC_HOST` no coincide con el hostname
@@ -117,7 +141,7 @@ quién pasa, con reglas por IP, por correo o por identidad.
 Para un agente automatizado, lo que funciona es un **Service Token**:
 
 1. En el panel: **Access → Applications → Add an application** →
-   *Self-hosted*, con el hostname `mcp.example.com`.
+   *Self-hosted*, con el hostname `mailproxy.davidneyra.dev`.
 2. En la política, en vez de un correo o un grupo, elige **Service Token** y
    crea uno.
 3. El cliente MCP tiene que enviar las dos cabeceras del token además del
@@ -136,6 +160,13 @@ Para un agente automatizado, lo que funciona es un **Service Token**:
 Sin Access, el endpoint es público y el único secreto es el Bearer del MCP.
 Un token de 48 bytes aleatorios es una barrera serie, pero no da registro de
 accesos, ni listas de IP, ni rate limit en el edge.
+
+**Access y las rutas por cuenta son cosas distintas.** Access decide si la
+petición entra al servidor; la ruta decide qué buzones ve el cliente que
+entra. Se pueden usar las dos a la vez: Access con un Service Token para
+todo el servidor, y el `MCP_ACCOUNT_BEARER_<N>` para que cada agente solo
+vea su buzón. El Service Token no sustituye al bearer por cuenta: sin él, un
+cliente que pase el filtro de Access vería todas las cuentas de `/mcp`.
 
 ## 7. Qué hacer en el edge
 

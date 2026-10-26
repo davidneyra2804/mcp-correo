@@ -17,7 +17,8 @@ mcp-correo corre en un servidor propio. El cliente del asistente se conecta a es
 - Marcar leído o no leído, borrar a la Papelera (o de forma definitiva solo si se pidió al preparar) y guardar borradores.
 - Cada capacidad de escritura tiene un interruptor global y otro por cuenta. Apagados, la tool no se registra.
 - Enviar y borrar piden confirmación en dos pasos. El token dura 10 minutos, es de un solo uso y queda ligado a la cuenta y a la operación.
-- Varias cuentas, configuradas con variables de entorno. La contraseña va en su propia variable, nunca en un fichero.
+- Varias cuentas, configuradas con variables de entorno numeradas. La contraseña va en su propia variable, nunca en un fichero.
+- Una credencial por cuenta: `/mcp` expone todos los buzones y `/mcp/<cuenta>` solo uno, con su propio Bearer.
 - Auditoría JSONL de cada llamada, sin cuerpos ni credenciales.
 - Transporte Streamable HTTP, un solo worker de uvicorn.
 - Despliegue previsto para Portainer: todo se configura con un `.env`, sin tocar ficheros en el servidor.
@@ -85,11 +86,10 @@ Hace falta Python 3.11 o superior. Los ejemplos usan `example.com` y contraseña
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 export MCP_BEARER_TOKEN="$(openssl rand -base64 48)"
-export MCP_ACCOUNTS=principal
-export MCP_ACCOUNT_PRINCIPAL_IMAP_HOST=mail.example.com
-export MCP_ACCOUNT_PRINCIPAL_SMTP_HOST=mail.example.com
-export MCP_ACCOUNT_PRINCIPAL_USERNAME=ada@example.com
-export MCP_ACCOUNT_PRINCIPAL_PASSWORD='contraseña-ficticia-principal'
+export MCP_ACCOUNT_USERNAME_1=ada@example.com
+export MCP_ACCOUNT_INBOX_HOST_1=mail.example.com
+export MCP_ACCOUNT_SMTP_HOST_1=mail.example.com
+export MCP_ACCOUNT_PASSWORD_1='contraseña-ficticia-principal'
 export MCP_AUDIT_LOG=./audit.jsonl
 .venv/bin/python server.py
 ```
@@ -123,21 +123,19 @@ Todo se define con variables de entorno. La lista completa, con tipos, valores p
 # El secreto que presenta el cliente MCP. Obligatorio, mínimo 16 caracteres.
 export MCP_BEARER_TOKEN="$(openssl rand -base64 48)"
 
-# Las cuentas. MCP_ACCOUNTS enumera las claves; los campos van en
-# MCP_ACCOUNT_<CLAVE>_<CAMPO>.
-export MCP_ACCOUNTS=principal
-export MCP_ACCOUNT_PRINCIPAL_IMAP_HOST=mail.example.com
-export MCP_ACCOUNT_PRINCIPAL_SMTP_HOST=mail.example.com
-export MCP_ACCOUNT_PRINCIPAL_SMTP_PORT=465
-export MCP_ACCOUNT_PRINCIPAL_USERNAME=ada@example.com
-export MCP_ACCOUNT_PRINCIPAL_PASSWORD='contraseña-ficticia-principal'
+# Las cuentas se numeran. El nombre de la variable no cambia: solo el número.
+export MCP_ACCOUNT_USERNAME_1=ada@example.com
+export MCP_ACCOUNT_INBOX_HOST_1=mail.example.com
+export MCP_ACCOUNT_SMTP_HOST_1=mail.example.com
+export MCP_ACCOUNT_SMTP_PORT_1=587
+export MCP_ACCOUNT_SMTP_USE_SSL_1=false
+export MCP_ACCOUNT_PASSWORD_1='contraseña-ficticia-principal'
 ```
 
 | Variable | Uso |
 | --- | --- |
-| `MCP_BEARER_TOKEN` | Obligatoria. En producción, `openssl rand -base64 48`. |
-| `MCP_ACCOUNTS` | Lista de claves de cuenta, separada por comas. |
-| `MCP_ACCOUNT_<CLAVE>_<CAMPO>` | Los campos de cada cuenta: `IMAP_HOST`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURITY`, `USERNAME`, `PASSWORD` o `PASSWORD_ENV`, `DRAFTS_FOLDER`, `SENT_FOLDER`, `TRASH_FOLDER`, `ALLOW_SEND`, `ALLOW_MARK`, `ALLOW_DELETE`, `ALLOW_DRAFTS`. |
+| `MCP_BEARER_TOKEN` | Obligatoria. Da acceso a todas las cuentas. En producción, `openssl rand -base64 48`. |
+| `MCP_ACCOUNT_<CAMPO>_<N>` | Una cuenta. Campos: `NAME`, `LABEL`, `INBOX_TYPE`, `INBOX_HOST`, `INBOX_PORT`, `INBOX_USE_SSL`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USE_SSL`, `USERNAME`, `PASSWORD` o `PASSWORD_ENV`, `DRAFTS_FOLDER`, `SENT_FOLDER`, `TRASH_FOLDER`, `ALLOW_SEND`, `ALLOW_MARK`, `ALLOW_DELETE`, `ALLOW_DRAFTS`, `BEARER`. |
 | `MCP_PUBLIC_HOST` | Si está definida, sustituye a `public_host` y reconstruye hosts y orígenes permitidos. |
 | `MCP_ALLOWED_HOSTS`, `MCP_ALLOWED_ORIGINS` | Listas separadas por comas. Tapan a `MCP_PUBLIC_HOST`. |
 | `MCP_ENABLE_SEND`, `MCP_ENABLE_MARK`, `MCP_ENABLE_DELETE`, `MCP_ENABLE_DRAFTS` | Interruptores globales de escritura. Apagados por defecto. |
@@ -149,6 +147,15 @@ Los topes (`max_results`, `max_chars`, `max_attachment_bytes`, destinatarios, cu
 Un interruptor solo admite `true`, `false`, `1` y `0`. Cualquier otro texto aborta el arranque: un interruptor mal escrito no puede quedarse en apagado sin que nadie se entere. La tabla de errores está en [docs/configuracion.md](docs/configuracion.md).
 
 También sigue funcionando `accounts.toml`, con las claves de siempre, por si prefieres un fichero. Si existen las dos fuentes, mandan las cuentas del entorno.
+
+## Rutas
+
+| Ruta | Credencial | Qué ve |
+| --- | --- | --- |
+| `/mcp` | `MCP_BEARER_TOKEN` | Todas las cuentas. |
+| `/mcp/<cuenta>` | el global, o el `MCP_ACCOUNT_BEARER_<N>` de esa cuenta | Solo esa cuenta. |
+
+`<cuenta>` puede ser el correo, el `NAME` de la cuenta o su número. Con el bearer de una cuenta, la ruta tiene que ser la suya: en cualquier otra responde 403.
 
 ## Conectar un cliente y probarlo
 

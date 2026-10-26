@@ -26,7 +26,7 @@ y el arranque avisa por log.
 | Variable | Tipo | Default | Qué hace |
 | --- | --- | --- | --- |
 | `MCP_BEARER_TOKEN` | texto | — | **Obligatoria.** El secreto que presenta el cliente MCP. Mínimo 16 caracteres. Sin ella el proceso no arranca. |
-| `MCP_ACCOUNTS` | CSV de claves | — | Las cuentas configuradas. Sin ella y sin TOML, no hay cuentas. |
+| `MCP_ACCOUNTS` | CSV de índices | — | Opcional. Comprobación cruzada de qué cuentas existen. |
 | `MCP_PUBLIC_HOST` | texto | `127.0.0.1` | El nombre público del servidor, el que va en el certificado TLS. Arma `allowed_hosts` y `allowed_origins`. |
 | `MCP_ALLOWED_HOSTS` | CSV | derivado | Cabeceras `Host` permitidas. **Sustituye** a las derivadas de `MCP_PUBLIC_HOST` y a las del TOML. |
 | `MCP_ALLOWED_ORIGINS` | CSV | derivado | Orígenes permitidos. Misma regla que arriba. |
@@ -72,25 +72,35 @@ No las lee el proceso, pero el compose las usa:
 
 ## Variables de cuenta
 
-`MCP_ACCOUNTS` enumera las claves. Los campos van en
-`MCP_ACCOUNT_<CLAVE>_<CAMPO>`, con la clave en mayúsculas y el prefijo
-`MCP_ACCOUNT_`.
+Las cuentas se **numeran**. El nombre de la variable no cambia de una cuenta
+a otra: solo el número final. `MCP_ACCOUNT_<CAMPO>_<N>`, con N = 1, 2, 3...
 
 ```bash
-MCP_ACCOUNTS=principal,archivo
-MCP_ACCOUNT_PRINCIPAL_IMAP_HOST=imap.corp.example.com
-MCP_ACCOUNT_ARCHIVO_IMAP_HOST=imap.archivo.example.com
+MCP_ACCOUNT_USERNAME_1=ada@example.com
+MCP_ACCOUNT_INBOX_HOST_1=imap.corp.example.com
+MCP_ACCOUNT_PASSWORD_1=la-clave
+
+MCP_ACCOUNT_USERNAME_2=luis@example.com
+MCP_ACCOUNT_INBOX_HOST_2=imap.otro.example.com
+MCP_ACCOUNT_PASSWORD_2=otra-clave
 ```
+
+Para añadir una cuenta se copia el bloque y se cambia el número. No hay que
+declararla en ninguna lista: el servidor las descubre todas. `MCP_ACCOUNTS` es
+**opcional** y sirve como comprobación cruzada: si la defines, tiene que
+coincidir con las cuentas que existen, y el arranque avisa si no.
 
 | Campo | Tipo | Default | Qué es |
 | --- | --- | --- | --- |
-| `LABEL` | texto | la clave | Nombre que ve el asistente en `list_accounts`. |
-| `IMAP_HOST` | texto | — | **Obligatorio.** Servidor IMAP. |
-| `IMAP_PORT` | entero | `993` | Puerto IMAP. |
-| `IMAP_SSL` | bool | `true` | IMAP sobre TLS. |
-| `SMTP_HOST` | texto | `IMAP_HOST` | Servidor SMTP. |
+| `NAME` | texto | el correo | Identificador de la cuenta en las rutas. Solo hace falta si dos cuentas comparten correo. |
+| `LABEL` | texto | el identificador | Nombre que ve el asistente en `list_accounts`. |
+| `INBOX_TYPE` | `imap` | `imap` | Protocolo de entrada. Solo se admite IMAP. |
+| `INBOX_HOST` | texto | — | **Obligatorio.** Servidor IMAP. |
+| `INBOX_PORT` | entero | `993` | Puerto IMAP. |
+| `INBOX_USE_SSL` | bool | `true` | IMAP sobre TLS. `false` es IMAP en claro. |
+| `SMTP_HOST` | texto | `INBOX_HOST` | Servidor SMTP. |
 | `SMTP_PORT` | entero | `465` | Puerto SMTP. |
-| `SMTP_SECURITY` | `ssl` \| `starttls` | el del servidor | Cómo se abre el SMTP de esta cuenta. |
+| `SMTP_USE_SSL` | bool | `true` | `true` es SMTPS (465). `false` es STARTTLS, normalmente con el 587. |
 | `USERNAME` | texto | — | **Obligatorio.** Usuario de la cuenta. |
 | `PASSWORD` | texto | — | El secreto. O `PASSWORD_ENV`, nunca los dos. |
 | `PASSWORD_ENV` | nombre de variable | — | Nombre de otra variable con el secreto. |
@@ -101,11 +111,64 @@ MCP_ACCOUNT_ARCHIVO_IMAP_HOST=imap.archivo.example.com
 | `ALLOW_MARK` | bool | `false` | Permite marcar con esta cuenta. |
 | `ALLOW_DELETE` | bool | `false` | Permite borrar con esta cuenta. |
 | `ALLOW_DRAFTS` | bool | `false` | Permite dejar borradores con esta cuenta. |
+| `BEARER` | texto | — | Credencial propia de la cuenta. Ver [Rutas](#rutas). |
 
 Una capacidad de escritura hace falta **las dos cosas**: el interruptor global
 (`MCP_ENABLE_SEND`) y el permiso de la cuenta (`ALLOW_SEND`). Con cualquiera de
 los dos apagado, la tool no se registra: no aparece en `tools/list` y no se
 puede llamar.
+
+## Rutas
+
+El servidor expone dos formas de entrar:
+
+| Ruta | Credencial | Qué ve |
+| --- | --- | --- |
+| `/mcp` | `MCP_BEARER_TOKEN` | Todas las cuentas. |
+| `/mcp/<cuenta>` | `MCP_BEARER_TOKEN` o el `BEARER` de esa cuenta | Solo esa cuenta. |
+
+`<cuenta>` identifica la cuenta de tres maneras, indistintas:
+
+- el correo (`ada@example.com`),
+- el `NAME` que le hayas puesto (`principal`),
+- su número (`1`).
+
+Con el bearer global, la ruta acota: `/mcp` ve todas y `/mcp/ada@example.com`
+ve una. Con el bearer de una cuenta, la ruta tiene que ser la suya: en
+cualquier otra responde **403**. En `/mcp` un bearer de cuenta no vale.
+
+El aislamiento no es cosmético. Una tool que pida una cuenta fuera del ámbito
+falla con un error, y `list_accounts` solo devuelve las cuentas de la ruta.
+
+Para dar a un cliente una sola cuenta y que no pueda ver las demás, se le
+entrega su `BEARER` y se le apunta a `/mcp/<cuenta>`:
+
+```bash
+# En el stack
+MCP_ACCOUNT_BEARER_1=bearer-solo-de-la-cuenta-1-0123456789abcdef
+```
+
+```bash
+# En el cliente
+https://mcp.example.com/mcp/ada@example.com
+Authorization: Bearer bearer-solo-de-la-cuenta-1-0123456789abcdef
+```
+
+El `BEARER` de una cuenta:
+
+- es opcional: sin él, la cuenta solo se alcanza con el bearer global,
+- necesita al menos 16 caracteres,
+- no puede ser igual al bearer global (si lo fuera, la ruta no aislaría nada),
+- no puede repetirse entre cuentas.
+
+| Situación | Respuesta |
+| --- | --- |
+| Sin cabecera `Authorization` | 401 |
+| Bearer que no es ninguno de los conocidos | 401 |
+| Bearer de una cuenta en `/mcp` o en la ruta de otra | 403 |
+| Bearer global en `/mcp/<cuenta>` de otra | 404 |
+| Ruta que no es `/mcp` ni `/mcp/<algo>` | 404 |
+
 
 ## Cómo se interpretan los valores
 
@@ -134,16 +197,18 @@ El proceso no avisa y sigue: para. Cada mensaje dice qué corregir.
 | --- | --- |
 | `Falta MCP_BEARER_TOKEN` | No hay token, o está vacío. |
 | `MCP_BEARER_TOKEN es demasiado corto` | Menos de 16 caracteres. |
-| `MCP_ACCOUNTS tiene una clave de cuenta inválida` | Una clave con caracteres que no son letras, dígitos o guion bajo. |
-| `MCP_ACCOUNTS repite la cuenta` | La misma clave dos veces. |
-| `MCP_ACCOUNTS tiene dos cuentas que se escriben igual en mayúsculas` | `principal` y `PRINCIPAL` compartirían prefijo de variable. |
-| `Variable de cuenta desconocida: MCP_ACCOUNT_PRINCIPAL_SENT_FOLDR` | Un nombre de campo mal escrito. El mensaje lista los válidos. |
-| `MCP_ACCOUNT_ARCHIVO_USERNAME define la cuenta 'archivo', que no está en MCP_ACCOUNTS` | Hay campos de una cuenta que no declaraste. |
-| `La cuenta 'principal' no tiene contraseña` | Faltan `PASSWORD` y `PASSWORD_ENV`. |
-| `La cuenta 'principal' define PASSWORD y PASSWORD_ENV` | Las dos a la vez. |
+| `Variable de cuenta desconocida: MCP_ACCOUNT_INBOX_HOSTNAME_1` | Un nombre de campo mal escrito, o sin el número de cuenta. |
+| `La cuenta 2 necesita MCP_ACCOUNT_INBOX_HOST_2` | Falta un campo obligatorio. |
+| `La cuenta 2 no tiene contraseña` | Faltan `PASSWORD` y `PASSWORD_ENV`. |
+| `La cuenta 2 define MCP_ACCOUNT_PASSWORD_2 y MCP_ACCOUNT_PASSWORD_ENV_2` | Las dos a la vez. |
 | `Falta la variable de entorno MAIL_PRINCIPAL_PASSWORD` | `PASSWORD_ENV` apunta a una variable que no existe o está vacía. |
+| `El bearer de la cuenta X es el mismo que MCP_BEARER_TOKEN` | El aislamiento por ruta no aislaría nada. |
+| `Las cuentas X e Y comparten el mismo bearer` | Cada cuenta necesita el suyo. |
+| `MCP_ACCOUNT_BEARER_1 es demasiado corto` | Menos de 16 caracteres. |
+| `Dos cuentas comparten el nombre X` | Dos cuentas con el mismo correo. Distingue una con `MCP_ACCOUNT_NAME_<N>`. |
+| `MCP_ACCOUNTS no lista la cuenta 2, que sí tiene variables` | La comprobación cruzada no cuadra. |
 | `MCP_ENABLE_SEND debe ser true, false, 1 o 0` | Un interruptor mal escrito. |
-| `No hay cuentas` | Ni `MCP_ACCOUNTS` ni `accounts.toml`. |
+| `No hay cuentas` | Ni variables de cuenta ni `accounts.toml`. |
 | `bind_host '0.0.0.0' no es loopback` | Falta `MCP_ALLOW_NONLOCAL_BIND=1`. En el contenedor lo pone el compose. |
 
 ## Cómo ver qué se ha cargado
@@ -176,6 +241,7 @@ La diferencia entre las dos formas:
 | | `accounts.toml` | Variables de entorno |
 | --- | --- | --- |
 | Tipos | Los distingue el parser | Todos son texto; los valida el código |
+| Cuentas | Una tabla `[accounts.clave]` por cuenta | Una variable por campo, numerada |
 | Comentarios | Sí | Sí, en el `.env` |
 | Errores | En el arranque, con el número de línea | En el arranque, con el nombre de la variable |
 | Portainer | Hay que generarlo y codificarlo | Se pega el `.env` |

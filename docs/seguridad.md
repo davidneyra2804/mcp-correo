@@ -3,9 +3,11 @@
 Hecho en el código:
 
 - Bearer obligatorio, comparado con `hmac.compare_digest` sobre el SHA-256 del token. Sin token, el proceso no arranca. `/mcp` sin Bearer responde 401.
+- Credenciales por cuenta: `MCP_ACCOUNT_BEARER_<N>` da acceso a una sola cuenta y solo por su ruta. En `/mcp` o en la ruta de otra cuenta responde 403. No puede ser igual al bearer global ni repetirse entre cuentas.
+- El ámbito de la ruta se aplica en un único punto (`MailService._account`), de modo que una tool no puede tocar una cuenta fuera de su ruta.
 - Contraseñas solo en el entorno. El TOML guarda el nombre de la variable. `.gitignore` deja fuera `.env`, `accounts.toml` y `audit.jsonl`.
-- Configuración por variables de entorno: la contraseña de cada cuenta va en `MCP_ACCOUNT_<CLAVE>_PASSWORD` o se referencia con `MCP_ACCOUNT_<CLAVE>_PASSWORD_ENV`. Un interruptor mal escrito aborta el arranque en vez de quedarse apagado en silencio.
-- `Account.password` con `repr=False`. Los errores que ve el modelo no incluyen la clave ni el texto crudo de IMAP o SMTP.
+- Configuración por variables de entorno: la contraseña de cada cuenta va en `MCP_ACCOUNT_PASSWORD_<N>` o se referencia con `MCP_ACCOUNT_PASSWORD_ENV_<N>`. Un interruptor mal escrito aborta el arranque en vez de quedarse apagado en silencio.
+- `Account.password` y `Account.bearer` con `repr=False`. Los errores que ve el modelo no incluyen la clave ni el texto crudo de IMAP o SMTP.
 - Lectura: `EXAMINE`, `BODY.PEEK[]`, lista blanca de tipos y topes de tamaño. El proxy de lectura rechaza comandos de escritura.
 - Escritura apagada por defecto, global y por cuenta. Con el interruptor apagado la tool no se registra.
 - Enviar y borrar exigen un token de un solo uso, de 10 minutos, ligado a la cuenta y a la operación. El borrado definitivo es un parámetro de la preparación y viaja dentro del token. Marcar es directo y queda auditado.

@@ -59,9 +59,10 @@ Las que no puedes dejar de definir:
 | Nombre | Obligatoria | Qué es |
 | --- | --- | --- |
 | `MCP_BEARER_TOKEN` | sí | Secreto del cliente MCP. Mínimo 16 caracteres. `openssl rand -base64 48`. |
-| `MCP_ACCOUNTS` | sí | Lista de claves de cuenta, separada por comas. |
-| `MAIL_PRINCIPAL_PASSWORD` | si la cuenta `principal` está definida | Contraseña o app password de esa cuenta. |
-| `MAIL_ARCHIVO_PASSWORD` | si la cuenta `archivo` está definida | Igual para la segunda cuenta. |
+| `MCP_ACCOUNT_USERNAME_<N>` | sí | Usuario de la cuenta N. |
+| `MCP_ACCOUNT_INBOX_HOST_<N>` | sí | Servidor IMAP de la cuenta N. |
+| `MCP_ACCOUNT_PASSWORD_<N>` | sí, o `PASSWORD_ENV_<N>` | Contraseña de la cuenta N. |
+| `MCP_ACCOUNT_BEARER_<N>` | no | Credencial que da acceso solo a esa cuenta. Ver abajo. |
 | `MCP_PUBLIC_HOST` | para el dominio público | Nombre del MCP, el que irá en el certificado. Arma `allowed_hosts` y `allowed_origins`. |
 | `MCP_ALLOWED_HOSTS` | no | Lista separada por comas, si la generada no basta. |
 | `MCP_ALLOWED_ORIGINS` | no | Igual, para orígenes del navegador. |
@@ -71,7 +72,7 @@ Las que no puedes dejar de definir:
 | `MCP_AUDIT_MAX_BYTES` / `MCP_AUDIT_KEEP` / `MCP_AUDIT_ROTATE_SECONDS` | no | Rotación: 10 MiB, 12 copias, cada hora. |
 | `CLOUDFLARE_TUNNEL_TOKEN` | solo con el túnel | Token del túnel, del panel de Cloudflare. |
 
-Si añades otra cuenta, sus variables `MCP_ACCOUNT_<CLAVE>_*` tienen que estar
+Si añades otra cuenta, sus variables `MCP_ACCOUNT_<CAMPO>_<N>` tienen que estar
 también en las variables del stack. Una línea vacía no sirve: el proceso no
 arranca si falta el secreto de una cuenta declarada.
 
@@ -88,7 +89,7 @@ El compose las pasa por dos vías:
   levantar nada.
 - **`env_file: stack.env`**, que es el fichero donde Portainer deja todas las
   variables del stack. Es lo que hace llegar las variables
-  `MCP_ACCOUNT_<CLAVE>_*` sin enumerarlas una a una en el YAML.
+  `MCP_ACCOUNT_<CAMPO>_<N>` sin enumerarlas una a una en el YAML.
 
 `env_file` con `required: false` necesita **Compose 2.24 o superior**. Si el
 fichero no está, se sigue: el proceso arranca y avisa de que no hay cuentas.
@@ -100,26 +101,50 @@ convierte en `/tmp/accounts.toml` dentro del contenedor.
 
 ## 3. Las cuentas
 
-En el `.env`, con el patrón `MCP_ACCOUNT_<CLAVE>_<CAMPO>`:
+Las cuentas se numeran. El nombre de la variable no cambia de una a otra,
+solo el número final:
 
 ```bash
-MCP_ACCOUNTS=principal
+MCP_ACCOUNT_USERNAME_1=ada@corp.example.com
+MCP_ACCOUNT_INBOX_HOST_1=imap.corp.example.com
+MCP_ACCOUNT_SMTP_HOST_1=smtp.corp.example.com
+MCP_ACCOUNT_SMTP_PORT_1=587
+MCP_ACCOUNT_SMTP_USE_SSL_1=false
+MCP_ACCOUNT_PASSWORD_1=la-clave-de-la-cuenta
 
-MCP_ACCOUNT_PRINCIPAL_IMAP_HOST=imap.corp.example.com
-MCP_ACCOUNT_PRINCIPAL_SMTP_HOST=smtp.corp.example.com
-MCP_ACCOUNT_PRINCIPAL_SMTP_PORT=587
-MCP_ACCOUNT_PRINCIPAL_SMTP_SECURITY=starttls
-MCP_ACCOUNT_PRINCIPAL_USERNAME=ada@corp.example.com
-MCP_ACCOUNT_PRINCIPAL_PASSWORD=la-clave-de-la-cuenta
+MCP_ACCOUNT_USERNAME_2=luis@corp.example.com
+MCP_ACCOUNT_INBOX_HOST_2=imap.otro.example.com
+MCP_ACCOUNT_PASSWORD_2=otra-clave
 ```
 
+Para añadir una cuenta se copia el bloque y se cambia el número. No hay que
+declararla en ninguna lista.
+
 La contraseña va en dos sitios posibles, nunca en los dos:
-`MCP_ACCOUNT_<CLAVE>_PASSWORD` con el secreto, o
-`MCP_ACCOUNT_<CLAVE>_PASSWORD_ENV` con el nombre de otra variable.
+`MCP_ACCOUNT_<CLAVE>_<N>_PASSWORD` con el secreto, o
+`MCP_ACCOUNT_<CLAVE>_<N>_PASSWORD_ENV` con el nombre de otra variable.
 
 El fichero `accounts.toml` y las variables `MCP_ACCOUNTS_TOML_B64` /
 `MCP_ACCOUNTS_TOML` siguen funcionando como alternativa. Si existen las dos
 fuentes, mandan las cuentas del entorno.
+
+## 3 bis. Una credencial por cuenta
+
+Si quieres que un cliente solo vea un buzón, dale su propia credencial:
+
+```bash
+MCP_ACCOUNT_BEARER_1=bearer-solo-de-la-cuenta-1-0123456789abcdef
+```
+
+Y apúntalo a la ruta de esa cuenta:
+
+```
+https://mcp.example.com/mcp/ada@corp.example.com
+```
+
+En `/mcp` ve todas las cuentas; en `/mcp/ada@corp.example.com` solo esa. El
+bearer de una cuenta no vale en la ruta de otra ni en la de todas: responde
+403. Los detalles están en [configuracion.md](configuracion.md).
 
 ## 4. TLS
 
