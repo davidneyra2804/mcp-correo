@@ -1,0 +1,54 @@
+# TLS propio con Caddy. Solo si no usas Cloudflare Tunnel.
+#
+# El túnel ya termina TLS en el edge de Cloudflare: cloudflared habla HTTP
+# plano con el contenedor por la red de Compose. Añadir Caddy en ese caso
+# pondría dos terminadores de TLS y un puerto más abierto sin ganar nada.
+#
+# Este overlay es para el caso contrario: quieres que el servidor termine
+# TLS con un certificado público, sin depender de Cloudflare.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.proxy.yml up -d --build
+#
+# En Portainer: "Additional paths" con este fichero.
+#
+# deploy/Caddyfile usa `tls internal` para no pedir un certificado público
+# al arrancar. Para el dominio real, borra esa línea, define MCP_PUBLIC_HOST
+# con un nombre que resuelva a este servidor y deja libres 80 y 443.
+#
+# Caddy no lleva cap_drop: ALL porque tiene que abrir esos puertos. El
+# proceso MCP sí va sin capacidades.
+
+services:
+  caddy:
+    container_name: mcp-correo-caddy
+    image: caddy:2-alpine
+    pull_policy: missing
+    restart: unless-stopped
+    ports:
+      - "${CADDY_HTTP_BIND:-0.0.0.0}:80:80"
+      - "${CADDY_HTTPS_BIND:-0.0.0.0}:443:443"
+    environment:
+      MCP_PUBLIC_HOST: ${MCP_PUBLIC_HOST:-localhost}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - mcp
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 128m
+    memswap_limit: 128m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+volumes:
+  caddy-data:
+  caddy-config:

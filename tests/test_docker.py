@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 
 import pytest
+import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -135,8 +136,8 @@ def test_el_compose_publica_solo_loopback_y_no_lleva_secretos() -> None:
             continue
         value = line.split(":", 1)[1].strip()
         assert value.startswith("${") or not value, f"Secreto con valor literal: {line}"
-    assert "profiles:" in text
-    assert "caddy:2-alpine" in text
+    assert "profiles:" not in text
+    assert "caddy" not in text
     assert "traefik.enable" in text
     assert "mcp-correo:local" in text
     assert "pull_policy: ${MCP_PULL_POLICY:-build}" in text
@@ -147,6 +148,32 @@ def test_el_compose_publica_solo_loopback_y_no_lleva_secretos() -> None:
     assert "HEALTHCHECK" in dockerfile
     assert "python:3.12-slim" in dockerfile
     assert "workers=1" in (ROOT / "server.py").read_text(encoding="utf-8")
+
+
+def test_cada_servicio_tiene_container_name() -> None:
+    """Nombres estables: en Portainer se ven en Containers y en los logs."""
+    esperados = {
+        "docker-compose.yml": {"mcp": "mcp-correo", "audit-rotate": "mcp-correo-audit-rotate"},
+        "docker-compose.tunnel.yml": {"cloudflared": "mcp-correo-cloudflared"},
+        "docker-compose.proxy.yml": {"caddy": "mcp-correo-caddy"},
+    }
+    for nombre, servicios in esperados.items():
+        compose = yaml.safe_load((ROOT / nombre).read_text(encoding="utf-8"))
+        for servicio, container in servicios.items():
+            assert compose["services"][servicio]["container_name"] == container
+
+
+def test_el_tunel_no_necesita_caddy() -> None:
+    """Con túnel, el TLS lo termina Cloudflare. Caddy sería un segundo terminador."""
+    base = yaml.safe_load((ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
+    tunel = yaml.safe_load((ROOT / "docker-compose.tunnel.yml").read_text(encoding="utf-8"))
+    proxy = yaml.safe_load((ROOT / "docker-compose.proxy.yml").read_text(encoding="utf-8"))
+    assert "caddy" not in base["services"]
+    assert "cloudflared" in tunel["services"]
+    assert "caddy" not in tunel["services"]
+    # Caddy existe, pero solo en su propio overlay.
+    assert "caddy" in proxy["services"]
+    assert set(base["services"]) == {"mcp", "audit-rotate"}
 
 
 def test_el_compose_base_no_necesita_ningun_fichero_de_configuracion() -> None:

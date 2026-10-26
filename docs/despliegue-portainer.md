@@ -39,13 +39,25 @@ En Portainer: **Stacks → Add stack → Repository**. URL del repositorio, rama
 que quieras desplegar, Compose path `docker-compose.yml`. Activa la
 reconstrucción al actualizar el stack.
 
-El servicio `caddy` lleva el perfil `tls` y no arranca con el stack normal.
-`mcp` y `audit-rotate` sí.
+El compose base solo tiene el MCP y la rotación de la auditoría: **no expone
+nada por sí mismo**. Quien publica es un overlay, que en Portainer se añade
+en **Additional paths** (es lo mismo que pasar varios `-f` a `docker compose`):
 
-Para exponer con Cloudflare Tunnel, añade `docker-compose.tunnel.yml` en
-**Additional paths**: es la misma semántica que `docker compose -f ... -f ...`.
-La guía del túnel está en
-[despliegue-tunel-cloudflare.md](despliegue-tunel-cloudflare.md).
+| Additional paths | Para qué |
+| --- | --- |
+| `docker-compose.tunnel.yml` | Cloudflare Tunnel. Es tu caso. |
+| `docker-compose.proxy.yml` | Caddy con TLS propio. Solo si no usas túnel. |
+
+Los dos a la vez no tiene sentido: serían dos terminadores de TLS. Con túnel,
+el TLS lo termina el edge de Cloudflare y `cloudflared` habla HTTP plano con
+el contenedor por la red de Compose.
+
+Los contenedores llevan nombre fijo, para reconocerlos en la lista de
+Portainer y en los logs: `mcp-correo`, `mcp-correo-audit-rotate`,
+`mcp-correo-cloudflared` y `mcp-correo-caddy`.
+
+Un aviso: `container_name` es único en todo el host. Si despliegas el mismo
+stack dos veces, o dos stacks con el mismo nombre, Docker se quejará.
 
 ## 2. Las variables del stack
 
@@ -151,7 +163,10 @@ bearer de una cuenta no vale en la ruta de otra ni en la de todas: responde
 El puerto publicado por defecto no lleva TLS: es loopback, para un proxy que ya
 esté en el mismo host.
 
-**(a) Proxy que ya existe.** nginx, Nginx Proxy Manager, Traefik o Caddy en el
+**(a) Cloudflare Tunnel.** Sin puertos en el host y sin Caddy. Mira
+[despliegue-tunel-cloudflare.md](despliegue-tunel-cloudflare.md).
+
+**(b) Proxy que ya existe.** nginx, Nginx Proxy Manager, Traefik o Caddy en el
 host pueden hacer proxy a `http://127.0.0.1:8765`. El ejemplo de nginx del
 repositorio es `deploy/nginx-mcp.conf` (el `server_name` de ejemplo es
 `mcp.example.com`). Un proxy en otro contenedor no debe usar `127.0.0.1`:
@@ -160,11 +175,11 @@ por esa red, comenta el bloque `ports:` de `mcp`. Las etiquetas Traefik están
 comentadas en el servicio, con el dominio `mcp.example.com` y la red externa
 `proxy`.
 
-**(b) Caddy de este compose.** Perfil `tls`, apagado por defecto. En Portainer,
-si el formulario tiene perfiles, añade `tls`. En la máquina:
+**(c) Caddy de este repositorio.** Overlay `docker-compose.proxy.yml`, para
+quien quiera TLS propio con Let's Encrypt:
 
 ```bash
-docker compose --profile tls up -d --build
+docker compose -f docker-compose.yml -f docker-compose.proxy.yml up -d --build
 ```
 
 `deploy/Caddyfile` usa `tls internal` para no pedir un certificado público al
@@ -172,9 +187,6 @@ arrancar. Para el dominio real, borra esa línea, define `MCP_PUBLIC_HOST` con
 un nombre que resuelva a este servidor y deja libres 80 y 443. Caddy no lleva
 `cap_drop: ALL`: tiene que abrir esos puertos. El proceso MCP sí va sin
 capacidades.
-
-**(c) Cloudflare Tunnel.** Sin puertos en el host. Mira
-[despliegue-tunel-cloudflare.md](despliegue-tunel-cloudflare.md).
 
 Con el dominio público, `MCP_PUBLIC_HOST` deja pasar el `Host` de ese nombre y
 el origen `https://` correspondiente, y mantiene `127.0.0.1` para las pruebas

@@ -2,6 +2,16 @@
 # en el formulario del stack, en "Load variables from .env file", o en un
 # fichero .env junto al compose.
 #
+# Este es el stack base: el MCP y la rotación de la auditoría. No expone
+# nada por sí mismo; quien publica es un overlay.
+#
+#   docker-compose.tunnel.yml   Cloudflare Tunnel. No hace falta abrir
+#                                ningún puerto en el host.
+#   docker-compose.proxy.yml     Caddy con TLS propio (Let's Encrypt).
+#
+# En Portainer se añaden como "Additional paths", que es lo mismo que
+# pasar varios -f a docker compose.
+#
 # La imagen local se llama mcp-correo:local y no está en un registro.
 # Portainer ejecuta `docker compose pull` antes de `up`: pull_policy
 # build/never hace que ese pull no la busque.
@@ -9,14 +19,13 @@
 #
 # El contenedor escucha en 0.0.0.0:8765 porque el proxy o el túnel llegan
 # por la red de Docker. El puerto del host sale solo en 127.0.0.1.
-# Con Cloudflare Tunnel no hace falta publicar nada: mira
-# docker-compose.tunnel.yml.
 #
 # No pongas secretos en este archivo: Portainer los rellena como ${VAR}.
 # El contrato completo de variables está en docs/configuracion.md.
 
 services:
   mcp:
+    container_name: mcp-correo
     image: ${MCP_IMAGE:-mcp-correo:local}
     pull_policy: ${MCP_PULL_POLICY:-build}
     build:
@@ -107,6 +116,7 @@ services:
           memory: 64M
 
   audit-rotate:
+    container_name: mcp-correo-audit-rotate
     image: ${MCP_IMAGE:-mcp-correo:local}
     # Misma imagen que mcp. Sin build propio: se construye una sola vez.
     # never: el pull de Portainer no busca mcp-correo:local en un registro.
@@ -137,40 +147,8 @@ services:
         limits:
           memory: 64M
 
-  # Perfil desactivable: docker compose --profile tls up
-  # o en Portainer, marca el perfil "tls" si el formulario lo ofrece.
-  # Si no, deja este servicio sin arrancar y usa el proxy que ya tengas.
-  # Imagen pública. El pull del stack, sin el perfil tls, no la incluye.
-  caddy:
-    image: caddy:2-alpine
-    pull_policy: missing
-    profiles: ["tls"]
-    restart: unless-stopped
-    ports:
-      - "${CADDY_HTTP_BIND:-0.0.0.0}:80:80"
-      - "${CADDY_HTTPS_BIND:-0.0.0.0}:443:443"
-    environment:
-      MCP_PUBLIC_HOST: ${MCP_PUBLIC_HOST:-localhost}
-    volumes:
-      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy-data:/data
-      - caddy-config:/config
-    depends_on:
-      - mcp
-    # Sin cap_drop: Caddy tiene que abrir 80 y 443. El proceso MCP sí va sin capacidades.
-    security_opt:
-      - no-new-privileges:true
-    mem_limit: 128m
-    memswap_limit: 128m
-    deploy:
-      resources:
-        limits:
-          memory: 128M
-
 volumes:
   audit:
-  caddy-data:
-  caddy-config:
 
 # Red externa de un Traefik ya creado. Descomenta junto con las etiquetas.
 # networks:

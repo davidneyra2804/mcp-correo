@@ -96,10 +96,18 @@ docker compose -f docker-compose.yml -f docker-compose.tunnel.yml up -d --build
 El overlay añade el servicio `cloudflared` con el token desde el entorno. El
 compose base no cambia.
 
+**No añadas `docker-compose.proxy.yml` ni Caddy.** El TLS lo termina el edge
+de Cloudflare y `cloudflared` habla HTTP plano con el contenedor por la red de
+Compose. Meter Caddy pondría un segundo terminador de TLS y un puerto más
+abierto sin ganar nada.
+
 El puerto que el compose base publica en `127.0.0.1:8765` no molesta: es
 loopback y sirve para depurar con `curl` desde el host. Si prefieres que no
 exista en absoluto, quita el bloque `ports:` del servicio `mcp` en
 `docker-compose.yml`.
+
+Los contenedores quedan con nombre fijo: `mcp-correo` y
+`mcp-correo-cloudflared`.
 
 ## 5. Comprobar
 

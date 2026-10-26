@@ -2,6 +2,10 @@
 # con mcp por la red del stack (http://mcp:8765) y sale a Internet por
 # conexiones salientes. No hace falta abrir ningún puerto en el host.
 #
+# No necesitas Caddy: el TLS lo termina el edge de Cloudflare y cloudflared
+# habla HTTP plano con el contenedor. Si prefieres TLS propio con Let's
+# Encrypt, mira docker-compose.proxy.yml.
+#
 # En Portainer: Stacks → Add stack → Repository, y en "Additional paths"
 # añade este fichero. O en la máquina:
 #
@@ -21,6 +25,7 @@
 
 services:
   cloudflared:
+    container_name: mcp-correo-cloudflared
     image: cloudflare/cloudflared:${CLOUDFLARED_VERSION:-latest}
     pull_policy: missing
     restart: unless-stopped

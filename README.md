@@ -109,9 +109,17 @@ Los compose disponibles:
 
 | Fichero | Para qué |
 | --- | --- |
-| `docker-compose.yml` | Base: el MCP y la rotación de auditoría. Configuración solo por variables. |
-| `docker-compose.tunnel.yml` | Exposición por Cloudflare Tunnel. Añade `cloudflared`. |
+| `docker-compose.yml` | **Base.** El MCP y la rotación de la auditoría. No expone nada por sí mismo. |
+| `docker-compose.tunnel.yml` | Exposición por Cloudflare Tunnel. Añade `cloudflared`. No hace falta abrir puertos ni Caddy. |
+| `docker-compose.proxy.yml` | TLS propio con Caddy y Let's Encrypt. Solo si no usas túnel. |
 | `docker-compose.local.yml` | Desarrollo local con datos ficticios. |
+
+En Portainer, un overlay se añade en **Additional paths**, que es lo mismo que
+pasar varios `-f` a `docker compose`:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.tunnel.yml up -d --build
+```
 
 El despliegue está en [docs/despliegue-portainer.md](docs/despliegue-portainer.md), el del túnel en [docs/despliegue-tunel-cloudflare.md](docs/despliegue-tunel-cloudflare.md) y el de systemd en [docs/despliegue-systemd.md](docs/despliegue-systemd.md).
 
@@ -196,15 +204,17 @@ Un `Host` que no esté permitido responde 421. Un `Origin` que no esté permitid
 ## Estructura
 
 ```
-server.py                 # MCPServer, Bearer y registro de tools
+server.py                 # MCPServer, Bearer, enrutado por cuenta
 config.py                 # variables de entorno, interruptores y límites
+scope.py                  # el ámbito de la petición: qué cuentas puede tocar
 audit.py                  # JSONL de cada llamada
 mail/                     # IMAP, SMTP, MIME, confirmación y escritura
 .env.example              # todas las variables, con valores ficticios
 accounts.example.toml     # configuración alternativa en TOML
 Dockerfile                # imagen slim, usuario mcp, sin secretos
-docker-compose.yml        # base del stack
+docker-compose.yml        # base: el MCP y la rotación de la auditoría
 docker-compose.tunnel.yml # overlay de Cloudflare Tunnel
+docker-compose.proxy.yml  # overlay de Caddy con TLS propio
 docker-compose.local.yml  # overlay de desarrollo local
 docker/                   # entrada del contenedor y rotación del JSONL
 deploy/                   # systemd, nginx, Caddy opcional y logrotate
