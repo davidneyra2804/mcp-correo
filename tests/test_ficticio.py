@@ -152,9 +152,15 @@ def test_todo_dominio_es_reservado_o_esta_permitido() -> None:
 
 
 def test_no_hay_rastros_personales_en_el_arbol() -> None:
-    """Ni correos personales ni hostnames de máquinas."""
+    """Ni correos personales ni hostnames de máquinas.
+
+    Este fichero queda fuera del barrido: es el que contiene las cadenas
+    que busca, así que se encontraría a sí mismo.
+    """
     malos: list[str] = []
     for path, text in _texto().items():
+        if path == Path(__file__).resolve():
+            continue
         for rastro in RASTROS_PERSONALES:
             if rastro in text:
                 malos.append(f"{path.relative_to(ROOT)}: {rastro}")
