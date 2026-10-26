@@ -129,7 +129,12 @@ def test_el_compose_publica_solo_loopback_y_no_lleva_secretos() -> None:
     assert "unless-stopped" in text
     assert "MCP_BEARER_TOKEN:" in text
     assert "password =" not in text
-    assert "clave" not in text.lower()
+    # Ningún secreto con valor literal: todo sale de ${VAR}.
+    for line in text.splitlines():
+        if "PASSWORD" not in line or ":" not in line:
+            continue
+        value = line.split(":", 1)[1].strip()
+        assert value.startswith("${") or not value, f"Secreto con valor literal: {line}"
     assert "profiles:" in text
     assert "caddy:2-alpine" in text
     assert "traefik.enable" in text
@@ -142,3 +147,61 @@ def test_el_compose_publica_solo_loopback_y_no_lleva_secretos() -> None:
     assert "HEALTHCHECK" in dockerfile
     assert "python:3.12-slim" in dockerfile
     assert "workers=1" in (ROOT / "server.py").read_text(encoding="utf-8")
+
+
+def test_el_compose_base_no_necesita_ningun_fichero_de_configuracion() -> None:
+    text = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+    assert "MCP_CONFIG" not in text
+    assert "MCP_ACCOUNTS_TOML" not in text
+    assert "accounts.toml" not in text
+    # Portainer deja aquí las variables del stack, incluidas las de cuenta.
+    assert "stack.env" in text
+    assert "required: false" in text
+
+
+def test_el_compose_declara_todas_las_variables_fijas_del_servidor() -> None:
+    from config import _SERVER_ENV
+
+    text = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+    missing = sorted(name for name in _SERVER_ENV.values() if f"{name}:" not in text)
+    assert not missing, f"El compose no declara: {', '.join(missing)}"
+
+
+def test_el_ejemplo_de_env_documenta_todas_las_variables() -> None:
+    from config import _ACCOUNT_FIELDS, _SERVER_ENV
+
+    text = (ROOT / ".env.example").read_text(encoding="utf-8")
+    missing = sorted(name for name in _SERVER_ENV.values() if name not in text)
+    assert not missing, f"El ejemplo no documenta: {', '.join(missing)}"
+    missing_fields = sorted(field for field in _ACCOUNT_FIELDS if field.upper() not in text)
+    assert not missing_fields, f"El ejemplo no documenta: {', '.join(missing_fields)}"
+    assert "MCP_ACCOUNTS=" in text
+
+
+def test_el_overlay_del_tunel_no_lleva_el_token_dentro() -> None:
+    text = (ROOT / "docker-compose.tunnel.yml").read_text(encoding="utf-8")
+    assert "cloudflare/cloudflared" in text
+    assert "${CLOUDFLARE_TUNNEL_TOKEN:?" in text
+    assert "depends_on:" in text
+    assert "cap_drop:" in text
+    assert "no-new-privileges:true" in text
+    # El token solo puede venir del entorno.
+    assert "eyJh" not in text
+
+
+def test_el_compose_local_no_necesita_el_toml() -> None:
+    text = (ROOT / "docker-compose.local.yml").read_text(encoding="utf-8")
+    assert "MCP_ACCOUNTS:" in text
+    assert "MCP_ACCOUNT_PRINCIPAL_IMAP_HOST:" in text
+    assert "MCP_ACCOUNT_ARCHIVO_PASSWORD:" in text
+    assert "accounts.toml" not in text
+
+
+def test_ningun_compose_declara_una_contrasena_como_clave_de_cuenta() -> None:
+    for name in (
+        "docker-compose.yml",
+        "docker-compose.tunnel.yml",
+        "docker-compose.local.yml",
+    ):
+        text = (ROOT / name).read_text(encoding="utf-8")
+        assert "MCP_ACCOUNT_PRINCIPAL_PASSWORD:" not in text or "local" in name

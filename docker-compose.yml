@@ -1,10 +1,19 @@
-# Stack de Portainer desde Git. La imagen local se llama mcp-correo:local
-# y no está en un registro. Portainer ejecuta `docker compose pull` antes
-# de `up`: pull_policy build/never hace que ese pull no la busque.
+# Stack de Portainer. Toda la configuración va en variables de entorno:
+# en el formulario del stack, en "Load variables from .env file", o en un
+# fichero .env junto al compose.
+#
+# La imagen local se llama mcp-correo:local y no está en un registro.
+# Portainer ejecuta `docker compose pull` antes de `up`: pull_policy
+# build/never hace que ese pull no la busque.
 # Imagen ya publicada: MCP_IMAGE=registro/mcp-correo:1 y MCP_PULL_POLICY=always.
-# El contenedor escucha en 0.0.0.0:8765. El puerto del host sale solo en
-# 127.0.0.1. Hace falta Bearer y, hacia fuera, TLS en un proxy.
+#
+# El contenedor escucha en 0.0.0.0:8765 porque el proxy o el túnel llegan
+# por la red de Docker. El puerto del host sale solo en 127.0.0.1.
+# Con Cloudflare Tunnel no hace falta publicar nada: mira
+# docker-compose.tunnel.yml.
+#
 # No pongas secretos en este archivo: Portainer los rellena como ${VAR}.
+# El contrato completo de variables está en docs/configuracion.md.
 
 services:
   mcp:
@@ -25,34 +34,53 @@ services:
     pids_limit: 128
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=64m
+    # Portainer escribe aquí las variables del stack: las que defines a mano
+    # y las del .env que subes. Es lo que hace llegar las variables
+    # MCP_ACCOUNT_<CLAVE>_* sin enumerarlas una a una.
+    # Compose 2.24 o superior. Si el fichero no está, se sigue.
+    env_file:
+      - path: ${MCP_STACK_ENV_FILE:-stack.env}
+        required: false
     environment:
       MCP_BEARER_TOKEN: ${MCP_BEARER_TOKEN:?Define MCP_BEARER_TOKEN en las variables del stack}
       MCP_BIND_HOST: 0.0.0.0
       MCP_BIND_PORT: "8765"
       MCP_ALLOW_NONLOCAL_BIND: "1"
-      MCP_CONFIG: /config/accounts.toml
       MCP_AUDIT_LOG: /var/log/mcp-correo/audit.jsonl
+      # Cuentas. La lista y los campos vienen de MCP_ACCOUNTS y
+      # MCP_ACCOUNT_<CLAVE>_<CAMPO>. Solo se declara aquí la lista; los
+      # campos llegan por env_file.
+      MCP_ACCOUNTS: ${MCP_ACCOUNTS:-}
+      # Interruptores globales. Apagados por defecto.
+      MCP_ENABLE_SEND: ${MCP_ENABLE_SEND:-false}
+      MCP_ENABLE_MARK: ${MCP_ENABLE_MARK:-false}
+      MCP_ENABLE_DELETE: ${MCP_ENABLE_DELETE:-false}
+      MCP_ENABLE_DRAFTS: ${MCP_ENABLE_DRAFTS:-false}
+      # Red. MCP_PUBLIC_HOST arma allowed_hosts y allowed_origins; las
+      # listas explícitas los sustituyen.
       MCP_PUBLIC_HOST: ${MCP_PUBLIC_HOST:-}
       MCP_ALLOWED_HOSTS: ${MCP_ALLOWED_HOSTS:-}
       MCP_ALLOWED_ORIGINS: ${MCP_ALLOWED_ORIGINS:-}
-      MCP_ACCOUNTS_TOML_B64: ${MCP_ACCOUNTS_TOML_B64:-}
-      MCP_ACCOUNTS_TOML: ${MCP_ACCOUNTS_TOML:-}
-      # Cada password_env del TOML tiene que estar aquí. Añade otra línea si hay más cuentas.
-      MAIL_PRINCIPAL_PASSWORD: ${MAIL_PRINCIPAL_PASSWORD:-}
-      MAIL_ARCHIVO_PASSWORD: ${MAIL_ARCHIVO_PASSWORD:-}
+      # Límites. El cliente no puede subirlos.
+      MCP_MAX_RESULTS: ${MCP_MAX_RESULTS:-100}
+      MCP_MAX_CHARS: ${MCP_MAX_CHARS:-20000}
+      MCP_MAX_ATTACHMENT_BYTES: ${MCP_MAX_ATTACHMENT_BYTES:-5000000}
+      MCP_MAX_MESSAGE_BYTES: ${MCP_MAX_MESSAGE_BYTES:-15000000}
+      MCP_IMAP_TIMEOUT: ${MCP_IMAP_TIMEOUT:-20}
+      MCP_SENT_SCAN_LIMIT: ${MCP_SENT_SCAN_LIMIT:-300}
+      MCP_CONFIRM_TTL_SECONDS: ${MCP_CONFIRM_TTL_SECONDS:-600}
+      MCP_MAX_RECIPIENTS: ${MCP_MAX_RECIPIENTS:-10}
+      MCP_MAX_SENDS_PER_DAY: ${MCP_MAX_SENDS_PER_DAY:-30}
+      MCP_MAX_DELETE_PER_CALL: ${MCP_MAX_DELETE_PER_CALL:-20}
+      MCP_MAX_MARK_PER_CALL: ${MCP_MAX_MARK_PER_CALL:-50}
+      MCP_SMTP_TIMEOUT: ${MCP_SMTP_TIMEOUT:-30}
+      MCP_SMTP_SECURITY: ${MCP_SMTP_SECURITY:-ssl}
+      MCP_ALLOWED_RECIPIENT_DOMAINS: ${MCP_ALLOWED_RECIPIENT_DOMAINS:-}
+      MCP_ALLOWED_ATTACHMENT_TYPES: ${MCP_ALLOWED_ATTACHMENT_TYPES:-}
     ports:
       - "${MCP_PUBLISH_BIND:-127.0.0.1}:${MCP_PUBLISH_PORT:-8765}:8765"
     volumes:
       - audit:/var/log/mcp-correo
-      # accounts.toml sin contraseñas. Descomenta una de las dos formas:
-      # - type: bind
-      #   source: ./accounts.toml
-      #   target: /config/accounts.toml
-      #   read_only: true
-    # configs:
-    #   - source: accounts
-    #     target: /config/accounts.toml
-    #     mode: 0440
     # Etiquetas Traefik, opcionales. Sustituye el dominio y la red del proxy.
     # labels:
     #   - "traefik.enable=true"
@@ -149,8 +177,3 @@ volumes:
 #   proxy:
 #     external: true
 #     name: proxy
-
-# Config de Docker (Compose / Swarm). El fichero no lleva contraseñas.
-# configs:
-#   accounts:
-#     file: ./accounts.toml

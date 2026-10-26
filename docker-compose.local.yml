@@ -1,0 +1,36 @@
+# Desarrollo local. Datos ficticios: mail.example.com no existe, así que
+# tools/list funciona pero las llamadas de IMAP fallan. No lo uses con un
+# buzón real.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml up --build
+#
+# Todo se define por variables de entorno, igual que en Portainer. Los
+# secretos ficticios están aquí a propósito.
+
+services:
+  mcp:
+    environment:
+      MCP_BEARER_TOKEN: ${MCP_BEARER_TOKEN:-token-ficticio-local-0123456789abcdef}
+      MCP_ACCOUNTS: principal,archivo
+      MCP_ACCOUNT_PRINCIPAL_LABEL: "Correo principal — ejemplo ficticio"
+      MCP_ACCOUNT_PRINCIPAL_IMAP_HOST: mail.example.com
+      MCP_ACCOUNT_PRINCIPAL_IMAP_PORT: "993"
+      MCP_ACCOUNT_PRINCIPAL_SMTP_HOST: mail.example.com
+      MCP_ACCOUNT_PRINCIPAL_SMTP_PORT: "465"
+      MCP_ACCOUNT_PRINCIPAL_USERNAME: ada@example.com
+      MCP_ACCOUNT_PRINCIPAL_PASSWORD: contraseña-ficticia-principal
+      MCP_ACCOUNT_PRINCIPAL_ALLOW_SEND: "false"
+      MCP_ACCOUNT_PRINCIPAL_ALLOW_MARK: "false"
+      MCP_ACCOUNT_PRINCIPAL_ALLOW_DELETE: "false"
+      MCP_ACCOUNT_PRINCIPAL_ALLOW_DRAFTS: "false"
+      MCP_ACCOUNT_ARCHIVO_LABEL: "Correo de archivo — ejemplo ficticio"
+      MCP_ACCOUNT_ARCHIVO_IMAP_HOST: mail.archivo.example.com
+      MCP_ACCOUNT_ARCHIVO_IMAP_PORT: "993"
+      MCP_ACCOUNT_ARCHIVO_SMTP_HOST: mail.archivo.example.com
+      MCP_ACCOUNT_ARCHIVO_SMTP_PORT: "465"
+      MCP_ACCOUNT_ARCHIVO_USERNAME: ada.archivo@example.com
+      MCP_ACCOUNT_ARCHIVO_PASSWORD: contraseña-ficticia-archivo
+      MCP_ACCOUNT_ARCHIVO_ALLOW_SEND: "false"
+      MCP_ACCOUNT_ARCHIVO_ALLOW_MARK: "false"
+      MCP_ACCOUNT_ARCHIVO_ALLOW_DELETE: "false"
+      MCP_ACCOUNT_ARCHIVO_ALLOW_DRAFTS: "false"

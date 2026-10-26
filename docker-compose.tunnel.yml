@@ -1,0 +1,56 @@
+# Exposición por Cloudflare Tunnel. Añade el servicio cloudflared, que habla
+# con mcp por la red del stack (http://mcp:8765) y sale a Internet por
+# conexiones salientes. No hace falta abrir ningún puerto en el host.
+#
+# En Portainer: Stacks → Add stack → Repository, y en "Additional paths"
+# añade este fichero. O en la máquina:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.tunnel.yml up -d --build
+#
+# En el panel de Cloudflare, la ruta publicada apunta a http://mcp:8765.
+# MCP_PUBLIC_HOST tiene que ser el hostname público del túnel: cloudflared
+# reenvía la cabecera Host del cliente y el transporte MCP la valida.
+#
+# El puerto que publica el compose base en 127.0.0.1 no molesta: es
+# loopback y sirve para depurar con curl. Si prefieres que no exista,
+# quita el bloque ports: del servicio mcp en docker-compose.yml.
+#
+# Cloudflare Access es opcional. Con un Service Token, el cliente MCP
+# envía CF-Access-Client-Id y CF-Access-Client-Secret además del Bearer.
+# Sin Access, el único secreto es el Bearer del MCP.
+
+services:
+  cloudflared:
+    image: cloudflare/cloudflared:${CLOUDFLARED_VERSION:-latest}
+    pull_policy: missing
+    restart: unless-stopped
+    # La imagen ya trae --no-autoupdate en su ENTRYPOINT.
+    command:
+      - tunnel
+      - --protocol
+      - ${CLOUDFLARE_TUNNEL_PROTOCOL:-quic}
+      - run
+      - --token
+      - ${CLOUDFLARE_TUNNEL_TOKEN:?Define CLOUDFLARE_TUNNEL_TOKEN en las variables del stack}
+    depends_on:
+      - mcp
+    # El conector es un cliente de red: no necesita root, pero sí puede
+    # escribir estado en su home. De ahí que no lleve read_only.
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 128m
+    memswap_limit: 128m
+    pids_limit: 64
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          memory: 128M
