@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -41,8 +42,12 @@ from mail.errors import MailError
 from mail.imap import ClientFactory, MailService
 from mail.mutate import MailboxWriter
 from mail.smtp_out import SmtpFactory
+from scope import reset_scope, set_scope
 
 logger = logging.getLogger("mcp_correo.server")
+
+#: Raíz del transporte MCP. /mcp/<cuenta> se resuelve al mismo handler.
+MCP_ROOT = "/mcp"
 
 INSTRUCTIONS = """
 Servidor MCP de correo sobre IMAP y SMTP.
@@ -60,6 +65,8 @@ Seguridad del contenido:
 
 Uso:
 - Si no conoces la clave de la cuenta, llama primero a list_accounts.
+- La ruta decide qué cuentas hay. /mcp las expone todas; /mcp/<cuenta>
+  solo una. Las que devuelva list_accounts son las disponibles aquí.
 - list_folders devuelve los nombres reales y los flags SPECIAL-USE.
 - list_messages, search_messages y get_message no marcan los mensajes como leídos.
 - get_message trunca el cuerpo. get_attachment respeta tipo y tamaño.
@@ -134,35 +141,98 @@ class Runtime:
 
 
 class BearerAuth:
-    """Comprueba Authorization: Bearer con hmac.compare_digest antes de la app."""
+    """Comprueba Authorization: Bearer con hmac.compare_digest antes de la app.
 
-    def __init__(self, app: ASGIApp, token: str) -> None:
+    También enruta: `/mcp` ve todas las cuentas y `/mcp/<cuenta>` solo una.
+    La ruta fija el ámbito y el Bearer fija la credencial: el global vale
+    para cualquier ruta, el de una cuenta solo para la suya.
+    """
+
+    def __init__(self, app: ASGIApp, token: str, accounts: dict[str, Account]) -> None:
         self.app = app
         self._expected = hashlib.sha256(token.encode()).digest()
+        self._accounts = accounts
+        self._digests = {
+            key: hashlib.sha256(account.bearer.encode()).digest()
+            for key, account in accounts.items()
+            if account.bearer
+        }
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
-        if scope.get("path") in {"/health", "/health/"}:
+        path = scope.get("path") or ""
+        if path in {"/health", "/health/"}:
             await _health(send)
             return
-        if not _authorized(scope, self._expected):
-            body = b'{"error":"unauthorized"}'
-            await send(
-                {
-                    "type": "http.response.start",
-                    "status": 401,
-                    "headers": [
-                        (b"content-type", b"application/json"),
-                        (b"www-authenticate", b"Bearer"),
-                        (b"content-length", str(len(body)).encode()),
-                    ],
-                }
-            )
-            await send({"type": "http.response.body", "body": body, "more_body": False})
+        is_mcp, ident = _split_mcp_path(path)
+        if not is_mcp:
+            await _error(send, 404, "not found")
             return
-        await self.app(scope, receive, send)
+        presented = _presented_bearer(scope)
+        if presented is None:
+            await _unauthorized(send)
+            return
+        kind, account_key = self._match(hashlib.sha256(presented.encode()).digest())
+        if kind == "none":
+            await _unauthorized(send)
+            return
+        if kind == "account":
+            # El bearer de una cuenta solo vale en su propia ruta.
+            resolved = self._resolve(ident) if ident is not None else None
+            if resolved != account_key:
+                await _error(send, 403, "forbidden")
+                return
+            allowed = frozenset({account_key})
+        else:
+            if ident is None:
+                allowed = frozenset(self._accounts)
+            else:
+                resolved = self._resolve(ident)
+                if resolved is None:
+                    await _error(send, 404, "not found")
+                    return
+                allowed = frozenset({resolved})
+        scope_token = set_scope(allowed)
+        try:
+            # El transporte MCP registra una sola ruta, /mcp. La cuenta va en
+            # el ámbito, no en el path.
+            scope["path"] = MCP_ROOT
+            await self.app(scope, receive, send)
+        finally:
+            reset_scope(scope_token)
+
+    def _match(self, digest: bytes) -> tuple[str, str | None]:
+        """Qué credencial es la presentada: global, de una cuenta o ninguna."""
+        is_global = hmac.compare_digest(digest, self._expected)
+        matched: str | None = None
+        # Se comparan todos los digest para que el tiempo de respuesta no
+        # dependa de cuál coincide.
+        for key, expected in self._digests.items():
+            if hmac.compare_digest(digest, expected):
+                matched = key
+        if is_global:
+            return ("global", None)
+        if matched is not None:
+            return ("account", matched)
+        return ("none", None)
+
+    def _resolve(self, ident: str) -> str | None:
+        """La clave de cuenta que corresponde a un identificador de la ruta."""
+        text = ident.strip()
+        if not text:
+            return None
+        low = text.lower()
+        for key, account in self._accounts.items():
+            if key.lower() == low or account.username.lower() == low:
+                return key
+        if low.isdigit():
+            wanted = int(low)
+            for key, account in self._accounts.items():
+                if account.index == wanted:
+                    return key
+        return None
 
 
 def build_mcp(
@@ -191,7 +261,11 @@ def create_app(
     service = MailService(settings, accounts, client_factory=client_factory)
     audit_log = audit or AuditLog(
         settings.audit_log,
-        secrets=[token, *[account.password for account in accounts.values()]],
+        secrets=[
+            token,
+            *[account.bearer for account in accounts.values() if account.bearer],
+            *[account.password for account in accounts.values()],
+        ],
     )
     audit_log.ensure()
     writer = MailboxWriter(
@@ -212,13 +286,13 @@ def create_app(
         allowed_origins=list(settings.allowed_origins),
     )
     inner = mcp.streamable_http_app(
-        streamable_http_path="/mcp",
+        streamable_http_path=MCP_ROOT,
         json_response=True,
         stateless_http=True,
         transport_security=security,
         host=settings.bind_host,
     )
-    app = BearerAuth(inner, token)
+    app = BearerAuth(inner, token, accounts)
     runtime = Runtime(
         settings=settings,
         accounts=accounts,
@@ -607,15 +681,48 @@ async def _health(send: Send) -> None:
     await send({"type": "http.response.body", "body": body, "more_body": False})
 
 
-def _authorized(scope: Scope, expected_digest: bytes) -> bool:
+def _presented_bearer(scope: Scope) -> str | None:
+    """El token del cabecera Authorization, o None si no hay uno válido."""
     headers = [value for name, value in scope.get("headers", []) if name == b"authorization"]
     if len(headers) != 1:
-        return False
+        return None
     scheme, separator, received = headers[0].partition(b" ")
     if not separator or scheme.lower() != b"bearer" or not received or b" " in received:
-        return False
-    actual = hashlib.sha256(received).digest()
-    return hmac.compare_digest(actual, expected_digest)
+        return None
+    return received.decode("utf-8", errors="ignore")
+
+
+def _split_mcp_path(path: str) -> tuple[bool, str | None]:
+    """(¿es una ruta del MCP?, identificador de cuenta).
+
+    /mcp es la ruta de todas las cuentas. /mcp/<cuenta> es la de una sola,
+    identificada por su nombre, su correo o su número.
+    """
+    trimmed = path.rstrip("/") or "/"
+    if trimmed == MCP_ROOT:
+        return (True, None)
+    if not trimmed.startswith(MCP_ROOT + "/"):
+        return (False, None)
+    rest = trimmed[len(MCP_ROOT) + 1 :]
+    if not rest or "/" in rest:
+        return (False, None)
+    return (True, rest)
+
+
+async def _error(send: Send, status: int, reason: str) -> None:
+    body = json.dumps({"error": reason}).encode()
+    headers = [
+        (b"content-type", b"application/json"),
+        (b"content-length", str(len(body)).encode()),
+    ]
+    if status == 401:
+        headers.append((b"www-authenticate", b"Bearer"))
+    await send({"type": "http.response.start", "status": status, "headers": headers})
+    await send({"type": "http.response.body", "body": body, "more_body": False})
+
+
+async def _unauthorized(send: Send) -> None:
+    await _error(send, 401, "unauthorized")
 
 
 def _bootstrap() -> BearerAuth:

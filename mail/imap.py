@@ -27,6 +27,7 @@ from mail.mime import (
 )
 from mail.readonly import ReadOnlyIMAP, WritableIMAP
 from mail.threads import group_threads, normalize_message_id, replied_ids_from_header_block
+from scope import current_scope
 
 logger = logging.getLogger("mcp_correo.imap")
 
@@ -58,6 +59,10 @@ class MailService:
         self._factory = client_factory or default_client_factory
 
     def list_accounts(self) -> dict:
+        scope = current_scope()
+        accounts = [
+            account for account in self.accounts.values() if scope is None or account.key in scope
+        ]
         return {
             "accounts": [
                 {
@@ -69,7 +74,7 @@ class MailService:
                     "can_delete": self.settings.enable_delete and account.allow_delete,
                     "can_draft": self.settings.enable_drafts and account.allow_drafts,
                 }
-                for account in self.accounts.values()
+                for account in accounts
             ]
         }
 
@@ -326,6 +331,12 @@ class MailService:
         if account is None:
             known = ", ".join(sorted(self.accounts)) or "(ninguna)"
             raise MailError(f"Cuenta desconocida: {key}. Cuentas configuradas: {known}")
+        scope = current_scope()
+        if scope is not None and key not in scope:
+            raise MailError(
+                f"La cuenta {key} no está disponible en esta ruta. "
+                "Esta ruta expone: " + (", ".join(sorted(scope)) or "(ninguna)") + "."
+            )
         return account
 
     def _raise_imap(self, account: Account, exc: BaseException) -> NoReturn:

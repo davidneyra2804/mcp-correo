@@ -29,7 +29,6 @@ from pathlib import Path
 logger = logging.getLogger("mcp_correo.config")
 
 ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-ACCOUNT_KEY = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_]*$")
 MIN_TOKEN_LENGTH = 16
 
 #: Variable que enumera las cuentas configuradas por entorno.
@@ -52,7 +51,7 @@ DEFAULT_ATTACHMENT_TYPES: tuple[str, ...] = (
     "application/vnd.openxmlformats-officedocument.presentationml.presentation",
 )
 
-#: Campos que admite una cuenta, en TOML y por entorno.
+#: Campos que admite una cuenta en el TOML.
 _ACCOUNT_FIELDS: tuple[str, ...] = (
     "label",
     "imap_host",
@@ -74,6 +73,37 @@ _ACCOUNT_FIELDS: tuple[str, ...] = (
 )
 
 _ACCOUNT_KEYS = frozenset(_ACCOUNT_FIELDS)
+
+#: Campo de cuenta -> base del nombre de su variable. El índice va al final:
+#: MCP_ACCOUNT_<BASE>_<N>. El 1 es la primera cuenta, el 2 la segunda.
+_ACCOUNT_ENV_FIELDS: dict[str, str] = {
+    "name": "NAME",
+    "label": "LABEL",
+    "inbox_type": "INBOX_TYPE",
+    "inbox_host": "INBOX_HOST",
+    "inbox_port": "INBOX_PORT",
+    "inbox_use_ssl": "INBOX_USE_SSL",
+    "smtp_host": "SMTP_HOST",
+    "smtp_port": "SMTP_PORT",
+    "smtp_use_ssl": "SMTP_USE_SSL",
+    "username": "USERNAME",
+    "password": "PASSWORD",
+    "password_env": "PASSWORD_ENV",
+    "drafts_folder": "DRAFTS_FOLDER",
+    "sent_folder": "SENT_FOLDER",
+    "trash_folder": "TRASH_FOLDER",
+    "allow_send": "ALLOW_SEND",
+    "allow_mark": "ALLOW_MARK",
+    "allow_delete": "ALLOW_DELETE",
+    "allow_drafts": "ALLOW_DRAFTS",
+    "bearer": "BEARER",
+}
+
+_ACCOUNT_ENV_BASES = frozenset(_ACCOUNT_ENV_FIELDS.values())
+
+#: MCP_ACCOUNT_<BASE>_<N>. La base puede llevar guion bajo, así que el
+#: índice es lo que va al final.
+_ACCOUNT_VAR = re.compile(r"^MCP_ACCOUNT_(?P<base>[A-Z_]+)_(?P<index>\d+)$")
 
 _SERVER_KEYS = {
     "public_host",
@@ -171,7 +201,7 @@ class ServerSettings:
 
 @dataclass(frozen=True)
 class Account:
-    """Cuenta IMAP. `password` no aparece en repr ni en trazas del dataclass."""
+    """Cuenta IMAP. `password` y `bearer` no aparecen en repr ni en trazas."""
 
     key: str
     label: str
@@ -179,6 +209,7 @@ class Account:
     imap_port: int
     username: str
     password: str = field(repr=False, compare=False)
+    bearer: str = field(repr=False, compare=False, default="")
     imap_ssl: bool = True
     smtp_host: str = ""
     smtp_port: int = 465
@@ -190,6 +221,8 @@ class Account:
     allow_mark: bool = False
     allow_delete: bool = False
     allow_drafts: bool = False
+    #: Número de cuenta en las variables de entorno. 0 si viene del TOML.
+    index: int = 0
 
 
 def require_bearer_token() -> str:
@@ -243,9 +276,8 @@ def load_config(path: Path | None = None) -> tuple[ServerSettings, dict[str, Acc
         accounts = {key: _account(str(key), value) for key, value in accounts_raw.items()}
     if not accounts:
         raise SystemExit(
-            "No hay cuentas. Define "
-            f"{ACCOUNTS_LIST} con la lista de claves y una variable por campo "
-            "(MCP_ACCOUNT_<CLAVE>_<CAMPO>), o añade una sección [accounts.<clave>] "
+            "No hay cuentas. Define las variables de cada cuenta "
+            "(MCP_ACCOUNT_<CAMPO>_<N>), o añade una sección [accounts.<clave>] "
             "al accounts.toml."
         )
     return settings, accounts
@@ -501,184 +533,215 @@ def _default_origins(public_host: str) -> tuple[str, ...]:
 
 
 # --- Cuentas por entorno -----------------------------------------------------
+#
+# Las cuentas se declaran por índice: MCP_ACCOUNT_<CAMPO>_<N>. La 1 es la
+# primera, la 2 la segunda. El índice va al final para que el prefijo de los
+# campos sea el mismo en todas las cuentas y una variable por campo.
 
 
 def _accounts_from_env() -> dict[str, Account]:
-    """Cuentas declaradas con MCP_ACCOUNTS y MCP_ACCOUNT_<CLAVE>_<CAMPO>."""
-    keys = _declared_account_keys()
-    if not keys:
+    """Cuentas declaradas con MCP_ACCOUNT_<CAMPO>_<N>."""
+    indexes = _account_indexes()
+    if not indexes:
         return {}
-    fields = _collect_account_fields(keys)
-    return {key: _account_from_env(key, fields.get(key, {})) for key in keys}
-
-
-def _declared_account_keys() -> list[str]:
-    raw = _env_text(ACCOUNTS_LIST)
-    if raw is None:
-        return []
-    keys: list[str] = []
-    for part in raw.split(","):
-        key = part.strip()
-        if not key:
-            continue
-        if not ACCOUNT_KEY.fullmatch(key):
+    accounts: dict[str, Account] = {}
+    for index in indexes:
+        account = _account_from_env(index)
+        if account.key in accounts:
             raise SystemExit(
-                f"{ACCOUNTS_LIST} tiene una clave de cuenta inválida: {key!r}. "
-                "Usa letras, dígitos y guion bajo, empezando por letra o dígito."
+                f"Dos cuentas comparten el nombre {account.key!r}. "
+                "Distingue una con MCP_ACCOUNT_NAME_<N>."
             )
-        if key in keys:
-            raise SystemExit(f"{ACCOUNTS_LIST} repite la cuenta {key!r}.")
-        keys.append(key)
-    if not keys:
-        raise SystemExit(f"{ACCOUNTS_LIST} está definida pero no lista ninguna cuenta.")
-    upper = [key.upper() for key in keys]
-    if len(set(upper)) != len(upper):
-        raise SystemExit(
-            f"{ACCOUNTS_LIST} tiene dos cuentas que se escriben igual en mayúsculas: "
-            f"{', '.join(upper)}. Cada cuenta necesita un prefijo de variable distinto."
-        )
-    return keys
+        accounts[account.key] = account
+    _check_bearers(accounts)
+    return accounts
 
 
-def _account_prefix(key: str) -> str:
-    return f"{ACCOUNT_PREFIX}{key.upper()}_"
-
-
-def _collect_account_fields(keys: list[str]) -> dict[str, dict[str, str]]:
-    """Agrupa MCP_ACCOUNT_* por cuenta. El prefijo más largo gana."""
-    prefixes = sorted(((_account_prefix(key), key) for key in keys), key=lambda item: -len(item[0]))
-    collected: dict[str, dict[str, str]] = {key: {} for key in keys}
-    for name, value in os.environ.items():
+def _account_indexes() -> list[int]:
+    """Índices declarados en el entorno, y los que MCP_ACCOUNTS impone."""
+    declared: dict[int, set[str]] = {}
+    for name in os.environ:
         if not name.startswith(ACCOUNT_PREFIX):
             continue
-        for prefix, key in prefixes:
-            if not name.startswith(prefix):
-                continue
-            field_name = name[len(prefix) :].lower()
-            if field_name not in _ACCOUNT_KEYS:
-                raise SystemExit(
-                    f"Variable de cuenta desconocida: {name}. "
-                    f"Para la cuenta {key!r} son válidas: "
-                    + ", ".join(
-                        _account_prefix(key) + item.upper() for item in sorted(_ACCOUNT_FIELDS)
-                    )
-                    + "."
-                )
-            collected[key][field_name] = value
-            break
-        else:
-            _reject_orphan_account_var(name)
-    return collected
+        match = _ACCOUNT_VAR.match(name)
+        if match is None:
+            raise SystemExit(
+                f"Variable de cuenta desconocida: {name}. "
+                f"El formato es {ACCOUNT_PREFIX}<CAMPO>_<N>, con N el número de cuenta. "
+                "Campos: " + ", ".join(sorted(_ACCOUNT_ENV_BASES)) + "."
+            )
+        base = match.group("base")
+        if base not in _ACCOUNT_ENV_BASES:
+            raise SystemExit(
+                f"Variable de cuenta desconocida: {name}. "
+                f"Campos: {', '.join(sorted(_ACCOUNT_ENV_BASES))}."
+            )
+        declared.setdefault(int(match.group("index")), set()).add(base)
 
+    listed = _listed_account_indexes()
+    if listed is None:
+        return sorted(declared)
 
-def _reject_orphan_account_var(name: str) -> None:
-    """Una variable de una cuenta no declarada es un error, no un silencio."""
-    key = _guess_account_key(name)
-    if key:
+    unknown = sorted(set(declared) - set(listed))
+    if unknown:
         raise SystemExit(
-            f"{name} define la cuenta {key!r}, que no está en {ACCOUNTS_LIST}. "
-            f"Añádela: {ACCOUNTS_LIST}={key}."
+            f"{ACCOUNTS_LIST} no lista la cuenta {', '.join(str(i) for i in unknown)}, "
+            "que sí tiene variables en el entorno. Añádela a la lista o borra sus variables."
         )
-    raise SystemExit(
-        f"Variable de cuenta desconocida: {name}. El formato es {ACCOUNT_PREFIX}<CLAVE>_<CAMPO>."
-    )
+    missing = [index for index in listed if index not in declared]
+    if missing:
+        raise SystemExit(
+            f"{ACCOUNTS_LIST} lista la cuenta {', '.join(str(i) for i in missing)}, "
+            "que no tiene ninguna variable."
+        )
+    return listed
 
 
-def _guess_account_key(name: str) -> str | None:
-    body = name[len(ACCOUNT_PREFIX) :]
-    for field_name in sorted(_ACCOUNT_FIELDS, key=len, reverse=True):
-        suffix = "_" + field_name.upper()
-        if body.endswith(suffix) and len(body) > len(suffix):
-            return body[: -len(suffix)].lower()
-    return None
+def _listed_account_indexes() -> list[int] | None:
+    """Los índices que MCP_ACCOUNTS impone, o None si no está definida."""
+    raw = _env_text(ACCOUNTS_LIST)
+    if raw is None:
+        return None
+    indexes: list[int] = []
+    for part in raw.split(","):
+        text = part.strip()
+        if not text:
+            continue
+        if not text.isdigit() or int(text) < 1:
+            raise SystemExit(
+                f"{ACCOUNTS_LIST} tiene un índice de cuenta inválido: {text!r}. "
+                "Son números, empezando por 1."
+            )
+        index = int(text)
+        if index in indexes:
+            raise SystemExit(f"{ACCOUNTS_LIST} repite la cuenta {index}.")
+        indexes.append(index)
+    if not indexes:
+        raise SystemExit(f"{ACCOUNTS_LIST} está definida pero no lista ninguna cuenta.")
+    return indexes
 
 
-def _account_from_env(key: str, fields: dict[str, str]) -> Account:
-    prefix = _account_prefix(key)
+def _account_from_env(index: int) -> Account:
+    def var(field: str) -> str:
+        return f"{ACCOUNT_PREFIX}{_ACCOUNT_ENV_FIELDS[field]}_{index}"
 
-    def text(name: str) -> str | None:
-        value = fields.get(name)
+    def raw(field: str) -> str | None:
+        return os.environ.get(var(field))
+
+    def text(field: str) -> str | None:
+        value = raw(field)
         if value is None:
             return None
         stripped = value.strip()
         return stripped or None
 
-    def flag(name: str) -> bool:
-        value = text(name)
-        if value is None:
-            return False
-        return _parse_bool(value, prefix + name.upper())
-
-    def number(name: str, default: int) -> int:
-        value = text(name)
+    def flag(field: str, default: bool) -> bool:
+        value = text(field)
         if value is None:
             return default
-        return _parse_int(value, prefix + name.upper())
+        return _parse_bool(value, var(field))
 
+    def number(field: str, default: int) -> int:
+        value = text(field)
+        if value is None:
+            return default
+        return _parse_int(value, var(field))
+
+    inbox_type = (text("inbox_type") or "imap").lower()
+    if inbox_type != "imap":
+        raise SystemExit(f"{var('inbox_type')} debe ser imap. Este servidor solo habla IMAP.")
     username = text("username")
     if not username:
-        raise SystemExit(f"La cuenta {key!r} necesita {prefix}USERNAME.")
-    imap_host = text("imap_host")
-    if not imap_host:
-        raise SystemExit(f"La cuenta {key!r} necesita {prefix}IMAP_HOST.")
-    smtp_host = text("smtp_host") or imap_host
-    smtp_security = ""
-    if text("smtp_security"):
-        smtp_security = _smtp_security(str(text("smtp_security")), f"{prefix}SMTP_SECURITY")
+        raise SystemExit(f"La cuenta {index} necesita {var('username')}.")
+    inbox_host = text("inbox_host")
+    if not inbox_host:
+        raise SystemExit(f"La cuenta {index} necesita {var('inbox_host')}.")
+
+    key = text("name") or username
+    bearer = text("bearer") or ""
+    if bearer and len(bearer) < MIN_TOKEN_LENGTH:
+        raise SystemExit(
+            f"{var('bearer')} es demasiado corto (mínimo {MIN_TOKEN_LENGTH} caracteres). "
+            "Genera uno con: openssl rand -base64 48"
+        )
 
     return Account(
         key=key,
         label=text("label") or key,
-        imap_host=imap_host,
-        imap_port=_port(number("imap_port", 993), f"{key}.imap_port"),
-        imap_ssl=True if text("imap_ssl") is None else flag("imap_ssl"),
-        smtp_host=smtp_host,
-        smtp_port=_port(number("smtp_port", 465), f"{key}.smtp_port"),
+        imap_host=inbox_host,
+        imap_port=_port(number("inbox_port", 993), f"{var('inbox_port')}"),
+        imap_ssl=flag("inbox_use_ssl", True),
+        smtp_host=text("smtp_host") or inbox_host,
+        smtp_port=_port(number("smtp_port", 465), f"{var('smtp_port')}"),
         username=username,
-        password=_account_password(key, fields),
+        password=_account_password(index),
+        bearer=bearer,
         drafts_folder=text("drafts_folder") or "Drafts",
         sent_folder=text("sent_folder") or "Sent",
-        trash_folder=_optional_folder(text("trash_folder"), f"{key}.trash_folder"),
-        smtp_security=smtp_security,
-        allow_send=flag("allow_send"),
-        allow_mark=flag("allow_mark"),
-        allow_delete=flag("allow_delete"),
-        allow_drafts=flag("allow_drafts"),
+        trash_folder=_optional_folder(text("trash_folder"), f"{var('trash_folder')}"),
+        smtp_security="ssl" if flag("smtp_use_ssl", True) else "starttls",
+        allow_send=flag("allow_send", False),
+        allow_mark=flag("allow_mark", False),
+        allow_delete=flag("allow_delete", False),
+        allow_drafts=flag("allow_drafts", False),
+        index=index,
     )
 
 
-def _account_password(key: str, fields: dict[str, str]) -> str:
-    prefix = _account_prefix(key)
-    direct = fields.get("password")
-    indirect = fields.get("password_env")
-    direct = direct if direct else None
-    indirect = indirect.strip() if indirect else None
+def _account_password(index: int) -> str:
+    direct = os.environ.get(f"{ACCOUNT_PREFIX}PASSWORD_{index}")
+    indirect_name = f"{ACCOUNT_PREFIX}PASSWORD_ENV_{index}"
+    indirect = os.environ.get(indirect_name)
+    if indirect is not None:
+        indirect = indirect.strip() or None
+    if direct is not None and not direct.strip():
+        direct = None
     if direct and indirect:
         raise SystemExit(
-            f"La cuenta {key!r} define {prefix}PASSWORD y {prefix}PASSWORD_ENV. "
-            "Usa solo una de las dos."
+            f"La cuenta {index} define {ACCOUNT_PREFIX}PASSWORD_{index} "
+            f"y {indirect_name}. Usa solo una de las dos."
         )
     if indirect:
         if not ENV_NAME.fullmatch(indirect):
-            raise SystemExit(f"{prefix}PASSWORD_ENV no es un nombre de variable válido.")
+            raise SystemExit(f"{indirect_name} no es un nombre de variable válido.")
         if "PASSWORD" not in indirect.upper() and "PASS" not in indirect.upper():
             raise SystemExit(
-                f"{prefix}PASSWORD_ENV debería ser el nombre de una variable "
+                f"{indirect_name} debería ser el nombre de una variable "
                 "(por ejemplo MAIL_PRINCIPAL_PASSWORD), no un secreto"
             )
         password = os.environ.get(indirect)
         if password is None or password == "":
             raise SystemExit(
-                f"Falta la variable de entorno {indirect} para la cuenta {key!r}. "
+                f"Falta la variable de entorno {indirect} para la cuenta {index}. "
                 "El servidor no arranca con cuentas sin secreto."
             )
         return password
     if direct:
         return direct
     raise SystemExit(
-        f"La cuenta {key!r} no tiene contraseña. Define {prefix}PASSWORD "
-        f"o {prefix}PASSWORD_ENV con el nombre de otra variable."
+        f"La cuenta {index} no tiene contraseña. Define {ACCOUNT_PREFIX}PASSWORD_{index} "
+        f"o {indirect_name} con el nombre de otra variable."
     )
+
+
+def _check_bearers(accounts: dict[str, Account]) -> None:
+    """Los Bearer por cuenta tienen que ser distintos entre sí y del global."""
+    global_token = os.environ.get("MCP_BEARER_TOKEN", "").strip()
+    seen: dict[str, str] = {}
+    for key, account in accounts.items():
+        if not account.bearer:
+            continue
+        if global_token and account.bearer == global_token:
+            raise SystemExit(
+                f"El bearer de la cuenta {key} es el mismo que MCP_BEARER_TOKEN. "
+                "Si son iguales, la ruta por cuenta no aísla nada. Usa otro."
+            )
+        if account.bearer in seen:
+            raise SystemExit(
+                f"Las cuentas {seen[account.bearer]} y {key} comparten el mismo bearer. "
+                "Cada cuenta necesita el suyo."
+            )
+        seen[account.bearer] = key
 
 
 # --- Cuentas por TOML --------------------------------------------------------
