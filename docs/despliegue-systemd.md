@@ -2,7 +2,11 @@
 
 El proceso escucha en `127.0.0.1:8765`. Un proxy en el mismo host termina TLS y publica HTTPS. Conviene una máquina distinta del servidor de correo, para no chocar con el proxy que ese servidor regenere.
 
-Esquema, en Debian 12 o Ubuntu 24.04. Sustituye `mcp.example.com` por el nombre público y el TOML de ejemplo por uno con tus hosts. El token y las contraseñas van en `/etc/mcp-correo/env`, modo `0600`, y no se commitean.
+Esquema, en Debian 12 o Ubuntu 24.04. Sustituye `mcp.example.com` por el nombre público y `ada@corp.example.com` por tu cuenta. El token y las contraseñas van en `/etc/mcp-correo/env`, modo `0600`, y no se commitean.
+
+Ese `env` es un fichero de entorno corriente, el mismo formato que el `.env`
+de Portainer. Se puede generar con el mismo `.env.example` del repositorio,
+quitando las líneas comentadas y cambiando los valores ficticios.
 
 ```bash
 sudo apt update && sudo apt install -y python3-venv nginx certbot python3-certbot-nginx ufw git
@@ -13,10 +17,10 @@ sudo /opt/mcp-correo/.venv/bin/pip install -r /opt/mcp-correo/requirements.txt
 sudo chown -R root:mcpmail /opt/mcp-correo && sudo chmod -R o-rwx /opt/mcp-correo
 
 sudo install -d -m 0750 -o root -g mcpmail /etc/mcp-correo
-sudo install -m 0640 -o root -g mcpmail accounts.example.toml /etc/mcp-correo/accounts.toml
 sudo install -m 0600 -o root -g root /dev/null /etc/mcp-correo/env
 sudo install -d -m 0750 -o mcpmail -g mcpmail /var/log/mcp-correo
-# Editar el TOML con los hosts reales y el env con el token y las contraseñas.
+# Editar /etc/mcp-correo/env: MCP_BEARER_TOKEN, MCP_ACCOUNTS y las
+# variables MCP_ACCOUNT_<CLAVE>_* de cada cuenta.
 
 sudo cp deploy/mcp-correo.service /etc/systemd/system/
 sudo systemctl daemon-reload && sudo systemctl enable --now mcp-correo
@@ -25,6 +29,11 @@ sudo certbot --nginx -d mcp.example.com
 sudo nginx -t && sudo systemctl reload nginx
 sudo cp deploy/logrotate.conf /etc/logrotate.d/mcp-correo
 ```
+
+El contrato de variables es el mismo que en Docker, y está en
+[configuracion.md](configuracion.md). El `accounts.toml` sigue siendo una
+alternativa válida, pero no hace falta: con el `EnvironmentFile` de la unidad
+todo cabe en `/etc/mcp-correo/env`.
 
 `deploy/mcp-correo.service` corre como `mcpmail`, sin privilegios nuevos, con el sistema de archivos en solo lectura salvo `/var/log/mcp-correo`, un tope de 512 MiB y un solo worker. Ese `--workers 1` sujeta los tokens de confirmación y el cupo diario, que no se comparten entre procesos.
 

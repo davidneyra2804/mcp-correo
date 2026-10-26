@@ -17,9 +17,10 @@ mcp-correo corre en un servidor propio. El cliente del asistente se conecta a es
 - Marcar leído o no leído, borrar a la Papelera (o de forma definitiva solo si se pidió al preparar) y guardar borradores.
 - Cada capacidad de escritura tiene un interruptor global y otro por cuenta. Apagados, la tool no se registra.
 - Enviar y borrar piden confirmación en dos pasos. El token dura 10 minutos, es de un solo uso y queda ligado a la cuenta y a la operación.
-- Varias cuentas en un TOML. La contraseña no va en el fichero: solo el nombre de una variable de entorno.
+- Varias cuentas, configuradas con variables de entorno. La contraseña va en su propia variable, nunca en un fichero.
 - Auditoría JSONL de cada llamada, sin cuerpos ni credenciales.
 - Transporte Streamable HTTP, un solo worker de uvicorn.
+- Despliegue previsto para Portainer: todo se configura con un `.env`, sin tocar ficheros en el servidor.
 
 ## Tools
 
@@ -48,7 +49,7 @@ La lectura está siempre disponible. La escritura solo aparece si el interruptor
 ## Seguridad
 
 - **Bearer.** `MCP_BEARER_TOKEN` es obligatorio (mínimo 16 caracteres). Se compara el SHA-256 con `hmac.compare_digest`. Sin token, `/mcp` responde 401. `GET /health` responde `{"status":"ok"}` y no devuelve correo: es la sonda del contenedor.
-- **Solo lectura por defecto.** `enable_send`, `enable_mark`, `enable_delete` y `enable_drafts` salen en `false`, y cada cuenta repite `allow_*`. Un texto `"false"` no enciende un interruptor: el proceso no arranca. Hace falta un booleano.
+- **Solo lectura por defecto.** `MCP_ENABLE_SEND`, `MCP_ENABLE_MARK`, `MCP_ENABLE_DELETE` y `MCP_ENABLE_DRAFTS` salen en `false`, y cada cuenta repite `allow_*`. Un interruptor solo admite `true`, `false`, `1` y `0`: cualquier otro texto aborta el arranque. Un texto `"false"` no enciende un interruptor, y un `"yes"` tampoco lo apaga en silencio.
 - **Confirmación en dos pasos.** Enviar y borrar no se ejecutan con la primera llamada. El token caduca, no se reutiliza y no sirve para otra cuenta ni para otra operación. El cupo diario solo cuenta un envío que el SMTP aceptó.
 - **Auditoría sin cuerpos.** Cada línea anota fecha, tool, cuenta y argumentos reducidos (destinatarios o UID, asunto, nombres de fichero). No anota cuerpos, adjuntos, el `confirm_token` ni contraseñas. Si no puede escribir la línea, la tool no muta el buzón ni emite un token.
 - **Inyección de instrucciones.** Asuntos, cuerpos y nombres de adjunto son datos no confiables. Las instrucciones del servidor dicen que un correo no es una orden: `send_message` y `delete_message` solo tras una orden explícita de quien opera el asistente, en esa conversación, después de ver la vista previa.
@@ -84,66 +85,70 @@ Hace falta Python 3.11 o superior. Los ejemplos usan `example.com` y contraseña
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 export MCP_BEARER_TOKEN="$(openssl rand -base64 48)"
-export MAIL_PRINCIPAL_PASSWORD='contraseña-ficticia-principal'
-export MAIL_ARCHIVO_PASSWORD='contraseña-ficticia-archivo'
-export MCP_CONFIG=./accounts.example.toml
+export MCP_ACCOUNTS=principal
+export MCP_ACCOUNT_PRINCIPAL_IMAP_HOST=mail.example.com
+export MCP_ACCOUNT_PRINCIPAL_SMTP_HOST=mail.example.com
+export MCP_ACCOUNT_PRINCIPAL_USERNAME=ada@example.com
+export MCP_ACCOUNT_PRINCIPAL_PASSWORD='contraseña-ficticia-principal'
 export MCP_AUDIT_LOG=./audit.jsonl
 .venv/bin/python server.py
 ```
 
-El proceso queda en `http://127.0.0.1:8765/mcp`.
+El proceso queda en `http://127.0.0.1:8765/mcp`. La configuración entera son variables de entorno: no hace falta ningún fichero. El contrato completo está en [docs/configuracion.md](docs/configuracion.md).
 
 Docker, también con el ejemplo ficticio y sin publicar el puerto fuera de loopback:
 
 ```bash
 export MCP_BEARER_TOKEN="$(openssl rand -base64 48)"
-export MAIL_PRINCIPAL_PASSWORD='contraseña-ficticia-principal'
-export MAIL_ARCHIVO_PASSWORD='contraseña-ficticia-archivo'
-docker compose -f docker-compose.yml -f docker-compose.ficticio.yml up --build
+docker compose -f docker-compose.yml -f docker-compose.local.yml up --build
 ```
 
-`docker-compose.ficticio.yml` solo monta `accounts.example.toml`. No lo uses con un buzón real. Sin `MCP_IMAGE`, la imagen construida se llama `mcp-correo:local` y no está en ningún registro. Portainer igual anuncia un `docker compose pull`: no falla, porque esa imagen local no se descarga. El despliegue está en [docs/despliegue-portainer.md](docs/despliegue-portainer.md) y en [docs/despliegue-systemd.md](docs/despliegue-systemd.md).
+`docker-compose.local.yml` define cuentas ficticias por variables de entorno. No lo uses con un buzón real. Sin `MCP_IMAGE`, la imagen construida se llama `mcp-correo:local` y no está en ningún registro. Portainer igual anuncia un `docker compose pull`: no falla, porque esa imagen local no se descarga.
+
+Los compose disponibles:
+
+| Fichero | Para qué |
+| --- | --- |
+| `docker-compose.yml` | Base: el MCP y la rotación de auditoría. Configuración solo por variables. |
+| `docker-compose.tunnel.yml` | Exposición por Cloudflare Tunnel. Añade `cloudflared`. |
+| `docker-compose.local.yml` | Desarrollo local con datos ficticios. |
+
+El despliegue está en [docs/despliegue-portainer.md](docs/despliegue-portainer.md), el del túnel en [docs/despliegue-tunel-cloudflare.md](docs/despliegue-tunel-cloudflare.md) y el de systemd en [docs/despliegue-systemd.md](docs/despliegue-systemd.md).
 
 ## Configuración
 
-Copia [accounts.example.toml](accounts.example.toml) a `accounts.toml` (ese fichero está en `.gitignore`) y cambia los hosts ficticios. La contraseña no se escribe ahí.
+Todo se define con variables de entorno. La lista completa, con tipos, valores por defecto y los errores que puede dar cada una, está en [docs/configuracion.md](docs/configuracion.md).
 
-```toml
-[server]
-public_host = "mcp.example.com"
-bind_host = "127.0.0.1"
-bind_port = 8765
-enable_send = false
-enable_mark = false
-enable_delete = false
-enable_drafts = false
+```bash
+# El secreto que presenta el cliente MCP. Obligatorio, mínimo 16 caracteres.
+export MCP_BEARER_TOKEN="$(openssl rand -base64 48)"
 
-[accounts.principal]
-label = "Correo principal — ejemplo ficticio"
-imap_host = "mail.example.com"
-imap_port = 993
-imap_ssl = true
-smtp_host = "mail.example.com"
-smtp_port = 465
-username = "ada@example.com"
-password_env = "MAIL_PRINCIPAL_PASSWORD"
-allow_send = false
-allow_mark = false
-allow_delete = false
-allow_drafts = false
+# Las cuentas. MCP_ACCOUNTS enumera las claves; los campos van en
+# MCP_ACCOUNT_<CLAVE>_<CAMPO>.
+export MCP_ACCOUNTS=principal
+export MCP_ACCOUNT_PRINCIPAL_IMAP_HOST=mail.example.com
+export MCP_ACCOUNT_PRINCIPAL_SMTP_HOST=mail.example.com
+export MCP_ACCOUNT_PRINCIPAL_SMTP_PORT=465
+export MCP_ACCOUNT_PRINCIPAL_USERNAME=ada@example.com
+export MCP_ACCOUNT_PRINCIPAL_PASSWORD='contraseña-ficticia-principal'
 ```
 
 | Variable | Uso |
 | --- | --- |
 | `MCP_BEARER_TOKEN` | Obligatoria. En producción, `openssl rand -base64 48`. |
-| `MAIL_PRINCIPAL_PASSWORD`, `MAIL_ARCHIVO_PASSWORD` | Contraseña de cada cuenta del ejemplo. El nombre real es el `password_env` del TOML. |
-| `MCP_CONFIG` | Ruta del TOML. Si falta: `./accounts.toml` y luego `/etc/mcp-correo/accounts.toml`. |
-| `MCP_AUDIT_LOG` | JSONL. Por defecto `./audit.jsonl`. |
+| `MCP_ACCOUNTS` | Lista de claves de cuenta, separada por comas. |
+| `MCP_ACCOUNT_<CLAVE>_<CAMPO>` | Los campos de cada cuenta: `IMAP_HOST`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURITY`, `USERNAME`, `PASSWORD` o `PASSWORD_ENV`, `DRAFTS_FOLDER`, `SENT_FOLDER`, `TRASH_FOLDER`, `ALLOW_SEND`, `ALLOW_MARK`, `ALLOW_DELETE`, `ALLOW_DRAFTS`. |
+| `MCP_PUBLIC_HOST` | Si está definida, sustituye a `public_host` y reconstruye hosts y orígenes permitidos. |
+| `MCP_ALLOWED_HOSTS`, `MCP_ALLOWED_ORIGINS` | Listas separadas por comas. Tapan a `MCP_PUBLIC_HOST`. |
+| `MCP_ENABLE_SEND`, `MCP_ENABLE_MARK`, `MCP_ENABLE_DELETE`, `MCP_ENABLE_DRAFTS` | Interruptores globales de escritura. Apagados por defecto. |
 | `MCP_BIND_HOST`, `MCP_BIND_PORT` | Por defecto `127.0.0.1` y `8765`. |
-| `MCP_PUBLIC_HOST` | Si está definida, sustituye `public_host` y reconstruye hosts y orígenes permitidos. |
-| `MCP_ALLOWED_HOSTS`, `MCP_ALLOWED_ORIGINS` | Listas separadas por comas. Tapan al TOML y a `MCP_PUBLIC_HOST`. |
+| `MCP_AUDIT_LOG` | JSONL. Por defecto `./audit.jsonl`. |
 
-Los topes (`max_results`, `max_chars`, `max_attachment_bytes`, destinatarios, cupo diario, UID por llamada) viven en `[server]` y el cliente no puede subirlos. El detalle de claves está comentado en el ejemplo.
+Los topes (`max_results`, `max_chars`, `max_attachment_bytes`, destinatarios, cupo diario, UID por llamada) tienen su variable `MCP_MAX_*` o `MCP_*_TTL_SECONDS`, y el cliente no puede subirlos.
+
+Un interruptor solo admite `true`, `false`, `1` y `0`. Cualquier otro texto aborta el arranque: un interruptor mal escrito no puede quedarse en apagado sin que nadie se entere. La tabla de errores está en [docs/configuracion.md](docs/configuracion.md).
+
+También sigue funcionando `accounts.toml`, con las claves de siempre, por si prefieres un fichero. Si existen las dos fuentes, mandan las cuentas del entorno.
 
 ## Conectar un cliente y probarlo
 
@@ -185,16 +190,18 @@ Un `Host` que no esté permitido responde 421. Un `Origin` que no esté permitid
 
 ```
 server.py                 # MCPServer, Bearer y registro de tools
-config.py                 # accounts.toml, interruptores y límites
+config.py                 # variables de entorno, interruptores y límites
 audit.py                  # JSONL de cada llamada
 mail/                     # IMAP, SMTP, MIME, confirmación y escritura
-accounts.example.toml     # datos ficticios, escritura apagada
-.env.example              # nombres de variables, valores ficticios
+.env.example              # todas las variables, con valores ficticios
+accounts.example.toml     # configuración alternativa en TOML
 Dockerfile                # imagen slim, usuario mcp, sin secretos
-docker-compose.yml        # stack de Portainer
+docker-compose.yml        # base del stack
+docker-compose.tunnel.yml # overlay de Cloudflare Tunnel
+docker-compose.local.yml  # overlay de desarrollo local
 docker/                   # entrada del contenedor y rotación del JSONL
 deploy/                   # systemd, nginx, Caddy opcional y logrotate
-docs/                     # despliegue y checklist
+docs/                     # configuración, despliegue y checklist
 tests/                    # pytest con IMAP y SMTP simulados, sin red
 ```
 
@@ -226,6 +233,8 @@ CI hace lo mismo con Python 3.12.
 
 Los ejemplos de este repositorio no contienen un buzón real. El token y las contraseñas van en el entorno, nunca en git.
 
+- [Configuración por variables de entorno](docs/configuracion.md)
 - [Portainer y Docker](docs/despliegue-portainer.md)
+- [Cloudflare Tunnel](docs/despliegue-tunel-cloudflare.md)
 - [systemd y nginx](docs/despliegue-systemd.md)
 - [Checklist de seguridad](docs/seguridad.md)
