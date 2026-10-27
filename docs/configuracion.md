@@ -15,11 +15,11 @@ fichero de configuración en la máquina: en Portainer se pega un `.env` en
 Cada clave del servidor se resuelve por separado: entorno, luego TOML, luego
 el default. Se pueden mezclar sin problema.
 
-**Las cuentas, en cambio, vienen de una sola fuente.** Si `MCP_ACCOUNTS` está
-definida, todas las cuentas salen del entorno y el TOML no cuenta. Si no está
-definida, salen del TOML. Nunca se mezclan, porque una cuenta a medio
-configurar es peor que no tenerla. Si existen las dos fuentes, el entorno gana
-y el arranque avisa por log.
+**Las cuentas, en cambio, vienen de una sola fuente.** Si hay variables
+`MCP_ACCOUNT_<CAMPO>_<N>` en el entorno, las cuentas salen de ahí y el TOML no
+cuenta. Si no hay ninguna, salen del TOML. Nunca se mezclan, porque una cuenta
+a medio configurar es peor que no tenerla. Si existen las dos fuentes, el
+entorno gana y el arranque avisa por log.
 
 ## Variables del servidor
 

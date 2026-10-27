@@ -45,7 +45,7 @@ services:
       - /tmp:rw,noexec,nosuid,size=64m
     # Portainer escribe aquí las variables del stack: las que defines a mano
     # y las del .env que subes. Es lo que hace llegar las variables
-    # MCP_ACCOUNT_<CLAVE>_* sin enumerarlas una a una.
+    # MCP_ACCOUNT_<CAMPO>_<N> sin enumerarlas una a una.
     # Compose 2.24 o superior. Si el fichero no está, se sigue.
     env_file:
       - path: ${MCP_STACK_ENV_FILE:-stack.env}
@@ -56,9 +56,10 @@ services:
       MCP_BIND_PORT: "8765"
       MCP_ALLOW_NONLOCAL_BIND: "1"
       MCP_AUDIT_LOG: /var/log/mcp-correo/audit.jsonl
-      # Cuentas. La lista y los campos vienen de MCP_ACCOUNTS y
-      # MCP_ACCOUNT_<CLAVE>_<CAMPO>. Solo se declara aquí la lista; los
-      # campos llegan por env_file.
+      # Cuentas. No hay que declarar nada: el servidor las descubre por
+      # los indices de MCP_ACCOUNT_<CAMPO>_<N>, que llegan por env_file.
+      # MCP_ACCOUNTS es opcional y solo sirve como comprobacion cruzada:
+      # si se define, tiene que coincidir con las cuentas que existen.
       MCP_ACCOUNTS: ${MCP_ACCOUNTS:-}
       # Interruptores globales. Apagados por defecto.
       MCP_ENABLE_SEND: ${MCP_ENABLE_SEND:-false}

@@ -133,8 +133,8 @@ Para añadir una cuenta se copia el bloque y se cambia el número. No hay que
 declararla en ninguna lista.
 
 La contraseña va en dos sitios posibles, nunca en los dos:
-`MCP_ACCOUNT_<CLAVE>_<N>_PASSWORD` con el secreto, o
-`MCP_ACCOUNT_<CLAVE>_<N>_PASSWORD_ENV` con el nombre de otra variable.
+`MCP_ACCOUNT_PASSWORD_<N>` con el secreto, o
+`MCP_ACCOUNT_PASSWORD_ENV_<N>` con el nombre de otra variable.
 
 El fichero `accounts.toml` y las variables `MCP_ACCOUNTS_TOML_B64` /
 `MCP_ACCOUNTS_TOML` siguen funcionando como alternativa. Si existen las dos

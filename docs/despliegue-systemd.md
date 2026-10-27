@@ -19,8 +19,8 @@ sudo chown -R root:mcpmail /opt/mcp-correo && sudo chmod -R o-rwx /opt/mcp-corre
 sudo install -d -m 0750 -o root -g mcpmail /etc/mcp-correo
 sudo install -m 0600 -o root -g root /dev/null /etc/mcp-correo/env
 sudo install -d -m 0750 -o mcpmail -g mcpmail /var/log/mcp-correo
-# Editar /etc/mcp-correo/env: MCP_BEARER_TOKEN, MCP_ACCOUNTS y las
-# variables MCP_ACCOUNT_<CLAVE>_* de cada cuenta.
+# Editar /etc/mcp-correo/env: MCP_BEARER_TOKEN y las variables
+# MCP_ACCOUNT_<CAMPO>_<N> de cada cuenta.
 
 sudo cp deploy/mcp-correo.service /etc/systemd/system/
 sudo systemctl daemon-reload && sudo systemctl enable --now mcp-correo
