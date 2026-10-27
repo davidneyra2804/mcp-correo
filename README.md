@@ -410,6 +410,9 @@ documentación no habla de una versión vieja.
 
 ## Hoja de ruta
 
+- Panel de control en un puerto aparte, con las cuentas en una base de datos
+  y exposición en `/mcp` en tiempo real. El plan está en
+  [docs/plan-dashboard-y-cuentas-dinamicas.md](docs/plan-dashboard-y-cuentas-dinamicas.md).
 - OAuth 2.1, con el SDK como resource server, si un cliente no acepta un
   Bearer estático.
 - Pool de conexiones IMAP. IDLE queda fuera de momento.
