@@ -136,6 +136,71 @@ def test_el_logout_responde(cliente: TestClient) -> None:
     assert respuesta.headers["location"] == "/login"
 
 
+# --- el alta pide el correo una sola vez ---------------------------------------
+
+
+def test_el_alta_toma_el_identificador_y_el_usuario_del_correo(cliente: TestClient) -> None:
+    """Con un solo correo, la cuenta queda completa.
+
+    Así es como lo hace la interfaz: se escribe el correo una vez y el
+    identificador de la ruta y el usuario de conexión salen de ahí.
+    """
+    _entrar(cliente)
+    dominio = cliente.post(
+        "/api/domains", json={"name": "ejemplo.example.com"}, headers=CSRF
+    ).json()
+    correo = "yo@ejemplo.example.com"
+    respuesta = cliente.post(
+        "/api/accounts",
+        json={
+            "domain_id": dominio["id"],
+            "name": correo,
+            "username": correo,
+            "password": "clave-ficticia",
+        },
+        headers=CSRF,
+    )
+    assert respuesta.status_code == 200, respuesta.text
+    cuenta = cliente.get("/api/domains").json()["domains"][0]["accounts"][0]
+    assert cuenta["name"] == correo
+    assert cuenta["user"] == correo
+    assert cuenta["route"] == f"/mcp/{correo}"
+
+
+def test_editar_el_usuario_no_pisa_el_alias_de_la_ruta(cliente: TestClient) -> None:
+    """El alias identifica la cuenta en /mcp: cambiar el usuario no lo cambia.
+
+    Si se pisara, la ruta que ya tiene el cliente apuntando dejaría de
+    existir, sin avisar.
+    """
+    _entrar(cliente)
+    dominio = cliente.post(
+        "/api/domains", json={"name": "ejemplo.example.com"}, headers=CSRF
+    ).json()
+    cliente.post(
+        "/api/accounts",
+        json={
+            "domain_id": dominio["id"],
+            "name": "principal",
+            "username": "yo@ejemplo.example.com",
+            "password": "clave-ficticia",
+        },
+        headers=CSRF,
+    )
+    cuenta = cliente.get("/api/domains").json()["domains"][0]["accounts"][0]
+    assert cuenta["name"] == "principal"
+    # Editar el usuario de conexión, con el alias intacto.
+    cliente.patch(
+        f"/api/accounts/{cuenta['id']}",
+        json={"name": cuenta["name"], "username": "otro@ejemplo.example.com"},
+        headers=CSRF,
+    )
+    cuenta = cliente.get("/api/domains").json()["domains"][0]["accounts"][0]
+    assert cuenta["name"] == "principal"
+    assert cuenta["user"] == "otro@ejemplo.example.com"
+    assert cuenta["route"] == "/mcp/principal"
+
+
 # --- el HTML y el JavaScript no se desincronizan ------------------------------
 
 

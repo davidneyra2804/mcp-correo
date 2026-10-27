@@ -27,21 +27,44 @@ _LOGIN = """<!doctype html>
 <link rel="stylesheet" href="/static/panel.css">
 </head>
 <body class="login">
-<main>
-  <h1>Panel de mcp-correo</h1>
-  <form method="post" action="/login">
-    <label for="token">Token del panel</label>
-    <input id="token" name="token" type="password" autocomplete="current-password" autofocus>
+<main class="acceso">
+  <section class="acceso-historia" aria-label="Correo conectado">
+    <div class="acceso-marca"><span aria-hidden="true">✉</span> mcp-correo</div>
+    <div class="sobre" aria-hidden="true">✉</div>
+    <p class="eyebrow">MENOS CONFIGURACIÓN. MÁS CONEXIÓN.</p>
+    <h1>Tu correo.<br>Tu asistente.<br>Un mismo espacio.</h1>
+    <p>Organiza tus cuentas y conecta tu asistente,
+      sin compartir las contraseñas de tus buzones.</p>
+    <span class="acceso-sello">Control de acceso por cuenta</span>
+  </section>
+  <section class="acceso-formulario" aria-labelledby="acceso-titulo">
+  <span class="eyebrow">PANEL DE ADMINISTRACIÓN</span>
+  <h2 id="acceso-titulo">Bienvenido de nuevo</h2>
+  <p class="acceso-intro">Tu espacio de correo está a una clave de distancia.</p>
+  <form method="post" action="/login" class="acceso-form">
+    <label for="token">Clave de acceso al panel</label>
+    <input id="token" name="token" type="password" autocomplete="current-password"
+      placeholder="Introduce tu clave de acceso" aria-describedby="acceso-ayuda" required autofocus>
     <!--error-->
-    <button type="submit">Entrar</button>
+    <button type="submit" class="primario">Entrar a mi panel
+      <span aria-hidden="true">→</span></button>
   </form>
-  <p class="pista">Es <code>MCP_DASHBOARD_TOKEN</code>, no el token del MCP.</p>
+  <p id="acceso-ayuda" class="acceso-ayuda">
+    Usa la clave que te facilitó quien administra el servicio.
+    No es la contraseña de tu correo.</p>
+  <details class="acceso-tecnico"><summary>¿Administras este servicio?</summary>
+    <p>La clave corresponde a <code>MCP_DASHBOARD_TOKEN</code>, no al token del MCP.</p>
+  </details>
+  </section>
 </main>
 </body>
 </html>
 """
 
-_ERROR = '<p class="error">El token no vale.</p>'
+_ERROR = (
+    '<p class="error" role="alert">El token no vale. '
+    "Revisa tu clave de acceso e inténtalo de nuevo.</p>"
+)
 
 
 async def panel(request: Request) -> HTMLResponse:

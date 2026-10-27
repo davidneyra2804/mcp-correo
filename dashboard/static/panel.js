@@ -249,11 +249,46 @@ function editarCuenta(cuenta, dominioId) {
   const imap = entrada("text", cuenta ? cuenta.imap_host : "");
   const smtp = entrada("text", cuenta ? cuenta.smtp_host : "");
 
+  const correo = entrada("email", cuenta ? cuenta.user : "");
+  correo.placeholder = "ada@example.com";
+  correo.required = true;
+  correo.autocomplete = "email";
+  contrasena.autocomplete = "new-password";
+  contrasena.required = !cuenta;
+  contrasena.placeholder = cuenta ? "Déjala vacía para conservar la actual" : "Contraseña de tu buzón";
+  // Al crear, el alias de ruta y el usuario se toman del correo. Al
+  // editar, el alias se conserva: es su identificador en /mcp, y no tiene
+  // por qué cambiar porque se edite el usuario de conexión.
+  if (!cuenta) {
+    nombre.value = "";
+    usuario.value = "";
+  }
+  nombre.placeholder = "Se usa tu correo automáticamente";
+  usuario.placeholder = "Solo si es distinto de tu correo";
+  correo.addEventListener("input", () => {
+    if (cuenta) return;
+    const dominio = dominios.find((d) => d.name.toLowerCase() === correo.value.split("@")[1]?.toLowerCase());
+    if (dominio) selector.value = String(dominio.id);
+  });
+  const avanzadas = document.createElement("details");
+  avanzadas.className = "opciones-avanzadas";
+  const resumen = document.createElement("summary");
+  resumen.textContent = "Opciones avanzadas";
+  const ayuda = document.createElement("p");
+  ayuda.className = "pista";
+  ayuda.textContent = "Normalmente no necesitas cambiarlas. Los servidores se toman del dominio seleccionado.";
+  avanzadas.append(resumen, ayuda,
+    campo("Alias de la ruta (opcional)", nombre),
+    campo("Nombre de la cuenta en el panel (opcional)", etiqueta),
+    campo("Usuario de conexión diferente (opcional)", usuario),
+    campo("Servidor entrante IMAP (opcional)", imap),
+    campo("Servidor saliente SMTP (opcional)", smtp));
+
   const recoger = () => ({
     domain_id: Number(selector.value),
-    name: nombre.value,
+    name: nombre.value.trim() || (cuenta ? cuenta.name : correo.value.trim()),
     label: etiqueta.value,
-    username: usuario.value,
+    username: usuario.value.trim() || correo.value.trim(),
     sender: remitente.value,
     imap_host: imap.value,
     smtp_host: smtp.value,
@@ -261,16 +296,13 @@ function editarCuenta(cuenta, dominioId) {
   });
 
   editor(
-    "Cuenta",
+    cuenta ? "Editar cuenta de correo" : "Añadir cuenta de correo",
     [
       campo("Dominio", selector),
-      campo("Identificador de la cuenta (por ejemplo, tu correo)", nombre),
-      campo("Nombre para identificarla (opcional)", etiqueta),
-      campo("Usuario o dirección de correo", usuario),
+      campo("Dirección de correo", correo),
       campo("Contraseña del correo", contrasena),
-      campo("Nombre visible del remitente", remitente),
-      campo("Servidor IMAP (vacío = el del dominio)", imap),
-      campo("Servidor SMTP (vacío = el del dominio)", smtp),
+      campo("Tu nombre al enviar correos (opcional)", remitente),
+      avanzadas,
     ],
     async () => {
       const cuerpo = recoger();

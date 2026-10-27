@@ -165,3 +165,29 @@ dialog h2 { font-size: 1.3rem; }
 .campo input, .campo select { background: #fff; min-height: 42px; }
 .aviso { overflow-wrap: anywhere; background: #fff; }
 @media (max-width: 600px) { .ilustracion, .submarca { display: none; } .bienvenida { padding: 1.5rem; } .acciones { align-items: stretch; } .cuenta .fila { margin-left: 0; } menu { flex-wrap: wrap; } }
+
+.opciones-avanzadas { border-top: 1px solid var(--borde); margin-top: 1.25rem; padding-top: 1rem; }
+summary { cursor: pointer; font-weight: 600; }
+.opciones-avanzadas[open] summary { margin-bottom: .8rem; }
+body.login { padding: 1.5rem; background: radial-gradient(ellipse at top left, #e3e9ff, transparent 60%), #f5f7fb; }
+body.login main.acceso { display: grid; grid-template-columns: 1fr 1fr; width: min(100%, 1000px); max-width: 1000px; padding: 0; overflow: hidden; background: white; border-radius: 24px; border: 1px solid #e2e7f1; box-shadow: 0 25px 80px #25365b12; }
+.acceso-historia { padding: 2.8rem; background: linear-gradient(145deg, #273c91, #586be1); color: #fff; }
+.acceso-marca { font-size: 1.1rem; font-weight: 700; }
+.acceso-marca span { margin-right: .4rem; }
+.sobre { font-size: 4rem; line-height: 1.4; margin: 2rem 0 1rem; color: #d1daff; }
+.acceso-historia .eyebrow { color: #c9d3ff; font-size: .65rem; }
+.acceso-historia h1 { font-size: clamp(1.8rem, 3vw, 2.6rem); line-height: 1.15; letter-spacing: -.04em; margin: 1rem 0; }
+.acceso-historia > p:not(.eyebrow) { color: #e0e6ff; max-width: 32ch; }
+.acceso-sello { display: inline-block; border: 1px solid #ffffff38; border-radius: 20px; padding: .4rem .8rem; font-size: .78rem; margin-top: 1rem; }
+.acceso-formulario { align-self: center; padding: 3rem; }
+.acceso-formulario h2 { font-size: 1.65rem; margin: .8rem 0 .5rem; letter-spacing: -.03em; }
+.acceso-intro { color: #6b7890; margin: 0 0 2rem; }
+.acceso-form { display: grid; gap: .65rem; }
+.acceso-form label { font-weight: 600; font-size: .85rem; }
+.acceso-form input { width: 100%; min-width: 0; border: 1px solid #d6deeb; border-radius: 10px; padding: .9rem; font: inherit; background: #fafbfe; color: #18243a; }
+.acceso-form button { width: 100%; padding: .9rem; margin-top: .5rem; display: flex; justify-content: space-between; }
+.acceso-ayuda { color: #66758d; font-size: .82rem; line-height: 1.65; margin-top: 1.5rem; }
+.acceso-tecnico { border-top: 1px solid var(--borde); padding-top: 1rem; margin-top: 1.5rem; font-size: .8rem; color: #66758d; }
+.acceso-tecnico code { overflow-wrap: anywhere; }
+.acceso-form .error { background: #fff1f0; padding: .7rem; border-radius: 8px; font-size: .85rem; margin: 0; }
+@media (max-width: 720px) { body.login main.acceso { grid-template-columns: 1fr; max-width: 460px; } .acceso-historia { padding: 1.5rem; } .acceso-historia h1 { font-size: 1.6rem; } .acceso-historia h1 br { display: none; } .sobre, .acceso-sello, .acceso-historia > p { display: none; } .acceso-formulario { padding: 2rem 1.5rem; } }

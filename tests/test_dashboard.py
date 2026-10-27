@@ -77,6 +77,16 @@ def _cuenta(http: TestClient, dominio: int, **extra: object) -> dict:
 # --- la sesión -----------------------------------------------------------------
 
 
+def test_el_login_explica_la_clave_y_no_la_contrasena_del_buzon(cliente: TestClient) -> None:
+    respuesta = cliente.get("/login")
+    assert respuesta.status_code == 200
+    assert "Clave de acceso al panel" in respuesta.text
+    assert "No es la contraseña de tu correo" in respuesta.text
+    assert 'aria-describedby="acceso-ayuda"' in respuesta.text
+    assert 'name="token"' in respuesta.text
+    assert 'class="acceso"' in respuesta.text
+
+
 def test_sin_sesion_la_pagina_manda_al_login(cliente: TestClient) -> None:
     respuesta = cliente.get("/", follow_redirects=False)
     assert respuesta.status_code == 303

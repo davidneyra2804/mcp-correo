@@ -94,6 +94,18 @@ sale una que nadie sabe cuál es.
 
 ## La interfaz
 
+El acceso tiene una pantalla propia: introduce la **clave de acceso al panel**,
+no la contraseña del buzón. La ayuda de configuración técnica está desplegable.
+
+Al añadir una cuenta solo necesitas escribir el **correo una vez**, su contraseña
+y, opcionalmente, el nombre que verán los destinatarios. El correo se utiliza
+como identificador de ruta y usuario de conexión. El dominio se selecciona
+automáticamente si ya existe, y puedes cambiarlo manualmente.
+
+En **Opciones avanzadas** puedes indicar un alias de ruta, una etiqueta o un
+usuario de conexión distinto y servidores propios. Al editar se conservan las
+excepciones existentes; dejar la contraseña vacía conserva la actual.
+
 El panel está en `http://127.0.0.1:8766` (o donde lo publiques). Se entra
 con el token y se abre una sesión.
 
