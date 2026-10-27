@@ -663,27 +663,24 @@ Las trampas que este proyecto ya ha pagado, y cómo se repiten aquí:
   `docs/dashboard.md`, el README y el CHANGELOG se actualizan en la misma
   entrega, y los tests lo comprueban.
 
-## 16. Lo que hay que decidir antes de empezar
+## 16. Decisiones pendientes y supuestos por defecto
 
-Tres cosas que el plan asume y que son decisión de quien opera:
+Tres cosas que el plan asume y que son decisión de quien opera. Cada una
+tiene un **supuesto por defecto**, que es con el que se implementa si no se
+dice lo contrario. Cambiar un supuesto es una línea: está aislado en un
+sitio, no atraviesa el código.
 
-1. **El token del panel: ¿uno solo o varios?** El plan asume uno solo
-   (`MCP_DASHBOARD_TOKEN`). Con varios, cada uno sería un usuario con su
-   propio nombre, y la auditoría podría decir quién hizo qué. Es más
-   trabajo y no aporta nada con una sola persona operando.
-2. **¿Se publica el panel?** El plan asume que no, y que si se publica,
-   sea detrás de Cloudflare Access. Publicarlo en abierto con un token
-  alone es una decisión que hay que querer.
-3. **¿El panel sustituye a las variables de entorno?** El plan asume que sí,
-   a partir del momento en que el panel está activo: la base de datos es la
-   fuente única. Mantener las dos a la vez es la forma segura de tener dos
-   verdades.
+| Decisión | Supuesto por defecto | Cómo se cambia |
+| --- | --- | --- |
+| **Token del panel: ¿uno o varios?** | Uno solo: `MCP_DASHBOARD_TOKEN`. Con varios, cada uno sería un usuario con su propio nombre, y la auditoría podría decir quién hizo qué. Es más trabajo y no aporta nada con una sola persona operando. | Una tabla `users` y una sesión por token. El resto no cambia. |
+| **¿Se publica el panel?** | No. Se escucha en `127.0.0.1` y el compose no publica el puerto. Se accede por túnel SSH o por un proxy local. | `MCP_DASHBOARD_PUBLISH=1` publica el puerto en el host (siempre en loopback). Si además se expone por el túnel, se recomienda Cloudflare Access delante. |
+| **¿El panel sustituye a las variables de entorno?** | Sí: con el panel activo la base de datos es la fuente única, y las cuentas del entorno se importan una vez si la base está vacía. Mantener las dos a la vez es la forma segura de tener dos verdades. | El importador es una función aparte (`store.seed`). Cambiarlo para que no importe, o para que importe en cada arranque, no toca el resto. |
 
 Y una cuarta, de diseño, que se puede aplazar:
 
 4. **¿Los permisos por dominio y por cuenta se editan en el panel?** El plan
-   lo permite (los campos son tri-estado), pero la interfaz puede exponerlos
-   más adelante.
+   los permite (los campos son tri-estado), pero la interfaz puede exponerlos
+   más adelante: la API ya los acepta y la cadena los respeta.
 
 ## 17. Fuera de alcance
 
