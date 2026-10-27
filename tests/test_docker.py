@@ -330,11 +330,10 @@ def test_el_panel_arranca_con_lo_que_cop_el_dockerfile(tmp_path: Path) -> None:
 
 
 def test_la_sonda_de_salud_comprueba_los_dos_puertos() -> None:
-    """La sonda mira el MCP y, si está, el panel."""
+    """La sonda mira el MCP y el panel: los dos están siempre."""
     fuente = (ROOT / "docker" / "healthcheck.py").read_text(encoding="utf-8")
     assert "MCP_BIND_PORT" in fuente
     assert "MCP_DASHBOARD_BIND_PORT" in fuente
-    assert "MCP_DASHBOARD_DB" in fuente
     dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
     assert "docker/healthcheck.py" in dockerfile
 
@@ -495,6 +494,59 @@ def test_el_compose_declara_las_variables_del_panel() -> None:
     assert not missing, f"El compose no declara: {', '.join(missing)}"
     # Y el panel necesita un volumen donde escribir la base.
     assert "/var/lib/mcp-correo" in text
+
+
+def test_la_base_de_datos_esta_en_un_volumen() -> None:
+    """La base tiene que sobrevivir a un reinicio.
+
+    El contenedor es de solo lectura: sin el volumen, la base no se puede
+    escribir y las cuentas se pierden en cada redespliegue.
+    """
+    compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
+    servicio = compose["services"]["mcp"]
+    montajes = [str(montaje) for montaje in servicio["volumes"]]
+    assert any(montaje.startswith("data:") for montaje in montajes), montajes
+    assert "data" in compose["volumes"]
+    # Y la ruta de la base cae dentro de ese volumen, no en el sistema de
+    # ficheros del contenedor, que es de solo lectura.
+    entorno = servicio["environment"]
+    ruta = str(entorno["MCP_DASHBOARD_DB"])
+    # ${MCP_DASHBOARD_DB:-/var/lib/mcp-correo/cuentas.db}
+    por_defecto = ruta.split(":-", 1)[-1].rstrip("}")
+    assert por_defecto.startswith("/var/lib/mcp-correo/"), ruta
+    # El volumen se monta ahí.
+    assert any(montaje.endswith(":/var/lib/mcp-correo") for montaje in montajes), montajes
+    # Y el directorio existe en la imagen, con su dueño.
+    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+    assert "/var/lib/mcp-correo" in dockerfile
+    assert "MCP_DASHBOARD_DB=/var/lib/mcp-correo/cuentas.db" in dockerfile
+
+
+def test_el_panel_y_la_base_no_son_opcionales() -> None:
+    """El panel y la base siempre están: no hay modo sin ellos."""
+    from config import DASHBOARD_ENV
+
+    fuente = (ROOT / "config.py").read_text(encoding="utf-8")
+    assert "MCP_DASHBOARD_KEY" in fuente
+    assert "MCP_DASHBOARD_TOKEN" in fuente
+    # La clave y el token son obligatorias: el arranque para si faltan.
+    compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
+    entorno = compose["services"]["mcp"]["environment"]
+    assert ":?" in str(entorno["MCP_DASHBOARD_KEY"]), "la clave no es obligatoria"
+    assert ":?" in str(entorno["MCP_DASHBOARD_TOKEN"]), "el token no es obligatorio"
+    for nombre in DASHBOARD_ENV:
+        assert nombre in fuente
+
+
+def test_mcp_accounts_no_existe() -> None:
+    """La lista de cuentas se quitó: los índices se descubren solos."""
+    fuente = (ROOT / "config.py").read_text(encoding="utf-8")
+    assert 'MCP_ACCOUNTS"' not in fuente
+    assert "ACCOUNTS_LIST" not in fuente
+    compose = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+    assert "MCP_ACCOUNTS:" not in compose
+    ejemplo = (ROOT / ".env.example").read_text(encoding="utf-8")
+    assert "MCP_ACCOUNTS=" not in ejemplo
 
 
 def test_el_overlay_del_tunel_no_lleva_el_token_dentro() -> None:

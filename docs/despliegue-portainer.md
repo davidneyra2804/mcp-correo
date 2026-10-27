@@ -83,7 +83,7 @@ Las que no puedes dejar de definir:
 | `MCP_PUBLISH_BIND` / `MCP_PUBLISH_PORT` | no | Por defecto `127.0.0.1` y `8765`. |
 | `MCP_DASHBOARD_DB` | no | Ruta del fichero SQLite. **Su presencia activa el panel** y convierte la base de datos en la fuente de las cuentas. |
 | `MCP_DASHBOARD_KEY` | con el panel | Clave con la que se cifran las contraseñas. No está en la base: guárdala. |
-| `MCP_DASHBOARD_TOKEN` | con el panel | Credencial de acceso al panel. Distinta de `MCP_BEARER_TOKEN`. |
+| `MCP_DASHBOARD_TOKEN` | sí | Credencial de acceso al panel. Distinta de `MCP_BEARER_TOKEN`. |
 | `MCP_AUDIT_MAX_BYTES` / `MCP_AUDIT_KEEP` / `MCP_AUDIT_ROTATE_SECONDS` | no | Rotación: 10 MiB, 12 copias, cada hora. |
 | `CLOUDFLARE_TUNNEL_TOKEN` | solo con el túnel | Token del túnel, del panel de Cloudflare. |
 
@@ -95,16 +95,17 @@ arranca si falta el secreto de una cuenta declarado.
 Portainer. No se copian al repositorio, no van dentro de la imagen y no se
 escriben en ningún fichero del servidor.
 
-### El panel, si lo activas
+### El panel
 
-Con `MCP_DASHBOARD_DB` (por ejemplo `/var/lib/mcp-correo/cuentas.db`) el
-panel arranca en el puerto 8766 y las cuentas pasan a estar en la base de
-datos. En el stack hace falta además `MCP_DASHBOARD_KEY` y
-`MCP_DASHBOARD_TOKEN`.
+El panel **siempre está**: arranca en el puerto 8766 y las cuentas viven en
+la base de datos. En el stack hacen falta `MCP_DASHBOARD_KEY` y
+`MCP_DASHBOARD_TOKEN`, y las dos son obligatorias: sin ellas el contenedor no
+arranca.
 
 La base tiene que caer en el volumen `data`, que el compose ya declara y
 monta en `/var/lib/mcp-correo`. El contenedor es de solo lectura: sin ese
-volumen, la base no se puede escribir.
+volumen, la base no se puede escribir, y con él, las cuentas sobreviven a
+los reinicios.
 
 Las cuentas que ya tengas en `MCP_ACCOUNT_<CAMPO>_<N>` se importan **una
 vez**, y solo si la base está vacía. A partir de ahí, la base manda: para
@@ -234,10 +235,9 @@ en loopback.
   siguiente.
 
 - Base de datos del panel: volumen nombrado `data`, montado en
-  `/var/lib/mcp-correo`. Solo existe si activas el panel. **Copia de
-  seguridad**: el fichero contiene las cuentas y las contraseñas
-  cifradas, pero sin `MCP_DASHBOARD_KEY` no sirven de nada. Copia las dos
-  cosas, y la clave aparte.
+  `/var/lib/mcp-correo`. **Copia de seguridad**: el fichero contiene las
+  cuentas y las contraseñas cifradas, pero sin `MCP_DASHBOARD_KEY` no sirven
+  de nada. Copia las dos cosas, y la clave aparte.
 
 - Actualizar: en el stack, **Pull and redeploy**. Los secretos de Environment
   variables y el volumen `audit` se conservan. Para cambiar el token o una

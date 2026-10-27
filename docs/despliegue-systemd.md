@@ -19,7 +19,9 @@ sudo chown -R root:mcpmail /opt/mcp-correo && sudo chmod -R o-rwx /opt/mcp-corre
 sudo install -d -m 0750 -o root -g mcpmail /etc/mcp-correo
 sudo install -m 0600 -o root -g root /dev/null /etc/mcp-correo/env
 sudo install -d -m 0750 -o mcpmail -g mcpmail /var/log/mcp-correo
-# Editar /etc/mcp-correo/env: MCP_BEARER_TOKEN y las variables
+sudo install -d -m 0750 -o mcpmail -g mcpmail /var/lib/mcp-correo
+# Editar /etc/mcp-correo/env: MCP_BEARER_TOKEN, MCP_DASHBOARD_KEY,
+# MCP_DASHBOARD_TOKEN, MCP_DASHBOARD_DB y las variables
 # MCP_ACCOUNT_<CAMPO>_<N> de cada cuenta.
 
 sudo cp deploy/mcp-correo.service /etc/systemd/system/
@@ -56,8 +58,8 @@ El firewall puede dejar 22 restringido a la IP de administración, más 80 y 443
 
 Conexión desde el cliente MCP: URL `https://mcp.example.com/mcp` y cabecera `Authorization: Bearer <token>`. Para un buzón concreto, `https://mcp.example.com/mcp/ada@corp.example.com`.
 
-Si activas el panel, pon la base de datos en `/var/lib/mcp-correo` y añade
-esa ruta a `ReadWritePaths` en la unidad: con `ProtectSystem=strict`, sin
-eso el proceso no puede escribir la base.
+Pon la base de datos en `/var/lib/mcp-correo` y añade esa ruta a
+`ReadWritePaths` en la unidad: con `ProtectSystem=strict`, sin eso el
+proceso no puede escribir la base.
 
 La alternativa con Docker está en [despliegue-portainer.md](despliegue-portainer.md). Las dos no se usan a la vez sobre el mismo puerto.

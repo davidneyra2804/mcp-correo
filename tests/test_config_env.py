@@ -21,7 +21,7 @@ def _sin_toml_ni_cuentas_globales(monkeypatch: pytest.MonkeyPatch) -> None:
     """Cada test arranca sin TOML y sin cuentas heredadas del conftest."""
     monkeypatch.delenv("MCP_CONFIG", raising=False)
     for name in list(os.environ):
-        if name.startswith("MCP_ACCOUNT_") or name == "MCP_ACCOUNTS":
+        if name.startswith("MCP_ACCOUNT_"):
             monkeypatch.delenv(name, raising=False)
 
 
@@ -169,37 +169,12 @@ def test_varias_cuentas_por_indice(monkeypatch: pytest.MonkeyPatch) -> None:
     assert accounts["ada@archivo.example.com"].index == 2
 
 
-def test_mcp_accounts_es_una_comprobacion_cruzada(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Si se declara, tiene que coincidir con las cuentas que existen."""
+def test_las_cuentas_se_descubren_solas(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No hay ninguna lista que mantener: los índices se descubren."""
     _cuenta(monkeypatch, 1)
     _cuenta(monkeypatch, 2, username="ada@archivo.example.com")
-    monkeypatch.setenv("MCP_ACCOUNTS", "1,2")
     _settings, accounts = load_config()
     assert set(accounts) == {"ada@corp.example.com", "ada@archivo.example.com"}
-
-
-def test_mcp_accounts_no_puede_omitir_una_cuenta(monkeypatch: pytest.MonkeyPatch) -> None:
-    _cuenta(monkeypatch, 1)
-    _cuenta(monkeypatch, 2, username="ada@archivo.example.com")
-    monkeypatch.setenv("MCP_ACCOUNTS", "1")
-    with pytest.raises(SystemExit, match="no lista la cuenta 2"):
-        load_config()
-
-
-def test_mcp_accounts_no_puede_listar_una_cuenta_inexistente(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _cuenta(monkeypatch, 1)
-    monkeypatch.setenv("MCP_ACCOUNTS", "1,3")
-    with pytest.raises(SystemExit, match="no tiene ninguna variable"):
-        load_config()
-
-
-def test_un_indice_invalido_no_arranca(monkeypatch: pytest.MonkeyPatch) -> None:
-    _cuenta(monkeypatch, 1)
-    monkeypatch.setenv("MCP_ACCOUNTS", "uno")
-    with pytest.raises(SystemExit, match="índice de cuenta inválido"):
-        load_config()
 
 
 def test_una_variable_de_cuenta_sin_indice_no_arranca(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -319,9 +294,13 @@ def test_el_toml_alimenta_el_servidor_cuando_el_entorno_no_cuenta(
     assert accounts["principal"].imap_host == "mail.example.com"
 
 
-def test_sin_ninguna_fuente_no_hay_cuentas(monkeypatch: pytest.MonkeyPatch) -> None:
-    with pytest.raises(SystemExit, match="No hay cuentas"):
-        load_config()
+def test_sin_ninguna_fuente_no_hay_cuentas_pero_no_es_un_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Sin cuentas no se aborta: las da de alta el panel."""
+    settings, accounts = load_config()
+    assert accounts == {}
+    assert settings.max_chars > 0
 
 
 def test_las_listas_del_entorno_son_csv(monkeypatch: pytest.MonkeyPatch) -> None:

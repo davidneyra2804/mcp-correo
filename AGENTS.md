@@ -36,14 +36,16 @@ MCP_ACCOUNT_PASSWORD_1=la-clave
 Para añadir una cuenta: copias el bloque y cambias el número. No hay listas
 que mantener, ni variables que enumerar en el compose.
 
-**Con el panel activo, las cuentas no van por el entorno.** Viven en la base
-de datos y las gestiona el panel. Las del entorno se importan **una sola
-vez**, y solo si la base está vacía. A partir de ahí la base manda, y las
-variables de cuenta ya no se leen.
+**Las cuentas no van por el entorno.** Viven en la base de datos y las
+gestiona el panel. Las del entorno se importan **una sola vez**, y solo si
+la base está vacía. A partir de ahí la base manda, y las variables de
+cuenta ya no se leen.
 
-Eso no cambia la regla: el panel es **opt-in** (`MCP_DASHBOARD_DB`), y sin
-esa variable el arranque es el de siempre. Un despliegue que ya funciona no
-puede romperse por añadir una función.
+El panel y la base **siempre están**: es la forma de gestionar las
+cuentas. `MCP_DASHBOARD_KEY` y `MCP_DASHBOARD_TOKEN` son obligatorias, y
+si faltan el arranque para. La base tiene que vivir en un volumen: sin
+volumen, el contenedor es de solo lectura y las cuentas se pierden en cada
+reinicio.
 
 ### 2. Fallar pronto, y con un mensaje que diga qué hacer
 
@@ -216,10 +218,13 @@ Cada una de estas costó una release rota.
 - **La ruta general como atajo a todo.** `/mcp` exponiendo todas las cuentas
   convierte al bearer general en un copymachine de buzones. Es la puerta de
   entrada: la guía, y el dominio por defecto si hay uno.
-- **Dos fuentes de las cuentas a la vez.** Con el panel activo, la base de
-  datos manda y las variables de entorno se ignoran. Mezclarlas es la forma
-  segura de tener dos verdades, y de dos verdades sale una que nadie sabe
-  cuál es.
+- **Dos fuentes de las cuentas a la vez.** La base de datos manda y las
+  variables de entorno se ignoran. Mezclarlas es la forma segura de tener
+  dos verdades, y de dos verdades sale una que nadie sabe cuál es.
+- **Una base de datos que no persiste.** Sin volumen, el contenedor es de
+  solo lectura: o la base no se puede escribir, o se pierde en cada
+  reinicio. La ruta tiene que caer en el volumen, y hay un test que lo
+  comprueba.
 
 ## Publicar
 

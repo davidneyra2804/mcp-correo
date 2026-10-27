@@ -26,7 +26,6 @@ entorno gana y el arranque avisa por log.
 | Variable | Tipo | Default | Qué hace |
 | --- | --- | --- | --- |
 | `MCP_BEARER_TOKEN` | texto | — | **Obligatoria.** El secreto que presenta el cliente MCP. Mínimo 16 caracteres. Sin ella el proceso no arranca. |
-| `MCP_ACCOUNTS` | CSV de índices | — | Opcional. Comprobación cruzada de qué cuentas existen. |
 | `MCP_PUBLIC_HOST` | texto | `127.0.0.1` | El nombre público del servidor, el que va en el certificado TLS. Arma `allowed_hosts` y `allowed_origins`. |
 | `MCP_ALLOWED_HOSTS` | CSV | derivado | Cabeceras `Host` permitidas. **Sustituye** a las derivadas de `MCP_PUBLIC_HOST` y a las del TOML. Si la defines y no incluye el host público, el túnel da 421. |
 | `MCP_ALLOWED_ORIGINS` | CSV | derivado | Orígenes permitidos. Misma regla que arriba. |
@@ -57,22 +56,24 @@ entorno gana y el arranque avisa por log.
 
 ### Variables del panel
 
-El panel de control es una segunda superficie HTTP, en su propio puerto.
-Nada de esto cambia el comportamiento del MCP si no se usa: **el panel se
-activa con `MCP_DASHBOARD_DB`**, y sin esa variable no hay panel, ni base
-de datos, ni nada que configurar.
+El panel de control es una segunda superficie HTTP, en su propio puerto. Es
+la forma de gestionar las cuentas, así que **siempre está**: la base de
+datos y el panel son parte del servidor, no una opción.
 
 | Variable | Default | Qué hace |
 | --- | --- | --- |
-| `MCP_DASHBOARD_DB` | — | Ruta del fichero SQLite. **Su presencia activa el panel.** |
-| `MCP_DASHBOARD_KEY` | — | Clave con la que se cifran las contraseñas de las cuentas. **Obligatoria con el panel.** No está en la base de datos. |
-| `MCP_DASHBOARD_TOKEN` | — | Credencial de acceso al panel. **Obligatoria con el panel.** Distinta de `MCP_BEARER_TOKEN`. |
+| `MCP_DASHBOARD_DB` | `cuentas.db` | Ruta del fichero SQLite. En el contenedor, `/var/lib/mcp-correo/cuentas.db`, sobre el volumen de datos. |
+| `MCP_DASHBOARD_KEY` | — | Clave con la que se cifran las contraseñas de las cuentas. **Obligatoria.** No está en la base de datos. |
+| `MCP_DASHBOARD_TOKEN` | — | Credencial de acceso al panel. **Obligatoria.** Distinta de `MCP_BEARER_TOKEN`. |
 | `MCP_DASHBOARD_BIND_HOST` | `127.0.0.1` | Dirección de escucha del panel. Fuera de loopback exige `MCP_ALLOW_NONLOCAL_BIND=1`. |
 | `MCP_DASHBOARD_BIND_PORT` | `8766` | Puerto de escucha del panel. |
 
-Si el panel está activo y falta `MCP_DASHBOARD_KEY` o
-`MCP_DASHBOARD_TOKEN`, el proceso **no arranca**, y el mensaje dice cuál
-falta. No se arranca a medias.
+Si falta `MCP_DASHBOARD_KEY` o `MCP_DASHBOARD_TOKEN`, el proceso **no
+arranca**, y el mensaje dice cuál falta. No se arranca a medias.
+
+La base de datos tiene que vivir en un sitio que persista. En el
+contenedor, el volumen `data` montado en `/var/lib/mcp-correo`: sin él, el
+contenedor es de solo lectura y las cuentas se pierden en cada reinicio.
 
 Ver [El panel de control](dashboard.md).
 
@@ -119,11 +120,12 @@ MCP_ACCOUNT_PASSWORD_2=otra-clave
 ```
 
 Para añadir una cuenta se copia el bloque y se cambia el número. No hay que
-declararla en ninguna lista: el servidor las descubre todas. `MCP_ACCOUNTS` es
-**opcional** y sirve como comprobación cruzada: si la defines, tiene que
-coincidir con las cuentas que existen. Si no cuadra, **el arranque falla**
-(ver [Errores de arranque](#errores-de-arranque)), no avisa y sigue: un
-descuadre de cuentas es un error de configuración, no un aviso.
+declararla en ninguna lista: el servidor las descubre todas.
+
+Estas cuentas son la **importación inicial**. Con el panel, las cuentas
+viven en la base de datos: las del entorno se importan **una sola vez**, y
+solo si la base está vacía. A partir de ahí las gestiona el panel, y estas
+variables ya no se leen. Ver [El panel de control](dashboard.md).
 
 | Campo | Tipo | Default | Qué es |
 | --- | --- | --- | --- |
@@ -290,8 +292,8 @@ El `BEARER` de una cuenta:
 
 ### Los dominios
 
-Los dominios solo existen con el panel activo: son filas de la base de
-datos. Un dominio agrupa cuentas y les da:
+Los dominios son filas de la base de datos: son la forma de agrupar las
+cuentas. Un dominio agrupa cuentas y les da:
 
 - un **servidor IMAP y SMTP por defecto**, que las cuentas heredan si no
   tienen el suyo,
@@ -350,12 +352,11 @@ El proceso no avisa y sigue: para. Cada mensaje dice qué corregir.
 | `Las cuentas X e Y comparten el mismo bearer` | Cada cuenta necesita el suyo. |
 | `MCP_ACCOUNT_BEARER_1 es demasiado corto` | Menos de 16 caracteres. |
 | `Dos cuentas comparten el nombre X` | Dos cuentas con el mismo correo. Distingue una con `MCP_ACCOUNT_NAME_<N>`. |
-| `MCP_ACCOUNTS no lista la cuenta 2, que sí tiene variables` | La comprobación cruzada no cuadra. |
 | `MCP_ENABLE_SEND debe ser true, false, 1 o 0` | Un interruptor mal escrito. |
-| `No hay cuentas` | Ni variables de cuenta ni `accounts.toml`. Con el panel activo no pasa: las cuentas pueden llegar después. |
+| `No hay cuentas` | Ya no es un error: las cuentas las da de alta el panel. |
 | `bind_host '0.0.0.0' no es loopback` | Falta `MCP_ALLOW_NONLOCAL_BIND=1`. En el contenedor lo pone el compose. |
-| `Con MCP_DASHBOARD_DB hace falta MCP_DASHBOARD_KEY` | El panel está activo y falta la clave con la que se cifran las contraseñas. |
-| `Con MCP_DASHBOARD_DB hace falta MCP_DASHBOARD_TOKEN` | El panel está activo y falta su credencial de acceso. |
+| `Falta MCP_DASHBOARD_KEY` | La clave con la que se cifran las contraseñas. Es obligatoria. |
+| `Falta MCP_DASHBOARD_TOKEN` | La credencial de acceso al panel. Es obligatoria. |
 | `MCP_DASHBOARD_TOKEN es el mismo que MCP_BEARER_TOKEN` | Son dos superficies distintas: el panel no puede abrirse con el token del MCP. |
 | `La clave no corresponde a esta base de datos` | `MCP_DASHBOARD_KEY` es de otra instalación, o la base es de otra. Sin la clave correcta no se descifran las contraseñas. |
 | `La base de datos es de la versión N y este código solo entiende hasta la M` | La base es más nueva que el servidor. Actualiza el servidor. |
@@ -389,6 +390,10 @@ cuenta están donde deben.
 Sigue funcionando, y es lo que usa el despliegue con systemd. Pero en
 Portainer no hace falta: `MCP_ACCOUNTS_TOML_B64` y `MCP_ACCOUNTS_TOML` siguen
 aceptados como alternativa para quien no pueda usar `stack.env`.
+
+Las cuentas de cualquiera de las dos formas (entorno o TOML) son la
+**importación inicial** de la base de datos. Se importan una vez, si la base
+está vacía, y a partir de ahí manda la base.
 
 La diferencia entre las dos formas:
 

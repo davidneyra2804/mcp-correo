@@ -43,7 +43,8 @@ ENV PATH=/opt/venv/bin:$PATH \
     MCP_BIND_PORT=8765 \
     MCP_ALLOW_NONLOCAL_BIND=1 \
     MCP_AUDIT_LOG=/var/log/mcp-correo/audit.jsonl \
-    MCP_DASHBOARD_BIND_PORT=8766
+    MCP_DASHBOARD_BIND_PORT=8766 \
+    MCP_DASHBOARD_DB=/var/lib/mcp-correo/cuentas.db
 
 # 8765: el MCP. 8766: el panel de control (solo si MCP_DASHBOARD_DB está).
 EXPOSE 8765 8766

@@ -1,8 +1,7 @@
 """La sonda de salud del contenedor.
 
-Comprueba el MCP y, si el panel está activo, el panel. Si uno de los dos
-no responde, el contenedor está unhealthy: es mejor que el orquestador
-lo sepa a que no lo sepa.
+Comprueba el MCP y el panel. Si uno de los dos no responde, el contenedor
+está unhealthy: es mejor que el orquestador lo sepa a que no lo sepa.
 """
 
 from __future__ import annotations
@@ -25,11 +24,10 @@ def main() -> int:
     if not _sonda(mcp):
         print(f"El MCP no responde en el puerto {mcp}.")
         return 1
-    if os.environ.get("MCP_DASHBOARD_DB"):
-        panel = int(os.environ.get("MCP_DASHBOARD_BIND_PORT", "8766"))
-        if not _sonda(panel):
-            print(f"El panel no responde en el puerto {panel}.")
-            return 1
+    panel = int(os.environ.get("MCP_DASHBOARD_BIND_PORT", "8766"))
+    if not _sonda(panel):
+        print(f"El panel no responde en el puerto {panel}.")
+        return 1
     return 0
 
 

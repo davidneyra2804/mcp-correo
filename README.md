@@ -35,8 +35,7 @@ y el cliente solo presenta un Bearer.
   envíos.
 - **No guarda el estado del buzón.** No hay caché de mensajes ni réplica local:
   cada operación abre una conexión IMAP, hace su cosa y la cierra. Lo único
-  que **persiste** es el log de auditoría y, si activas el panel, la
-  configuración de las cuentas.
+  que **persiste** es el log de auditoría y la configuración de las cuentas.
 - No es un servidor de correo. No envía ni recibe por su cuenta.
 - No tiene OAuth. La credencial es un Bearer estático.
 - No escala en horizontal. Los tokens de confirmación y el cupo diario de
@@ -57,9 +56,8 @@ y el cliente solo presenta un Bearer.
   dominio, salvo que digan lo contrario. Apagados, la tool no se registra.
 - Enviar y borrar piden confirmación en dos pasos. El token dura 10 minutos,
   es de un solo uso y queda ligado a la cuenta y a la operación.
-- Varias cuentas, por variables de entorno numeradas o, si activas el panel,
-  por una base de datos. La contraseña va en su propia variable, nunca en un
-  fichero.
+- Varias cuentas, en una base de datos, organizadas por dominios. La
+  contraseña va cifrada, y la clave no está en la base de datos.
 - Una credencial por cuenta y otra por dominio: cada una abre solo su
   ámbito, y la general abre todo.
 - Panel de control en un segundo puerto: dar de alta cuentas, dominios y
@@ -140,9 +138,8 @@ opcional: la cuenta ya la fija la ruta y no hace falta que el modelo la sepa.
 ## El panel de control
 
 Un panel web, en **otro puerto**, para dar de alta las cuentas sin tocar el
-despliegue. Con el panel activo, las cuentas salen de una base de datos
-SQLite, se organizan por dominios, y **en cuanto existen ya están en
-`/mcp`**: no hay que reiniciar.
+despliegue. Las cuentas salen de una base de datos SQLite, se organizan por
+dominios, y **en cuanto existen ya están en `/mcp`**: no hay que reiniciar.
 
 El panel tiene su propia credencial, su propia sesión y su propia capa
 anti-CSRF. Y no puede leer ni escribir un buzón: solo gestiona la
@@ -226,51 +223,37 @@ no registra tools ni puede tocar un buzón.
 
 Hay dos caminos, y no se mezclan.
 
-### Con variables de entorno
+### El arranque
 
-Las cuentas las declaras tú, una variable por campo, y se numeran.
-El servidor las descubre solo: no hay que declarar ninguna lista.
+Las cuentas se gestionan desde el panel, y el panel necesita dos secretos.
+No hay más que definir:
 
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
-export MCP_BEARER_TOKEN="$(openssl rand -base64 48)"
-export MCP_ACCOUNT_USERNAME_1=ada@example.com
-export MCP_ACCOUNT_INBOX_HOST_1=mail.example.com
-export MCP_ACCOUNT_SMTP_HOST_1=mail.example.com
-export MCP_ACCOUNT_PASSWORD_1='contraseña-ficticia-principal'
+export MCP_BEARER_TOKEN="$(openssl rand -base64 48)"   # el asistente
+export MCP_DASHBOARD_KEY="$(openssl rand -base64 48)"   # cifra las contraseñas
+export MCP_DASHBOARD_TOKEN="$(openssl rand -base64 48)" # abre el panel
 export MCP_AUDIT_LOG=./audit.jsonl
 .venv/bin/python server.py
 ```
 
-El proceso queda en `http://127.0.0.1:8765/mcp`. La configuración entera son
-variables de entorno: no hace falta ningún fichero. El contrato completo está
-en [docs/configuracion.md](docs/configuracion.md).
+La base de datos va a `./cuentas.db` si no dices otra cosa
+(`MCP_DASHBOARD_DB`). **Ponla donde persista**: en el contenedor, sobre el
+volumen de datos.
 
-Para cambiar una cuenta, cambias su variable y **reinicias**. Es lo único
-que hay que hacer.
-
-### Con el panel
-
-Si quieres dar de alta cuentas sin tocar el despliegue, activa el panel.
-Las cuentas pasan a una base de datos y a un segundo puerto.
-
-```bash
-export MCP_BEARER_TOKEN="$(openssl rand -base64 48)"
-export MCP_DASHBOARD_DB=/var/lib/mcp-correo/cuentas.db
-export MCP_DASHBOARD_KEY="$(openssl rand -base64 48)"    # cifra las contraseñas
-export MCP_DASHBOARD_TOKEN="$(openssl rand -base64 48)"  # abre el panel
-.venv/bin/python server.py
-```
-
-Ahora hay dos superficies:
+Levantan dos superficies:
 
 | | Puerto | Credencial | Para qué |
 | --- | --- | --- | --- |
 | MCP | 8765 | `MCP_BEARER_TOKEN` | Lo que consume el asistente |
 | Panel | 8766 | `MCP_DASHBOARD_TOKEN` | Dar de alta cuentas y dominios |
 
-El flujo de uso es este:
+El MCP queda en `http://127.0.0.1:8765/mcp` y el panel en
+`http://127.0.0.1:8766`. El contrato completo de variables está en
+[docs/configuracion.md](docs/configuracion.md).
+
+### El flujo de uso
 
 1. **Entra al panel** en `http://127.0.0.1:8766` con `MCP_DASHBOARD_TOKEN`.
 2. **Crea un dominio** (por ejemplo `corp.example.com`). Es el grupo de
@@ -292,9 +275,9 @@ El flujo de uso es este:
 7. **Marca un dominio como por defecto** si quieres que `/mcp` abra sus
    cuentas. Si no hay ninguno, `/mcp` es solo la guía.
 
-Las cuentas que ya tuvieras en `MCP_ACCOUNT_<CAMPO>_<N>` se importan **una
-sola vez**, y solo si la base está vacía. A partir de ahí la base manda:
-para cambiar una cuenta, desde el panel.
+Las cuentas que tuvieras declaradas en `MCP_ACCOUNT_<CAMPO>_<N>` se
+importan **una sola vez**, y solo si la base está vacía. A partir de ahí la
+base manda: para cambiar una cuenta, desde el panel.
 
 El panel **no puede leer ni escribir un buzón**. Solo gestiona la
 configuración y prueba conexiones. Ver
@@ -306,6 +289,8 @@ Con el ejemplo ficticio:
 
 ```bash
 export MCP_BEARER_TOKEN="$(openssl rand -base64 48)"
+export MCP_DASHBOARD_KEY="$(openssl rand -base64 48)"
+export MCP_DASHBOARD_TOKEN="$(openssl rand -base64 48)"
 docker compose -f docker-compose.yml -f docker-compose.local.yml up --build
 ```
 
@@ -313,9 +298,9 @@ docker compose -f docker-compose.yml -f docker-compose.local.yml up --build
 lo uses con un buzón real. Sin `MCP_IMAGE`, la imagen construida se llama
 `mcp-correo:local` y no está en ningún registro.
 
-Para el panel en Docker, la base tiene que caer en el volumen de datos
-(lo hace el compose base) y las tres variables del panel tienen que estar en
-las variables del stack.
+La base de datos va en el volumen `data`, que el compose base declara y
+monta en `/var/lib/mcp-correo`. Sin ese volumen el contenedor es de solo
+lectura y las cuentas se perderían en cada reinicio.
 
 ## Configuración
 
@@ -346,15 +331,14 @@ export MCP_ACCOUNT_PASSWORD_1='contraseña-ficticia-principal'
 | `MCP_ACCOUNT_ALLOW_SEND_<N>`, `MCP_ACCOUNT_ALLOW_MARK_<N>`, `MCP_ACCOUNT_ALLOW_DELETE_<N>`, `MCP_ACCOUNT_ALLOW_DRAFTS_<N>` | Overrides **por cuenta**. Opcionales: si no están, la cuenta hereda el dominio (o el global). Si están, mandan ellos. |
 | `MCP_BIND_HOST`, `MCP_BIND_PORT` | Por defecto `127.0.0.1` y `8765`. |
 | `MCP_AUDIT_LOG` | JSONL. Por defecto `./audit.jsonl`. |
-| `MCP_DASHBOARD_DB` | Ruta del fichero SQLite. **Su presencia activa el panel**, y con él las cuentas en base de datos. |
-| `MCP_DASHBOARD_KEY` | Clave con la que se cifran las contraseñas. Obligatoria con el panel. No está en la base de datos: si se pierde, no se descifran. |
-| `MCP_DASHBOARD_TOKEN` | Credencial de acceso al panel. Obligatoria con el panel, y distinta de `MCP_BEARER_TOKEN`. |
+| `MCP_DASHBOARD_DB` | Ruta del fichero SQLite. Por defecto `cuentas.db`; en el contenedor, `/var/lib/mcp-correo/cuentas.db`, sobre el volumen de datos. |
+| `MCP_DASHBOARD_KEY` | Clave con la que se cifran las contraseñas. **Obligatoria.** No está en la base de datos: si se pierde, no se descifran. |
+| `MCP_DASHBOARD_TOKEN` | Credencial de acceso al panel. **Obligatoria**, y distinta de `MCP_BEARER_TOKEN`. |
 | `MCP_DASHBOARD_BIND_HOST`, `MCP_DASHBOARD_BIND_PORT` | Por defecto `127.0.0.1` y `8766`. |
 
 Las cuentas se descubren solas por sus índices: no hay que declarar ninguna
-lista. `MCP_ACCOUNTS` es opcional y solo sirve como comprobación cruzada de
-que la lista cuadra con las cuentas que existen. Con el panel activo no
-aplica: las cuentas están en la base de datos.
+lista. Y las que se declaren en el entorno se importan a la base una sola
+vez, si la base está vacía; a partir de ahí las gestiona el panel.
 
 Los topes (`max_results`, `max_chars`, `max_attachment_bytes`, destinatarios,
 cupo diario, UID por llamada) tienen su variable `MCP_MAX_*`,
@@ -475,10 +459,10 @@ responde 403.
 Dos cosas, y solo dos:
 
 - Un **JSONL** con una línea por llamada a una tool, con fecha, tool, cuenta
-  y argumentos reducidos. Está en el volumen `audit` del stack. Con el panel
-  activo, también se anotan sus cambios.
-- Una **base SQLite** con los dominios y las cuentas, en el volumen `data`,
-  y solo si el panel está activo. Las contraseñas van cifradas.
+  y argumentos reducidos. Está en el volumen `audit` del stack. También se
+  anotan los cambios del panel.
+- Una **base SQLite** con los dominios y las cuentas, en el volumen `data`.
+  Las contraseñas van cifradas.
 
 ```bash
 docker compose exec mcp cat /var/log/mcp-correo/audit.jsonl

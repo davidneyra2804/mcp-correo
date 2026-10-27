@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -16,3 +17,12 @@ os.environ.setdefault("MCP_AUDIT_LOG", "/tmp/mcp-correo-test-audit.jsonl")
 os.environ.setdefault("MAIL_PRINCIPAL_PASSWORD", "clave-ficticia-principal")
 os.environ.setdefault("MAIL_ARCHIVO_PASSWORD", "clave-ficticia-archivo")
 os.environ.setdefault("MCP_BIND_HOST", "127.0.0.1")
+
+# El panel y la base de datos siempre están. En los tests, en un fichero
+# temporal: la base de cada test tiene que estar separada.
+os.environ.setdefault("MCP_DASHBOARD_KEY", "clave-de-prueba-0123456789abcdef")
+os.environ.setdefault("MCP_DASHBOARD_TOKEN", "token-del-panel-0123456789abcdef")
+os.environ.setdefault(
+    "MCP_DASHBOARD_DB",
+    str(Path(tempfile.gettempdir()) / "mcp-correo-test-cuentas.db"),
+)

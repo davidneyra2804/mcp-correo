@@ -963,10 +963,10 @@ def _preparar_la_base(
 ) -> tuple[Store, AccountSource]:
     """Prepara la base de datos y devuelve el almacén y la fuente.
 
-    Con el panel activo, la base de datos es la fuente de las cuentas. Las
-    del entorno se importan **una vez**, y solo si la base está vacía: en
-    cuanto la base tiene una cuenta, la base manda. Dos fuentes a la vez
-    son dos verdades, y de dos verdades sale una que nadie sabe cuál es.
+    La base de datos es la fuente de las cuentas. Las del entorno o del
+    TOML se importan **una vez**, y solo si la base está vacía: en cuanto
+    la base tiene una cuenta, la base manda. Dos fuentes a la vez son dos
+    verdades, y de dos verdades sale una que nadie sabe cuál es.
     """
     database = Database(dashboard.db_path)
     database.prepare()
@@ -997,22 +997,17 @@ def _preparar_la_base(
 def _bootstrap() -> BearerAuth:
     token = require_bearer_token()
     dashboard = load_dashboard_settings()
-    settings, cuentas = load_config(allow_empty=dashboard.enabled)
+    settings, cuentas = load_config()
     ensure_local_bind(settings.bind_host)
     audit = AuditLog(settings.audit_log, secrets=[token])
-    store: Store | None = None
-    if dashboard.enabled:
-        store, source = _preparar_la_base(dashboard, settings, cuentas, audit)
-    else:
-        source = como_fuente(cuentas)
+    store, source = _preparar_la_base(dashboard, settings, cuentas, audit)
     application, runtime = create_app(
         settings, source, token, audit=audit, store=store, dashboard=dashboard
     )
     global RUNTIME
     RUNTIME = runtime
-    if dashboard.enabled and store is not None:
-        _levantar_el_panel(dashboard, store, settings, audit)
-    caps = write_capabilities(settings, runtime.accounts, dynamic=dashboard.enabled)
+    _levantar_el_panel(dashboard, store, settings, audit)
+    caps = write_capabilities(settings, runtime.accounts, dynamic=True)
     logger.info(
         "Servidor listo: %d cuentas, escucha %s:%s, escritura=%s",
         len(runtime.accounts),

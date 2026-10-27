@@ -19,8 +19,6 @@ Hecho en el código:
 - Escucha por defecto en `127.0.0.1`. En el contenedor, `0.0.0.0` solo con `MCP_ALLOW_NONLOCAL_BIND=1`, y el compose publica `127.0.0.1:8765`.
 - Imagen sin token ni contraseñas. Usuario `mcp` no root, raíz de solo lectura, `cap_drop: ALL` y `no-new-privileges`. `GET /health` no pide token y no devuelve datos del buzón.
 
-Si el panel está activo:
-
 - El panel es una superficie aparte, con su propia credencial
   (`MCP_DASHBOARD_TOKEN`), que tiene que ser distinta del bearer del MCP.
   El token del MCP no abre el panel, y el del panel no abre `/mcp`.

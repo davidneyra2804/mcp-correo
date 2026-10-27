@@ -4,7 +4,7 @@ Un panel web para dar de alta las cuentas de correo sin tocar el
 despliegue. Escucha en **su propio puerto**, separado del MCP, y tiene su
 propia credencial.
 
-Con el panel activo, las cuentas salen de una base de datos SQLite en vez
+Con el panel, las cuentas salen de una base de datos SQLite en vez
 de de variables de entorno. Y en cuanto existen, están expuestas en `/mcp`:
 **no hay que reiniciar nada**.
 
@@ -23,19 +23,24 @@ enviar correo.
 
 ## Activarlo
 
-Tres variables. La primera es la que lo activa:
+El panel y la base de datos **siempre están**: son la forma de gestionar las
+cuentas. No hay un interruptor que los encienda.
+
+Dos secretos son obligatorios:
 
 ```bash
-MCP_DASHBOARD_DB=/var/lib/mcp-correo/cuentas.db
 MCP_DASHBOARD_KEY=la-clave-con-la-que-se-cifran-las-contrasenas
 MCP_DASHBOARD_TOKEN=la-credencial-de-acceso-al-panel
 ```
 
-Las dos últimas son obligatorias: sin la clave no se pueden descifrar las
-contraseñas, y sin el token no se puede entrar. Si falta alguna, el
-proceso **no arranca** y dice cuál falta.
+Si falta alguno, el proceso **no arranca** y dice cuál falta. No se arranca
+a medias.
 
-En Docker, la base tiene que estar en el volumen de datos:
+La ruta de la base de datos es `MCP_DASHBOARD_DB`, y por defecto es
+`cuentas.db`, en el directorio de trabajo. **Ponla donde persista**: en el
+contenedor, sobre el volumen de datos.
+
+### En Docker
 
 ```yaml
 environment:
@@ -45,7 +50,8 @@ volumes:
 ```
 
 El contenedor es de solo lectura: sin ese volumen, la base no se puede
-escribir y el arranque falla.
+escribir y el arranque falla. Y sin volumen, las cuentas se pierden en cada
+reinicio.
 
 ### La clave
 
@@ -67,11 +73,9 @@ credenciales: el token del MCP no abre el panel, y el del panel no abre
 
 ## Las cuentas: dónde están
 
-Con el panel activo, **la base de datos es la fuente de las cuentas**. Las
-variables `MCP_ACCOUNT_<CAMPO>_<N>` dejan de mandar.
-
-Al primer arranque, si la base está **vacía**, las cuentas del entorno se
-importan: una por dominio de correo, con su contraseña cifrada. A partir
+La base de datos es **la fuente de las cuentas**. Las variables
+`MCP_ACCOUNT_<CAMPO>_<N>` (o el `accounts.toml`) son la importación
+inicial: se importan **una vez**, y solo si la base está **vacía**. A partir
 de ahí, la base manda y el entorno se ignora. El arranque lo dice:
 
 ```

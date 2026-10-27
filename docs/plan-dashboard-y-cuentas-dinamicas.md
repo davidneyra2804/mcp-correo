@@ -30,23 +30,28 @@ Lo que se pide tiene cinco piezas. Cada una encaja con algo que ya existe:
 | Dominio por defecto | No existe | Un dominio marcado como tal en el panel: es el que abre `/mcp` |
 | Probar antes de guardar | No hay panel | Un botón que valida IMAP y SMTP con la contraseña puesta, sin guardar nada |
 
-Lo importante: **nada de esto rompe lo que ya funciona**. El panel es
-opt-in. Si no se activa, el servidor se comporta exactamente igual que hoy,
-con las cuentas del entorno y sin base de datos.
+Lo importante: **nada de esto rompe lo que ya funciona**. Las cuentas del
+entorno o del TOML se importan a la base una vez, y a partir de ahí las
+gestiona el panel. El despliegue que ya existe sigue arrancando, con sus
+cuentas, y además gana el panel.
 
 ## 3. Decisiones que toma este plan
 
 Cada una con su porqué. Las que quedan abiertas están al final (§16).
 
-### 3.1 El panel es opt-in
+### 3.1 El panel y la base siempre están
 
-Se activa con una sola variable: `MCP_DASHBOARD_DB` (la ruta del fichero
-SQLite). Si no está, no hay panel, no hay base de datos y el arranque es el
-de hoy.
+No hay un interruptor que los encienda. El panel y la base de datos son
+parte del servidor: son la forma de gestionar las cuentas, y las cuentas se
+gestionan siempre desde ahí.
 
-El motivo es concreto: el despliegue actual (Portainer + túnel) funciona y
-está en producción. Una cambios de contrato de configuración no puede
-convertir un despliegue existente en uno que no arranca.
+Lo que sí es configurable es **dónde** vive la base (`MCP_DASHBOARD_DB`) y
+cómo se llaman los secretos (`MCP_DASHBOARD_KEY` y
+`MCP_DASHBOARD_TOKEN`, las dos obligatorias).
+
+El motivo: un panel opcional es un panel que nadie instala, y una base de
+datos opcional acaba siendo un fichero que se pierde. La ruta tiene que
+caer en un volumen, y hay un test que lo comprueba.
 
 ### 3.2 Un proceso, dos puertos
 
