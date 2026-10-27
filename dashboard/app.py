@@ -124,6 +124,24 @@ async def salud(request: Request) -> JSONResponse:
     return JSONResponse({"status": "ok"})
 
 
+def rutas_de_la_api(app: Starlette) -> set[tuple[str, str]]:
+    """Las rutas de la API que declara la aplicación, con su método.
+
+    Lo usa el test que comprueba que el JavaScript llama a rutas que
+    existen: sin esto, cada lado se comprueba por separado y el error
+    aparece cuando alguien pincha en el botón.
+    """
+    rutas: set[tuple[str, str]] = set()
+    for ruta in app.routes:
+        if not isinstance(ruta, Route) or not ruta.path.startswith("/api/"):
+            continue
+        for metodo in ruta.methods or set():
+            if metodo in {"HEAD", "OPTIONS"}:
+                continue
+            rutas.add((ruta.path, metodo))
+    return rutas
+
+
 def crear_app(
     dashboard: DashboardSettings,
     store: Store,

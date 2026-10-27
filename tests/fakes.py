@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from email.message import EmailMessage
 from email.utils import format_datetime, parsedate_to_datetime
+from pathlib import Path
 
 from imapclient.response_types import Address, Envelope
 
@@ -26,6 +27,30 @@ def puerto_libre() -> int:
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
         return int(s.getsockname()[1])
+
+
+def entorno_de_subproceso(raiz: Path, **extra: str) -> dict[str, str]:
+    """El entorno para un subproceso que tiene que importar el proyecto.
+
+    Dos cosas, y las dos se han Posteado como fallos en CI:
+
+    - **PYTHONSAFEPATH** (Actions) no añade el directorio de trabajo a
+      sys.path, y `import server` falla. PYTHONPATH sí entra.
+    - El **panel hace bind** de verdad al arrancar: el subproceso necesita
+      un puerto propio, o choca con el del proceso de los tests.
+
+    Todo subproceso que importe el proyecto tiene que usar esto. El test
+    `test_los_subprocesos_usan_el_entorno_correcto` lo comprueba.
+    """
+    import os
+
+    entorno = os.environ.copy()
+    anterior = entorno.get("PYTHONPATH")
+    entorno["PYTHONPATH"] = str(raiz) if not anterior else os.pathsep.join((str(raiz), anterior))
+    # Siempre un puerto nuevo: el del proceso de los tests ya esta cogido.
+    entorno["MCP_DASHBOARD_BIND_PORT"] = str(puerto_libre())
+    entorno.update(extra)
+    return entorno
 
 
 @dataclass

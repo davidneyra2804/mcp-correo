@@ -286,14 +286,14 @@ def test_la_app_arranca_con_lo_que_cop_el_dockerfile(tmp_path: Path) -> None:
     import sys
 
     app = _simular_app(tmp_path)
-    env = os.environ.copy()
-    env["MCP_BEARER_TOKEN"] = "token-de-prueba-0123456789abcdef"
-    env["MCP_AUDIT_LOG"] = str(tmp_path / "audit.jsonl")
-    env["MCP_CONFIG"] = str(app / "accounts.example.toml")
-    env["PYTHONPATH"] = str(app)
-    # El subproceso hace bind del panel: necesita un puerto propio, o
-    # choca con el del proceso de los tests.
-    env["MCP_DASHBOARD_BIND_PORT"] = str(_puerto_libre())
+    from tests.fakes import entorno_de_subproceso
+
+    env = entorno_de_subproceso(
+        app,
+        MCP_BEARER_TOKEN="token-de-prueba-0123456789abcdef",
+        MCP_AUDIT_LOG=str(tmp_path / "audit.jsonl"),
+        MCP_CONFIG=str(app / "accounts.example.toml"),
+    )
     completado = subprocess.run(
         [sys.executable, "-c", "import server"],
         cwd=app,
@@ -317,17 +317,17 @@ def test_el_panel_arranca_con_lo_que_cop_el_dockerfile(tmp_path: Path) -> None:
     import sys
 
     app = _simular_app(tmp_path)
-    env = os.environ.copy()
-    env["MCP_BEARER_TOKEN"] = "token-de-prueba-0123456789abcdef"
-    env["MCP_DASHBOARD_DB"] = str(tmp_path / "cuentas.db")
-    env["MCP_DASHBOARD_KEY"] = "clave-de-prueba-0123456789abcdef"
-    env["MCP_DASHBOARD_TOKEN"] = "token-del-panel-0123456789abcdef"
-    env["MCP_AUDIT_LOG"] = str(tmp_path / "audit.jsonl")
-    env["MCP_CONFIG"] = str(app / "accounts.example.toml")
-    env["PYTHONPATH"] = str(app)
-    # El subproceso hace bind del panel: necesita un puerto propio, o
-    # choca con el del proceso de los tests.
-    env["MCP_DASHBOARD_BIND_PORT"] = str(_puerto_libre())
+    from tests.fakes import entorno_de_subproceso
+
+    env = entorno_de_subproceso(
+        app,
+        MCP_BEARER_TOKEN="token-de-prueba-0123456789abcdef",
+        MCP_DASHBOARD_DB=str(tmp_path / "cuentas.db"),
+        MCP_DASHBOARD_KEY="clave-de-prueba-0123456789abcdef",
+        MCP_DASHBOARD_TOKEN="token-del-panel-0123456789abcdef",
+        MCP_AUDIT_LOG=str(tmp_path / "audit.jsonl"),
+        MCP_CONFIG=str(app / "accounts.example.toml"),
+    )
     completado = subprocess.run(
         # Se duerme un poco: el panel arranca en su hilo, y su log sale
         # desde ahí.
@@ -363,15 +363,18 @@ def test_el_panel_para_si_no_puede_escuchar(tmp_path: Path) -> None:
     ocupado.bind(("127.0.0.1", 0))
     ocupado.listen(1)
     puerto = ocupado.getsockname()[1]
-    env = os.environ.copy()
-    env["MCP_BEARER_TOKEN"] = "token-de-prueba-0123456789abcdef"
-    env["MCP_DASHBOARD_DB"] = str(tmp_path / "cuentas.db")
-    env["MCP_DASHBOARD_KEY"] = "clave-de-prueba-0123456789abcdef"
-    env["MCP_DASHBOARD_TOKEN"] = "token-del-panel-0123456789abcdef"
-    env["MCP_AUDIT_LOG"] = str(tmp_path / "audit.jsonl")
-    env["MCP_CONFIG"] = str(app / "accounts.example.toml")
-    env["PYTHONPATH"] = str(app)
-    env["MCP_DASHBOARD_BIND_PORT"] = str(puerto)
+    from tests.fakes import entorno_de_subproceso
+
+    env = entorno_de_subproceso(
+        app,
+        MCP_BEARER_TOKEN="token-de-prueba-0123456789abcdef",
+        MCP_DASHBOARD_DB=str(tmp_path / "cuentas.db"),
+        MCP_DASHBOARD_KEY="clave-de-prueba-0123456789abcdef",
+        MCP_DASHBOARD_TOKEN="token-del-panel-0123456789abcdef",
+        MCP_AUDIT_LOG=str(tmp_path / "audit.jsonl"),
+        MCP_CONFIG=str(app / "accounts.example.toml"),
+        MCP_DASHBOARD_BIND_PORT=str(puerto),
+    )
     try:
         completado = subprocess.run(
             [sys.executable, "-c", "import server"],

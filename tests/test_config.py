@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pytest
@@ -165,16 +164,10 @@ def test_repr_de_la_cuenta_oculta_el_secreto() -> None:
 
 
 def test_el_proceso_no_arranca_sin_token() -> None:
-    env = os.environ.copy()
-    env.pop("MCP_BEARER_TOKEN", None)
-    # PYTHONSAFEPATH (Actions) no añade el cwd. PYTHONPATH sí entra en sys.path.
-    previous = env.get("PYTHONPATH")
-    env["PYTHONPATH"] = str(ROOT) if not previous else os.pathsep.join((str(ROOT), previous))
-    # Y el panel hace bind de verdad: puerto propio, para no chocar con el
-    # del proceso de los tests.
-    from tests.fakes import puerto_libre
+    from tests.fakes import entorno_de_subproceso
 
-    env["MCP_DASHBOARD_BIND_PORT"] = str(puerto_libre())
+    env = entorno_de_subproceso(ROOT)
+    env.pop("MCP_BEARER_TOKEN", None)
     import subprocess
     import sys
 
