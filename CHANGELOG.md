@@ -341,10 +341,10 @@ cambia**, y por eso es una versión mayor.
   tocar el despliegue. Tiene su propia credencial (`MCP_DASHBOARD_TOKEN`),
   su propia sesión firmada y su propia capa anti-CSRF. **No puede leer ni
   escribir un buzón**: solo gestiona la configuración y prueba conexiones.
-- **Las cuentas en una base de datos SQLite.** Con `MCP_DASHBOARD_DB` el
-  panel se activa y la base pasa a ser la fuente de las cuentas. Las
-  variables `MCP_ACCOUNT_<CAMPO>_<N>` se importan **una vez**, y solo si la
-  base está vacía; a partir de ahí la base manda.
+- **Las cuentas en una base de datos SQLite.** La base pasa a ser la fuente
+  de las cuentas. Las variables `MCP_ACCOUNT_<CAMPO>_<N>` se importan
+  **una vez**, y solo si la base está vacía; a partir de ahí la base
+  manda.
 - **Cuentas por dominio.** Un dominio agrupa cuentas y les da un servidor
   IMAP y SMTP por defecto, unos permisos y una credencial propia. La
   cadena de permisos crece un nivel: global → dominio → cuenta.
@@ -367,6 +367,15 @@ cambia**, y por eso es una versión mayor.
 
 ### Cambiado
 
+- **El panel y la base de datos no son opcionales.** Son la forma de
+  gestionar las cuentas. `MCP_DASHBOARD_KEY` y `MCP_DASHBOARD_TOKEN` son
+  obligatorias, y si faltan el arranque para diciendo cuál. `MCP_DASHBOARD_DB`
+  es la ruta del fichero, no un interruptor: por defecto `cuentas.db`, y en
+  el contenedor sobre el volumen de datos.
+- **`MCP_ACCOUNTS` desaparece.** La lista de índices de cuenta no hacía
+  falta: los índices se descubren solos. Con la lista, además, un
+  descuadre abortaba el arranque por algo que no era un error de
+  configuración.
 - **`/mcp` ya no expone todas las cuentas.** Pasa a ser la puerta de
   entrada: la guía (el catálogo de rutas) y, si hay uno, el dominio marcado
   como por defecto. Para abrir un buzón hay que nombrar la cuenta o el
@@ -376,10 +385,19 @@ cambia**, y por eso es una versión mayor.
   general. El de un dominio abre la ruta de su dominio y las de sus
   cuentas; el de una cuenta, solo la suya. Una credencial de cuenta en
   `/mcp/<dominio>` responde 403, aunque el dominio tenga una sola cuenta.
-- **La lista de tools de escritura en modo panel depende del interruptor
-  global**, no de las cuentas: la lista se fija al arrancar y las cuentas
-  pueden cambiar después. El permiso por cuenta se sigue comprobando en
-  cada llamada, que es donde se comprueba de todos modos.
+- **La lista de tools de escritura depende del interruptor global**, no de
+  las cuentas: la lista se fija al arrancar y las cuentas pueden cambiar
+  después. El permiso por cuenta se sigue comprobando en cada llamada, que
+  es donde se comprueba de todos modos.
+- **Sin cuentas ya no es un error de arranque.** Las da de alta el panel.
+
+### Corregido
+
+- **El panel podía morir en silencio.** Hacía el `bind` en su hilo: si el
+  puerto estaba ocupado, el hilo moría, el log decía "Panel en marcha" y
+  el proceso seguía vivo **sin panel**. Con el panel obligatorio, eso es un
+  proceso roto. Ahora el socket se abre en el hilo principal y, si no
+  puede, el proceso para y lo dice.
 
 ### Seguridad
 
@@ -390,5 +408,7 @@ cambia**, y por eso es una versión mayor.
   un formulario de otro sitio no puede poner una cabecera a medida.
 - La API nunca devuelve una contraseña. Al leer una cuenta se ve si tiene
   contraseña, no cuál es.
+- La base de datos va en un volumen. Sin él, el contenedor es de solo
+  lectura y las cuentas se pierden en cada reinicio.
 
 [2.0.0]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v2.0.0
