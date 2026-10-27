@@ -15,6 +15,19 @@ from config import Account, ServerSettings
 from mail.imap import MailService
 
 
+def puerto_libre() -> int:
+    """Un puerto que está libre ahora mismo.
+
+    El panel hace bind de verdad al arrancar. Cada subproceso necesita un
+    puerto propio, o choca con el del proceso de los tests.
+    """
+    import socket
+
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return int(s.getsockname()[1])
+
+
 @dataclass
 class StoredMessage:
     raw: bytes

@@ -234,6 +234,17 @@ def test_la_imagen_lleva_los_estaticos_del_panel() -> None:
     assert "dashboard" in copiados, "La imagen no lleva el panel."
 
 
+def _puerto_libre() -> int:
+    """Un puerto que está libre ahora mismo.
+
+    El panel hace bind de verdad al arrancar. Los subprocesos necesitan un
+    puerto propio, o chocan con el del proceso de los tests.
+    """
+    from tests.fakes import puerto_libre
+
+    return puerto_libre()
+
+
 def _simular_app(tmp_path: Path) -> Path:
     """Arma un directorio con exactamente lo que va en la imagen."""
     import shutil
@@ -280,6 +291,9 @@ def test_la_app_arranca_con_lo_que_cop_el_dockerfile(tmp_path: Path) -> None:
     env["MCP_AUDIT_LOG"] = str(tmp_path / "audit.jsonl")
     env["MCP_CONFIG"] = str(app / "accounts.example.toml")
     env["PYTHONPATH"] = str(app)
+    # El subproceso hace bind del panel: necesita un puerto propio, o
+    # choca con el del proceso de los tests.
+    env["MCP_DASHBOARD_BIND_PORT"] = str(_puerto_libre())
     completado = subprocess.run(
         [sys.executable, "-c", "import server"],
         cwd=app,
@@ -311,6 +325,9 @@ def test_el_panel_arranca_con_lo_que_cop_el_dockerfile(tmp_path: Path) -> None:
     env["MCP_AUDIT_LOG"] = str(tmp_path / "audit.jsonl")
     env["MCP_CONFIG"] = str(app / "accounts.example.toml")
     env["PYTHONPATH"] = str(app)
+    # El subproceso hace bind del panel: necesita un puerto propio, o
+    # choca con el del proceso de los tests.
+    env["MCP_DASHBOARD_BIND_PORT"] = str(_puerto_libre())
     completado = subprocess.run(
         # Se duerme un poco: el panel arranca en su hilo, y su log sale
         # desde ahí.
@@ -327,6 +344,48 @@ def test_el_panel_arranca_con_lo_que_cop_el_dockerfile(tmp_path: Path) -> None:
     # Y los estáticos están: una interfaz que no se sirve no se ve.
     assert (app / "dashboard" / "static" / "panel.html").is_file()
     assert (app / "dashboard" / "static" / "panel.js").is_file()
+
+
+def test_el_panel_para_si_no_puede_escuchar(tmp_path: Path) -> None:
+    """Si el puerto del panel está ocupado, el proceso para.
+
+    Un panel muerto en un hilo es peor que no tener panel: el log diría
+    que está en marcha, el MCP seguiría answering, y las cuentas no se
+    podrían gestionar. El panel es parte del servidor, así que si no
+    arranca, el servidor no arranca.
+    """
+    import socket
+    import subprocess
+    import sys
+
+    app = _simular_app(tmp_path)
+    ocupado = socket.socket()
+    ocupado.bind(("127.0.0.1", 0))
+    ocupado.listen(1)
+    puerto = ocupado.getsockname()[1]
+    env = os.environ.copy()
+    env["MCP_BEARER_TOKEN"] = "token-de-prueba-0123456789abcdef"
+    env["MCP_DASHBOARD_DB"] = str(tmp_path / "cuentas.db")
+    env["MCP_DASHBOARD_KEY"] = "clave-de-prueba-0123456789abcdef"
+    env["MCP_DASHBOARD_TOKEN"] = "token-del-panel-0123456789abcdef"
+    env["MCP_AUDIT_LOG"] = str(tmp_path / "audit.jsonl")
+    env["MCP_CONFIG"] = str(app / "accounts.example.toml")
+    env["PYTHONPATH"] = str(app)
+    env["MCP_DASHBOARD_BIND_PORT"] = str(puerto)
+    try:
+        completado = subprocess.run(
+            [sys.executable, "-c", "import server"],
+            cwd=app,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    finally:
+        ocupado.close()
+    salida = completado.stdout + completado.stderr
+    assert completado.returncode != 0, salida
+    assert "no puede escuchar" in salida, salida
 
 
 def test_la_sonda_de_salud_comprueba_los_dos_puertos() -> None:

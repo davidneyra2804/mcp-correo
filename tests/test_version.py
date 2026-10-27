@@ -96,6 +96,16 @@ def test_el_banner_de_arranque_se_ve(tmp_path: Path) -> None:
     env["MCP_BEARER_TOKEN"] = "token-de-prueba-0123456789abcdef"
     env["MCP_AUDIT_LOG"] = str(tmp_path / "audit.jsonl")
     env["MCP_CONFIG"] = str(ROOT / "accounts.example.toml")
+    # PYTHONSAFEPATH (Actions) no añade el cwd. PYTHONPATH sí entra en
+    # sys.path. Sin esto, el subproceso no encuentra `server` y el test
+    # falla solo en CI.
+    previous = env.get("PYTHONPATH")
+    env["PYTHONPATH"] = str(ROOT) if not previous else os.pathsep.join((str(ROOT), previous))
+    # Y el panel hace bind de verdad: necesita un puerto propio, o choca
+    # con el del proceso de los tests.
+    from tests.fakes import puerto_libre
+
+    env["MCP_DASHBOARD_BIND_PORT"] = str(puerto_libre())
     completed = subprocess.run(
         [sys.executable, "-c", "import server"],
         cwd=ROOT,

@@ -3,10 +3,24 @@
 from __future__ import annotations
 
 import os
+import socket
 import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def _puerto_libre() -> int:
+    """Un puerto que está libre ahora mismo.
+
+    El panel hace `bind` de verdad al importar `server`. Si compartiera
+    puerto con otro proceso, el arranque del panel fallaría, y con él el
+    test que comprueba que el panel arranca.
+    """
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return int(s.getsockname()[1])
+
 
 os.environ.setdefault(
     "MCP_BEARER_TOKEN",
@@ -26,3 +40,4 @@ os.environ.setdefault(
     "MCP_DASHBOARD_DB",
     str(Path(tempfile.gettempdir()) / "mcp-correo-test-cuentas.db"),
 )
+os.environ.setdefault("MCP_DASHBOARD_BIND_PORT", str(_puerto_libre()))

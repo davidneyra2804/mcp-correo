@@ -170,6 +170,11 @@ def test_el_proceso_no_arranca_sin_token() -> None:
     # PYTHONSAFEPATH (Actions) no añade el cwd. PYTHONPATH sí entra en sys.path.
     previous = env.get("PYTHONPATH")
     env["PYTHONPATH"] = str(ROOT) if not previous else os.pathsep.join((str(ROOT), previous))
+    # Y el panel hace bind de verdad: puerto propio, para no chocar con el
+    # del proceso de los tests.
+    from tests.fakes import puerto_libre
+
+    env["MCP_DASHBOARD_BIND_PORT"] = str(puerto_libre())
     import subprocess
     import sys
 
