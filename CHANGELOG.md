@@ -131,4 +131,28 @@ Correcciones de una auditoría completa del proyecto.
 [1.0.3]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.3
 [1.0.2]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.2
 [1.0.1]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.1
+## [1.0.4] — 2026-10-26
+
+### Corregido
+
+- **El 421 "Invalid Host header" no decía de dónde venía el problema.** Con un
+  túnel de Cloudflare, la causa más común es que `MCP_ALLOWED_HOSTS` esté
+  definida y no incluya el hostname público: la lista explícita **sustituye**
+  a la derivada de `MCP_PUBLIC_HOST`, y el `Host` que reenvía el túnel se
+  queda fuera. La respuesta ahora dice dónde mirar, sin filtrar la lista de
+  hosts permitidos.
+- **El arranque avisa si `MCP_PUBLIC_HOST` no está en `allowed_hosts`.** Y el
+  log de arranque dice ya cuáles son los hosts y orígenes permitidos, para no
+  tener que deducirlos.
+
+### Pruebas
+
+- El 421 incluye la pista y no filtra los hosts permitidos.
+- El aviso de arranque salta cuando el host público se queda fuera de la
+  lista, y no salta cuando está dentro.
+
+[1.0.4]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.4
+[1.0.3]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.3
+[1.0.2]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.2
+[1.0.1]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.1
 [1.0.0]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.0

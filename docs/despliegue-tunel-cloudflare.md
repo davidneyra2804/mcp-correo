@@ -111,6 +111,50 @@ exista en absoluto, quita el bloque `ports:` del servicio `mcp` en
 Los contenedores quedan con nombre fijo: `mcp-correo` y
 `mcp-correo-cloudflared`.
 
+### La cabecera Host
+
+Cloudflare Tunnel reenvía la **cabecera `Host` original** del cliente, es
+decir, el hostname público (`mcp.example.com`). El transporte MCP
+valida esa cabecera contra `allowed_hosts` y, si no está, responde **421**.
+
+Por eso `MCP_PUBLIC_HOST` tiene que ser el hostname público:
+
+```bash
+MCP_PUBLIC_HOST=mcp.example.com
+```
+
+Y por eso **`MCP_ALLOWED_HOSTS` no debe sustituirlo por una lista que no
+incluya el dominio**. Si la defines, la lista explícita manda sobre la
+derivada:
+
+```bash
+# MAL: el dominio se queda fuera y todo lo que llega por el túnel es un 421
+MCP_ALLOWED_HOSTS=127.0.0.1:*,localhost:*
+
+# BIEN: incluye el dominio
+MCP_ALLOWED_HOSTS=mcp.example.com,mcp.example.com:*
+```
+
+Lo más simple es **no definir `MCP_ALLOWED_HOSTS`**: con `MCP_PUBLIC_HOST` la
+lista se arma sola, con el dominio, su versión con puerto y los loopback.
+
+Si algo va mal, el arranque lo dice:
+
+```
+WARNING  MCP_PUBLIC_HOST (mcp.example.com) no está en allowed_hosts
+         (127.0.0.1:*, localhost:*). Las peticiones con esa cabecera Host
+         recibirán un 421. MCP_ALLOWED_HOSTS sustituye a la lista derivada de
+         MCP_PUBLIC_HOST: incluye el dominio o quita la variable.
+INFO     Hosts permitidos: 127.0.0.1:*, localhost:*.
+```
+
+Y si el 421 llega al cliente, la respuesta dice dónde mirar, en vez del
+"Invalid Host header" a secas del SDK.
+
+Lo mismo aplica al origen: `MCP_ALLOWED_ORIGINS` sustituye a la lista
+derivada. Con `MCP_PUBLIC_HOST` se añade solo `https://mcp.example.com`,
+que es lo que necesita el Inspector abierto en el navegador.
+
 ## 5. Comprobar
 
 ```bash

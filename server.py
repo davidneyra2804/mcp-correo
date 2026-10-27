@@ -158,6 +158,57 @@ class Runtime:
     mcp: MCPServer
 
 
+#: Pista que sustituye al "Invalid Host header" del SDK, que no dice nada
+#: de dónde viene el problema. No filtra la lista de hosts permitidos.
+_PISTA_421 = (
+    "Invalid Host header\n"
+    "\n"
+    "La cabecera Host de la petición no está en allowed_hosts.\n"
+    "\n"
+    "- MCP_PUBLIC_HOST tiene que ser el hostname público del servidor.\n"
+    "- MCP_ALLOWED_HOSTS sustituye a la lista derivada de MCP_PUBLIC_HOST:\n"
+    "  si la defines, incluye el dominio, o quítala.\n"
+    "- Con un túnel de Cloudflare, el Host que llega es el hostname público,\n"
+    "  no el nombre del servicio de Docker.\n"
+    "- Un proxy delante puede reescribir el Host: que lo envíe sin tocar.\n"
+)
+
+
+class _Pista421:
+    """Sustituye el cuerpo del 421 del SDK por una pista accionable.
+
+    El SDK responde "Invalid Host header" y nada más. Quien lo recibe tiene
+    que saber que el culpable puede ser el túnel, el proxy o la lista de
+    hosts. La lista no se filtra: solo se dice dónde mirar.
+    """
+
+    def __init__(self, send: Send) -> None:
+        self._send = send
+        self._sustituir = False
+
+    async def __call__(self, message: dict[str, Any]) -> None:
+        if message["type"] == "http.response.start":
+            self._sustituir = message.get("status") == 421
+            if self._sustituir:
+                cuerpo = _PISTA_421.encode()
+                message = {
+                    **message,
+                    "headers": [
+                        (name, value)
+                        for name, value in message.get("headers", [])
+                        if name.lower() != b"content-length"
+                    ]
+                    + [
+                        (b"content-type", b"text/plain; charset=utf-8"),
+                        (b"content-length", str(len(cuerpo)).encode()),
+                    ],
+                }
+        elif message["type"] == "http.response.body" and self._sustituir:
+            cuerpo = _PISTA_421.encode()
+            message = {**message, "body": cuerpo, "more_body": False}
+        await self._send(message)
+
+
 class BearerAuth:
     """Comprueba Authorization: Bearer con hmac.compare_digest antes de la app.
 
@@ -217,7 +268,7 @@ class BearerAuth:
             # El transporte MCP registra una sola ruta, /mcp. La cuenta va en
             # el ámbito, no en el path.
             scope["path"] = MCP_ROOT
-            await self.app(scope, receive, send)
+            await self.app(scope, receive, _Pista421(send))
         finally:
             reset_scope(scope_token)
 
@@ -783,6 +834,11 @@ def _bootstrap() -> BearerAuth:
         __version__,
         "variables de entorno" if settings.config_source == "env" else "accounts.toml",
         ", ".join(sorted(accounts)),
+    )
+    logger.info(
+        "Hosts permitidos: %s. Orígenes: %s",
+        ", ".join(settings.allowed_hosts) or "(ninguno)",
+        ", ".join(settings.allowed_origins) or "(ninguno)",
     )
     return application
 

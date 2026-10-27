@@ -28,7 +28,7 @@ entorno gana y el arranque avisa por log.
 | `MCP_BEARER_TOKEN` | texto | — | **Obligatoria.** El secreto que presenta el cliente MCP. Mínimo 16 caracteres. Sin ella el proceso no arranca. |
 | `MCP_ACCOUNTS` | CSV de índices | — | Opcional. Comprobación cruzada de qué cuentas existen. |
 | `MCP_PUBLIC_HOST` | texto | `127.0.0.1` | El nombre público del servidor, el que va en el certificado TLS. Arma `allowed_hosts` y `allowed_origins`. |
-| `MCP_ALLOWED_HOSTS` | CSV | derivado | Cabeceras `Host` permitidas. **Sustituye** a las derivadas de `MCP_PUBLIC_HOST` y a las del TOML. |
+| `MCP_ALLOWED_HOSTS` | CSV | derivado | Cabeceras `Host` permitidas. **Sustituye** a las derivadas de `MCP_PUBLIC_HOST` y a las del TOML. Si la defines y no incluye el host público, el túnel da 421. |
 | `MCP_ALLOWED_ORIGINS` | CSV | derivado | Orígenes permitidos. Misma regla que arriba. |
 | `MCP_BIND_HOST` | texto | `127.0.0.1` | Dirección de escucha. Fuera de loopback exige `MCP_ALLOW_NONLOCAL_BIND=1`. |
 | `MCP_BIND_PORT` | entero | `8765` | Puerto de escucha. |
@@ -233,7 +233,7 @@ En el arranque, el proceso dice de dónde salió la configuración:
 ```
 INFO     Escritura activa: ninguna
 INFO     Servidor listo: 2 cuentas, escucha 0.0.0.0:8765, escritura=apagada
-INFO     mcp-correo 1.0.3 | Configuración: variables de entorno. Cuentas: archivo, principal
+INFO     mcp-correo 1.0.4 | Configuración: variables de entorno. Cuentas: archivo, principal
 ```
 
 La línea de capacidades (`Escritura activa: ...`) dice qué tools de escritura

@@ -268,7 +268,7 @@ overlay del túnel en *Additional paths*.
 La imagen publicada se usa sin reconstruir:
 
 ```
-MCP_IMAGE=ghcr.io/davidneyra2804/mcp-correo:1.0.3
+MCP_IMAGE=ghcr.io/davidneyra2804/mcp-correo:1.0.4
 MCP_PULL_POLICY=always
 ```
 

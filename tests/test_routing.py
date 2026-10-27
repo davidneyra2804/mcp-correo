@@ -193,3 +193,26 @@ def test_el_indice_cero_no_es_una_ruta(client: TestClient) -> None:
     """El 0 es el centinela de las cuentas del TOML: no enruta a ninguna."""
     response = _call(client, "/mcp/0", TOKEN)
     assert response.status_code == 404
+
+
+def test_un_host_no_permitido_dice_donde_mirar(client: TestClient) -> None:
+    """El 421 del SDK no dice nada. La respuesta tiene que decir dónde mirar."""
+    response = client.post(
+        "/mcp",
+        json={"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}},
+        headers={**JSON_HEADERS, "Authorization": f"Bearer {TOKEN}", "Host": "otro.example.com"},
+    )
+    assert response.status_code == 421
+    assert "MCP_PUBLIC_HOST" in response.text
+    assert "MCP_ALLOWED_HOSTS" in response.text
+    # No se filtra la lista de hosts permitidos.
+    assert "127.0.0.1" not in response.text
+
+
+def test_un_host_permitido_pasa(client: TestClient) -> None:
+    response = client.post(
+        "/mcp",
+        json={"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}},
+        headers={**JSON_HEADERS, "Authorization": f"Bearer {TOKEN}", "Host": "127.0.0.1:8765"},
+    )
+    assert response.status_code == 200

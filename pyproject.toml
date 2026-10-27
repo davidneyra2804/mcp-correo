@@ -1,6 +1,6 @@
 [project]
 name = "mcp-correo"
-version = "1.0.3"
+version = "1.0.4"
 description = "Servidor MCP de correo: lectura IMAP y escritura bajo confirmación"
 requires-python = ">=3.11"
 

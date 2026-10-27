@@ -440,6 +440,17 @@ def _server_settings(raw: dict) -> ServerSettings:
         DEFAULT_ATTACHMENT_TYPES,
     )
     hosts = _hosts_from_env(env_public, public_host, raw)
+    if env_public and env_public not in hosts:
+        # La lista explícita ha dejado fuera al host público. Con un túnel,
+        # el Host que llega es el hostname público: esas peticiones reciben
+        # un 421 y parece un problema del túnel o del proxy.
+        logger.warning(
+            "MCP_PUBLIC_HOST (%s) no está en allowed_hosts (%s). Las peticiones con "
+            "esa cabecera Host recibirán un 421. MCP_ALLOWED_HOSTS sustituye a la lista "
+            "derivada de MCP_PUBLIC_HOST: incluye el dominio o quita la variable.",
+            env_public,
+            ", ".join(hosts),
+        )
     origins = _origins_from_env(env_public, public_host, raw)
     audit_log = str(_pick(_env_text("MCP_AUDIT_LOG"), raw.get("audit_log"), "audit.jsonl"))
     smtp_timeout = float(_pick(_env_float("MCP_SMTP_TIMEOUT"), raw.get("smtp_timeout"), 30))

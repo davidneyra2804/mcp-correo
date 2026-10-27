@@ -375,3 +375,35 @@ def test_un_bearer_igual_al_global_no_arranca(monkeypatch: pytest.MonkeyPatch) -
     _cuenta(monkeypatch, 1, MCP_ACCOUNT_BEARER_1="token-global-de-prueba-0123456789")
     with pytest.raises(SystemExit, match="no aísla nada"):
         load_config()
+
+
+def test_avisa_si_el_host_publico_no_esta_en_la_lista(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """La causa del 421 con un túnel: la lista explícita deja fuera al dominio."""
+    import logging
+
+    _cuenta(
+        monkeypatch,
+        1,
+        MCP_PUBLIC_HOST="mailproxy.example.com",
+        MCP_ALLOWED_HOSTS="127.0.0.1:*,localhost:*",
+    )
+    with caplog.at_level(logging.WARNING):
+        load_config()
+    avisos = " ".join(record.getMessage() for record in caplog.records)
+    assert "MCP_PUBLIC_HOST" in avisos
+    assert "no está en allowed_hosts" in avisos
+
+
+def test_no_avisa_si_el_host_publico_esta_permitido(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    import logging
+
+    _cuenta(monkeypatch, 1, MCP_PUBLIC_HOST="mailproxy.example.com")
+    with caplog.at_level(logging.WARNING):
+        settings, _accounts = load_config()
+    avisos = " ".join(record.getMessage() for record in caplog.records)
+    assert "no está en allowed_hosts" not in avisos
+    assert "mailproxy.example.com" in settings.allowed_hosts
