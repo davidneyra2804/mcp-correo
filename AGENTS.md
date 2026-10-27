@@ -167,6 +167,32 @@ python3 -m venv .venv
 
 Sin red y sin buzón real: los tests llevan un doble de IMAP y otro de SMTP.
 
+**Verifica en un clon limpio, no solo en tu `.venv`.** Local y CI no se
+comportan igual, y la diferencia hay que buscarla:
+
+```bash
+TMP=$(mktemp -d); git clone . "$TMP/ci"; cd "$TMP/ci"
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt -r requirements-dev.txt
+.venv/bin/ruff format . && .venv/bin/ruff check .
+.venv/bin/pytest
+PYTHONSAFEPATH=1 .venv/bin/pytest    # el entorno de Actions
+```
+
+Tres cosas que el clon limpio pilla y el directorio de trabajo no:
+
+- Los ficheros **sin versionar** no los barre el detector de datos
+  ficticios, que usa `git ls-files`.
+- Las dependencias se instalan de verdad: tu `.venv` puede tener paquetes
+  que `requirements.txt` ya no pide.
+- `PYTHONSAFEPATH` (Actions) no añade el directorio de trabajo a
+  `sys.path`, y los subprocesos que importan el proyecto dejan de
+  encontrarlo. El fallo sale **solo en CI**, que es el peor sitio.
+
+Y una regla de orden: **`ruff format` antes que `ruff check`**, y los dos
+después de cada edición. Un cambio puede dejar líneas largas y hacer fallar
+el linter donde antes pasaba.
+
 Antes de dar algo por bueno:
 
 1. **Prueba la imagen, no solo el código.** `tests/test_docker.py` monta un
@@ -176,6 +202,13 @@ Antes de dar algo por bueno:
    mensaje de arranque dice qué hacer?
 3. **Si cambias una variable, `.env.example` y el compose.** Hay tests que lo
    comprueban, pero solo de los nombres: el valor por defecto también importa.
+4. **Cada fallo que corrijas a mano, conviértelo en una regla.** Si lo
+   encuentras revisando el diff, otro se tropezará con lo mismo, y
+   probablemente tarde más en aparecer. Un test que falla es un fallo que no
+   vuelve.
+5. **La interfaz y la API no se pueden desincronizar.** `tests/test_interfaz_api.py`
+   compara las llamadas del JavaScript con las rutas que declara la
+   aplicación. Una ruta mal escrita no da error: el botón no hace nada.
 
 ## Trampas
 
@@ -225,6 +258,21 @@ Cada una de estas costó una release rota.
   solo lectura: o la base no se puede escribir, o se pierde en cada
   reinicio. La ruta tiene que caer en el volumen, y hay un test que lo
   comprueba.
+- **Un fallo silencioso en la interfaz.** Una ruta mal escrita en el
+  JavaScript, un botón sin acción, una etiqueta sin `for=`: nada falla y
+  nada avisa. La página carga y la función no existe. Por eso
+  `tests/test_interfaz_api.py` compara las dos capas.
+- **El idioma del servidor no es el de quien lo usa.** El formulario pedía
+  el mismo correo tres veces, porque el modelo de datos pide distinguir
+  identificador de ruta, etiqueta y usuario de conexión. El modelo puede ser
+  correcto y la interfaz, ilegible. Las excepciones van a "opciones
+  avanzadas".
+- **Editar no puede romper lo que ya funciona.** El alias de la ruta es el
+  identificador en `/mcp`. Si al editar se sobrescribe con el correo, la
+  ruta que ya tiene un cliente deja de existir, sin avisar.
+- **`example.com`, nunca `ejemplo.com`.** Los dominios reservados son
+  `example.com`, `example.org`, `example.net`, `*.test`, `*.invalid` y
+  `*.localhost`. Esta confusión se coló dos veces.
 
 ## Publicar
 
