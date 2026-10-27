@@ -102,6 +102,33 @@ en el segundo paso. Con el borrado pasa lo mismo: `permanent` se fija en
 `prepare_delete` y viaja dentro del token. Marcar es directo y queda auditado.
 `create_draft` guarda en Borradores y no envía.
 
+### El flujo de envío, en dos pasos
+
+Preparar **no** envía. Es un paso aparte, con su propia tool, y el agente tiene
+que saberlo:
+
+```text
+prepare_send → vista previa + confirm_token   (no envía)
+   ↓ mostrar la vista previa y esperar la orden explícita
+send_message(confirm_token)                    (envía)
+```
+
+Esto se dice en tres sitios, para que el agente no dependa de uno solo:
+
+- **Las instrucciones del servidor**, que describen el flujo paso a paso.
+- **La descripción de cada tool**: `prepare_send` dice que no envía y cuál es
+  la siguiente llamada; `send_message` dice de dónde sale el token.
+- **La respuesta de la preparación**: además del aviso en prosa, lleva
+  `status: "prepared"`, `sent: false` y `next_tool: "send_message"`. El
+  estado no depende de que el modelo lo deduzca de un texto.
+
+Lo mismo aplica al borrado, con `prepare_delete` y `delete_message`.
+
+La segunda llamada devuelve `status: "sent"` y `sent: true` solo si el
+servidor SMTP aceptó el mensaje. Si el token caducó, ya se usó o no llegó
+legible, la respuesta dice que hay que volver a preparar: nunca hay que
+inventar un token.
+
 ## Rutas
 
 | Ruta | Ámbito | Qué ve |

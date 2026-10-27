@@ -197,6 +197,90 @@ def test_el_proxy_de_escritura_sigue_usando_peek() -> None:
         proxy.delete_folder("INBOX")
 
 
+def test_el_agente_sabe_que_preparar_no_envia(tmp_path: Path) -> None:
+    """La descripción de la tool y el aviso de la respuesta explican el flujo.
+
+    El fallo que motivó esto: el agente llamaba a prepare_send, creía que el
+    correo salía y no sabía que tenía que llamar después a send_message. Las
+    tres capas (descripción de la tool, respuesta y notice) tienen que
+    decirlo, porque no se puede depender de que el cliente trasmita las
+    instrucciones generales del servidor.
+    """
+    rig = Rig(tmp_path)
+
+    async def run() -> None:
+        by_name = {tool.name: tool for tool in await rig.mcp.list_tools()}
+
+        prepare = by_name["prepare_send"].description or ""
+        assert "NO envía" in prepare
+        assert "send_message" in prepare
+        assert "confirm_token" in prepare
+
+        send = by_name["send_message"].description or ""
+        assert "prepare_send" in send
+        assert "confirm_token" in send
+        assert "orden explícita" in send
+
+        prepared = _json(await rig.mcp.call_tool("prepare_send", _send()))
+        # El estado no depende de la prosa: hay un campo que lo dice.
+        assert prepared["status"] == "prepared"
+        assert prepared["sent"] is False
+        assert prepared["next_tool"] == "send_message"
+        notice = prepared["notice"]
+        assert "NO enviado" in notice
+        assert "send_message" in notice
+        assert "orden explícita" in notice
+
+        sent = _json(
+            await rig.mcp.call_tool(
+                "send_message",
+                {"account": "principal", "confirm_token": prepared["confirm_token"]},
+            )
+        )
+        assert sent["status"] == "sent"
+        assert sent["sent"] is True
+
+    asyncio.run(run())
+
+
+def test_el_borrado_dice_que_no_borra_y_a_que_tool_segue(tmp_path: Path) -> None:
+    """El mismo contrato, en el borrado: preparar no borra y hay un paso dos."""
+    rig = Rig(tmp_path)
+
+    async def run() -> None:
+        by_name = {tool.name: tool for tool in await rig.mcp.list_tools()}
+
+        prepare = by_name["prepare_delete"].description or ""
+        assert "NO borra" in prepare
+        assert "delete_message" in prepare
+
+        delete = by_name["delete_message"].description or ""
+        assert "prepare_delete" in delete
+        assert "orden explícita" in delete
+
+        prepared = _json(
+            await rig.mcp.call_tool(
+                "prepare_delete", {"account": "principal", "uids": [10], "folder": "INBOX"}
+            )
+        )
+        assert prepared["status"] == "prepared"
+        assert prepared["deleted"] is False
+        assert prepared["next_tool"] == "delete_message"
+        assert "NO borrado" in prepared["notice"]
+        assert "delete_message" in prepared["notice"]
+
+        deleted = _json(
+            await rig.mcp.call_tool(
+                "delete_message",
+                {"account": "principal", "confirm_token": prepared["confirm_token"]},
+            )
+        )
+        assert deleted["status"] == "deleted"
+        assert deleted["deleted"] is True
+
+    asyncio.run(run())
+
+
 def test_envio_exige_token_de_un_solo_uso(tmp_path: Path) -> None:
     rig = Rig(tmp_path)
 

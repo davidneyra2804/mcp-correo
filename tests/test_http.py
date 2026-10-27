@@ -123,3 +123,20 @@ def test_instrucciones_avisan_de_contenido_no_confiable() -> None:
     assert "solo lectura" in text
     assert "orden explícita" in text
     assert "confirm_token" in text
+
+
+def test_instrucciones_describen_el_flujo_de_envio_paso_a_paso() -> None:
+    """Las instrucciones del servidor tienen que contar el flujo completo.
+
+    El agente no debe tener que deducir que preparar no envía y que luego
+    hay que llamar a send_message. Las instrucciones son la primera capa
+    que ve el modelo, pero no la única: la descripción de cada tool y el
+    aviso de la respuesta repiten el mismo contrato.
+    """
+    text = INSTRUCTIONS.lower()
+    assert "preparar no ejecuta" in text
+    assert "send_message" in text
+    assert "no envíes" not in text
+    for paso in ("1.", "2.", "3.", "4."):
+        assert paso in text
+    assert "vuelve a preparar" in text

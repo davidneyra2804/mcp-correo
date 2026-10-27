@@ -26,13 +26,19 @@ logger = logging.getLogger("mcp_correo.mutate")
 _TRASH_NAMES = ("Trash", "Papelera", "Deleted Items", "Deleted", "INBOX.Trash", "INBOX/Trash")
 
 NOTICE_SEND = (
-    "Vista previa. No llames a send_message hasta una orden explícita "
-    "de quien opera el asistente en esta conversación."
+    "Preparado, NO enviado. Este mensaje todavía no ha salido. "
+    "Siguiente paso: muestra esta vista previa a quien opera el asistente y "
+    "espera su orden explícita de envío. Con esa orden, llama a send_message "
+    "con el confirm_token devuelto aquí y la misma cuenta. No digas que el "
+    "correo se envió hasta que send_message lo confirme."
 )
 NOTICE_DELETE = (
-    "Vista previa. No llames a delete_message hasta una orden explícita "
-    "de quien opera el asistente en esta conversación. El modo "
-    "(Papelera o definitivo) queda fijado en este token."
+    "Preparado, NO borrado. Ningún mensaje se ha borrado todavía. "
+    "Siguiente paso: muestra esta vista previa a quien opera el asistente y "
+    "espera su orden explícita de borrado. Con esa orden, llama a "
+    "delete_message con el confirm_token devuelto aquí y la misma cuenta. "
+    "El modo (Papelera o definitivo) queda fijado en este token. No digas que "
+    "se borró hasta que delete_message lo confirme."
 )
 
 
@@ -91,6 +97,11 @@ class MailboxWriter:
             "references": public["references"],
             "expires_in_seconds": self.confirm.ttl_seconds,
             "sends_remaining_today": self.quota.remaining(account.key),
+            # Estado explícito: preparar no envía. El agente no debe
+            # deducirlo del nombre de la herramienta ni de la prosa.
+            "status": "prepared",
+            "sent": False,
+            "next_tool": "send_message",
             "notice": NOTICE_SEND,
         }
         return preview, public, {"raw": raw}
@@ -128,6 +139,10 @@ class MailboxWriter:
             "account": account.key,
             **public,
             "expires_in_seconds": self.confirm.ttl_seconds,
+            # Estado explícito: preparar no borra. El modo ya viene fijado.
+            "status": "prepared",
+            "deleted": False,
+            "next_tool": "delete_message",
             "notice": NOTICE_DELETE,
         }
         return preview, public
@@ -165,6 +180,7 @@ class MailboxWriter:
         copied = self._copy_to_sent(account, folder, pending.secret["raw"])
         return {
             "account": account.key,
+            "status": "sent",
             "sent": True,
             "copy_in_sent": copied,
             "sent_folder": folder if copied else None,
@@ -172,7 +188,7 @@ class MailboxWriter:
             "cc": pending.public["cc"],
             "bcc": pending.public["bcc"],
             "subject": pending.public["subject"],
-            "notice": "Enviado tras confirmación.",
+            "notice": "Enviado tras confirmación. El servidor SMTP aceptó el mensaje.",
         }
 
     def commit_delete(self, account_key: str, token: str) -> dict[str, Any]:
@@ -197,11 +213,13 @@ class MailboxWriter:
                 self.service._raise_imap(account, exc)
         return {
             "account": account.key,
+            "status": "deleted",
             "folder": folder,
             "uids": uids,
             "permanent": permanent,
             "trash_folder": trash or None,
             "deleted": True,
+            "notice": "Borrado tras confirmación.",
         }
 
     def mark(self, account_key: str, uids: list[int], folder: str = "INBOX", *, seen: bool) -> dict:

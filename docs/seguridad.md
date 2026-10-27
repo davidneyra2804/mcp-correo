@@ -14,6 +14,7 @@ Hecho en el código:
 - Cupo diario, máximo de destinatarios, dominios opcionales, tope de UID por borrado o marcado, y tamaño de adjuntos.
 - Auditoría JSONL de cada acción, sin cuerpos, sin `confirm_token` y sin credenciales. Si no se puede escribir, no hay efecto en el buzón.
 - Instrucciones del servidor: el correo no es confiable y `send_message` / `delete_message` solo se ejecutan tras una orden explícita en la conversación.
+- El flujo en dos pasos se dice en tres capas, para que el agente no dependa de una sola: las instrucciones del servidor, la descripción de cada tool y la respuesta de la preparación. La respuesta lleva `status: "prepared"`, `sent: false` y `next_tool`, de modo que el estado no hay que deducirlo de un texto. Preparar no envía y no borra: `prepare_send` y `prepare_delete` no tienen efecto sobre el buzón.
 - Un solo worker. Los tokens y el cupo no salen del proceso.
 - DNS rebinding: `allowed_hosts` y `allowed_origins`. En Docker, `MCP_PUBLIC_HOST` o las listas `MCP_ALLOWED_*` los ajustan al dominio público.
 - Escucha por defecto en `127.0.0.1`. En el contenedor, `0.0.0.0` solo con `MCP_ALLOW_NONLOCAL_BIND=1`, y el compose publica `127.0.0.1:8765`.

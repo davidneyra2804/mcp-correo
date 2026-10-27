@@ -5,6 +5,34 @@ Todas las novedades de mcp-correo.
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y
 el versionado es [SemVer](https://semver.org/lang/es/).
 
+## [No publicado]
+
+### Changed
+
+- **El flujo de envío y de borrado se explica en tres capas.** El agente
+  llamaba a `prepare_send`, creía que el correo salía y no sabía que tenía
+  que llamar después a `send_message`. Ahora el contrato se dice en las
+  instrucciones del servidor (paso a paso), en la descripción de cada tool
+  (`prepare_send` dice que no envía y cuál es la siguiente llamada;
+  `send_message` dice de dónde sale el token) y en la respuesta de la
+  preparación. No se puede depender de que el cliente trasmita las
+  instrucciones generales del servidor.
+- **La respuesta de la preparación lleva el estado explícito.** `prepare_send`
+  y `prepare_delete` devuelven `status: "prepared"`, `sent: false` o
+  `deleted: false`, y `next_tool` con la tool que sigue. La segunda llamada
+  devuelve `status: "sent"` o `status: "deleted"`. El estado ya no depende de
+  que el modelo deduzca la secuencia de un texto.
+- **Los avisos dicen qué hacer a continuación.** El aviso de la preparación ya
+  no solo prohíbe llamar a `send_message` o `delete_message` antes de tiempo:
+  indica que la operación no se ha ejecutado, que hay que mostrar la vista
+  previa, esperar la orden explícita y luego llamar a la tool siguiente con el
+  `confirm_token` devuelto. También avisa de que el token caduca y de que, si
+  falta o no llegó legible, hay que volver a preparar en vez de inventarlo.
+
+No cambia el modelo de seguridad: sigue haciendo falta la orden explícita de
+quien opera el asistente, y el token sigue siendo de un solo uso, ligado a la
+cuenta y a la operación.
+
 ## [1.0.0] — 2026-10-26
 
 Primera versión estable. El objetivo sigue siendo el mismo: que un asistente
