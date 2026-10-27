@@ -49,7 +49,9 @@ y el cliente solo presenta un Bearer.
 - Marcar leído o no leído, borrar a la Papelera (o de forma definitiva solo si
   se pidió al preparar) y guardar borradores.
 - Cada capacidad de escritura tiene un interruptor global y otro por cuenta.
-  Apagados, la tool no se registra.
+  Apagados, la tool no se registra. **Hay que abrir las dos puertas**: con
+  `MCP_ENABLE_MARK=true` pero sin `MCP_ACCOUNT_ALLOW_MARK_<N>=true` en la
+  cuenta, la tool sigue sin aparecer. El arranque dice qué falta.
 - Enviar y borrar piden confirmación en dos pasos. El token dura 10 minutos,
   es de un solo uso y queda ligado a la cuenta y a la operación.
 - Varias cuentas, configuradas con variables de entorno numeradas. La
@@ -223,7 +225,8 @@ export MCP_ACCOUNT_PASSWORD_1='contraseña-ficticia-principal'
 | `MCP_ACCOUNT_<CAMPO>_<N>` | Una cuenta. Campos: `NAME`, `LABEL`, `INBOX_TYPE`, `INBOX_HOST`, `INBOX_PORT`, `INBOX_USE_SSL`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USE_SSL`, `USERNAME`, `PASSWORD` o `PASSWORD_ENV`, `DRAFTS_FOLDER`, `SENT_FOLDER`, `TRASH_FOLDER`, `ALLOW_SEND`, `ALLOW_MARK`, `ALLOW_DELETE`, `ALLOW_DRAFTS`, `BEARER`. |
 | `MCP_PUBLIC_HOST` | El nombre público del servidor. Arma `allowed_hosts` y `allowed_origins`. Con túnel, es el hostname del túnel. |
 | `MCP_ALLOWED_HOSTS`, `MCP_ALLOWED_ORIGINS` | Listas separadas por comas. Sustituyen a las derivadas de `MCP_PUBLIC_HOST`. |
-| `MCP_ENABLE_SEND`, `MCP_ENABLE_MARK`, `MCP_ENABLE_DELETE`, `MCP_ENABLE_DRAFTS` | Interruptores globales de escritura. Apagados por defecto. |
+| `MCP_ENABLE_SEND`, `MCP_ENABLE_MARK`, `MCP_ENABLE_DELETE`, `MCP_ENABLE_DRAFTS` | Interruptores **globales** de escritura. Apagados por defecto. |
+| `MCP_ACCOUNT_ALLOW_SEND_<N>`, `MCP_ACCOUNT_ALLOW_MARK_<N>`, `MCP_ACCOUNT_ALLOW_DELETE_<N>`, `MCP_ACCOUNT_ALLOW_DRAFTS_<N>` | Permisos de escritura **de cada cuenta**. Apagados por defecto. Una capacidad se registra solo si el global **y** el permiso de alguna cuenta están en `true`. |
 | `MCP_BIND_HOST`, `MCP_BIND_PORT` | Por defecto `127.0.0.1` y `8765`. |
 | `MCP_AUDIT_LOG` | JSONL. Por defecto `./audit.jsonl`. |
 
@@ -268,7 +271,7 @@ overlay del túnel en *Additional paths*.
 La imagen publicada se usa sin reconstruir:
 
 ```
-MCP_IMAGE=ghcr.io/davidneyra2804/mcp-correo:1.0.5
+MCP_IMAGE=ghcr.io/davidneyra2804/mcp-correo:1.0.6
 MCP_PULL_POLICY=always
 ```
 

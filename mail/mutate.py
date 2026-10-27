@@ -354,7 +354,7 @@ class MailboxWriter:
 
     def _gated(self, account_key: str, kind: str) -> Account:
         account = self.service._account(account_key)
-        global_name, account_name, label = WRITE_GATES[kind]
+        global_name, account_name, _corta, label = WRITE_GATES[kind]
         if not getattr(self.service.settings, global_name) or not getattr(account, account_name):
             raise MailError(f"{label} está desactivado para la cuenta {account.key}.")
         return account

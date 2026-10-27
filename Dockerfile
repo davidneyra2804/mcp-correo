@@ -27,7 +27,7 @@ COPY --chown=mcp:mcp accounts.example.toml /app/accounts.example.toml
 USER mcp
 
 # La etiqueta tiene que coincidir con version.py. Un test lo comprueba.
-ARG MCP_VERSION=1.0.5
+ARG MCP_VERSION=1.0.6
 LABEL org.opencontainers.image.version="${MCP_VERSION}" \
       org.opencontainers.image.title="mcp-correo" \
       org.opencontainers.image.description="Servidor MCP de correo sobre IMAP y SMTP" \

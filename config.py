@@ -843,14 +843,15 @@ def _account(key: str, raw: object) -> Account:
     )
 
 
-#: Capacidad de escritura -> (interruptor global, permiso de cuenta, etiqueta).
-#: La usa `write_capabilities` para saber qué tools registrar, y `mail.mutate`
-#: para comprobar cada operación. Vive aquí para que no puedan discrepar.
-WRITE_GATES: dict[str, tuple[str, str, str]] = {
-    "send": ("enable_send", "allow_send", "El envío"),
-    "mark": ("enable_mark", "allow_mark", "Marcar mensajes"),
-    "delete": ("enable_delete", "allow_delete", "La eliminación"),
-    "drafts": ("enable_drafts", "allow_drafts", "Los borradores"),
+#: Capacidad de escritura -> (interruptor global, permiso de cuenta, etiqueta
+#: corta, etiqueta larga). La usa `write_capabilities` para saber qué tools
+#: registrar, y `mail.mutate` para comprobar cada operación. Vive aquí para
+#: que no puedan discrepar.
+WRITE_GATES: dict[str, tuple[str, str, str, str]] = {
+    "send": ("enable_send", "allow_send", "envío", "El envío"),
+    "mark": ("enable_mark", "allow_mark", "marcado", "Marcar mensajes"),
+    "delete": ("enable_delete", "allow_delete", "borrado", "La eliminación"),
+    "drafts": ("enable_drafts", "allow_drafts", "borradores", "Los borradores"),
 }
 
 #: Longitud máxima de un nombre de carpeta. La comparten la validación del
@@ -863,8 +864,33 @@ def write_capabilities(settings: ServerSettings, accounts: dict[str, Account]) -
     return {
         name: getattr(settings, global_name)
         and any(getattr(account, account_name) for account in accounts.values())
-        for name, (global_name, account_name, _label) in WRITE_GATES.items()
+        for name, (global_name, account_name, _corta, _larga) in WRITE_GATES.items()
     }
+
+
+def write_capabilities_detail(
+    settings: ServerSettings, accounts: dict[str, Account]
+) -> tuple[list[str], list[str]]:
+    """Qué capacidades hay, y por qué faltan las demás.
+
+    Encender `MCP_ENABLE_MARK` no basta: la cuenta tiene que tener
+    `MCP_ACCOUNT_ALLOW_MARK_<N>`. Sin esta explicación, el síntoma es que
+    la tool no aparece y no se sabe por qué.
+    """
+    activas: list[str] = []
+    motivos: list[str] = []
+    for global_name, account_name, corta, _larga in WRITE_GATES.values():
+        variable_global = "MCP_" + global_name.upper()
+        variable_cuenta = f"MCP_ACCOUNT_{account_name.upper()}_<N>"
+        if not getattr(settings, global_name):
+            motivos.append(f"{corta} necesita {variable_global}=true")
+        elif not any(getattr(account, account_name) for account in accounts.values()):
+            motivos.append(
+                f"{corta} necesita {variable_global}=true y {variable_cuenta}=true en la cuenta"
+            )
+        else:
+            activas.append(corta)
+    return activas, motivos
 
 
 # --- Validadores -------------------------------------------------------------

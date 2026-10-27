@@ -37,6 +37,7 @@ from config import (
     load_config,
     require_bearer_token,
     write_capabilities,
+    write_capabilities_detail,
 )
 from mail.confirm import ConfirmationStore, SendQuota
 from mail.errors import MailError
@@ -376,11 +377,6 @@ def create_app(
         smtp_factory=smtp_factory,
     )
     mcp = build_mcp(service, audit_log, writer)
-    caps = write_capabilities(settings, accounts)
-    logger.info(
-        "Escritura activa: %s",
-        ", ".join(name for name, enabled in caps.items() if enabled) or "ninguna",
-    )
     security = TransportSecuritySettings(
         enable_dns_rebinding_protection=True,
         allowed_hosts=list(settings.allowed_hosts),
@@ -416,7 +412,11 @@ def _register_tools(mcp: MCPServer, service: MailService, audit: AuditLog) -> No
 
     @mcp.tool(annotations=READ_ONLY, structured_output=False)
     def list_accounts() -> dict:
-        """Cuentas configuradas, sin credenciales ni contraseñas."""
+        """Cuentas configuradas, sin credenciales ni contraseñas.
+
+        Cada cuenta dice qué puede hacer: can_send, can_mark, can_delete y
+        can_draft. Reflejan el interruptor global y el permiso de la cuenta.
+        """
         return guarded("list_accounts", "-", {}, service.list_accounts)
 
     @mcp.tool(annotations=READ_ONLY, structured_output=False)
@@ -853,14 +853,20 @@ def _bootstrap() -> BearerAuth:
     application, runtime = create_app(settings, accounts, token)
     global RUNTIME
     RUNTIME = runtime
-    active = write_capabilities(settings, accounts)
+    caps = write_capabilities(settings, accounts)
     logger.info(
         "Servidor listo: %d cuentas, escucha %s:%s, escritura=%s",
         len(accounts),
         settings.bind_host,
         settings.bind_port,
-        ",".join(name for name, enabled in active.items() if enabled) or "apagada",
+        ", ".join(name for name, enabled in caps.items() if enabled) or "ninguna",
     )
+    _, motivos = write_capabilities_detail(settings, accounts)
+    if motivos:
+        # Encender el interruptor global no basta: la cuenta también tiene
+        # que permitirlo. Sin esta línea, el síntoma es que la tool no
+        # aparece y no se sabe por qué.
+        logger.info("Por qué están apagadas: %s", "; ".join(motivos))
     logger.info(
         "mcp-correo %s | Configuración: %s. Cuentas: %s",
         __version__,

@@ -172,4 +172,28 @@ Correcciones de una auditoría completa del proyecto.
 [1.0.3]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.3
 [1.0.2]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.2
 [1.0.1]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.1
+## [1.0.6] — 2026-10-26
+
+### Diagnóstico
+
+- **El arranque dice por qué una capacidad de escritura está apagada.** Encender
+  `MCP_ENABLE_MARK` no basta: la cuenta también necesita
+  `MCP_ACCOUNT_ALLOW_MARK_<N>=true`. Con una sola de las dos, la tool no
+  aparece en `tools/list` y no había forma de saber por qué.
+
+  ```
+  INFO     Servidor listo: 1 cuentas, escucha 0.0.0.0:8765, escritura=ninguna
+  INFO     Por qué están apagadas: marcado necesita MCP_ENABLE_MARK=true y
+           MCP_ACCOUNT_ALLOW_MARK_<N>=true en la cuenta
+  ```
+
+- `list_accounts` documenta que `can_send`, `can_mark`, `can_delete` y
+  `can_draft` reflejan las dos puertas.
+
+[1.0.6]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.6
+[1.0.5]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.5
+[1.0.4]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.4
+[1.0.3]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.3
+[1.0.2]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.2
+[1.0.1]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.1
 [1.0.0]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.0

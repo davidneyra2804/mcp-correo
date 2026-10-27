@@ -128,9 +128,21 @@ descuadre de cuentas es un error de configuración, no un aviso.
 | `BEARER` | texto | — | Credencial propia de la cuenta. Ver [Rutas](#rutas). |
 
 Una capacidad de escritura hace falta **las dos cosas**: el interruptor global
-(`MCP_ENABLE_SEND`) y el permiso de la cuenta (`ALLOW_SEND`). Con cualquiera de
-los dos apagado, la tool no se registra: no aparece en `tools/list` y no se
-puede llamar.
+(`MCP_ENABLE_SEND`) y el permiso de la cuenta (`MCP_ACCOUNT_ALLOW_SEND_<N>`).
+Con cualquiera de los dos apagado, la tool no se registra: no aparece en
+`tools/list` y no se puede llamar.
+
+Si una capacidad no aparece, el arranque dice por qué:
+
+```
+INFO     Servidor listo: 1 cuentas, escucha 0.0.0.0:8765, escritura=ninguna
+INFO     Por qué están apagadas: marcado necesita MCP_ENABLE_MARK=true y
+         MCP_ACCOUNT_ALLOW_MARK_<N>=true en la cuenta; envío necesita
+         MCP_ENABLE_SEND=true
+```
+
+Y `list_accounts` dice, por cuenta, lo que puede hacer (`can_send`, `can_mark`,
+`can_delete`, `can_draft`).
 
 ## Rutas
 
@@ -233,7 +245,7 @@ En el arranque, el proceso dice de dónde salió la configuración:
 ```
 INFO     Escritura activa: ninguna
 INFO     Servidor listo: 2 cuentas, escucha 0.0.0.0:8765, escritura=apagada
-INFO     mcp-correo 1.0.5 | Configuración: variables de entorno. Cuentas: archivo, principal
+INFO     mcp-correo 1.0.6 | Configuración: variables de entorno. Cuentas: archivo, principal
 ```
 
 La línea de capacidades (`Escritura activa: ...`) dice qué tools de escritura

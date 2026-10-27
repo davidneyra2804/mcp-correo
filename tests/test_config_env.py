@@ -370,6 +370,27 @@ def test_un_bearer_repetido_no_arranca(monkeypatch: pytest.MonkeyPatch) -> None:
         load_config()
 
 
+def test_el_texto_explica_por_que_una_capacidad_no_esta(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Encender el interruptor global no basta: la cuenta también tiene que permitir."""
+    from config import write_capabilities_detail
+
+    _cuenta(monkeypatch, 1, MCP_ENABLE_MARK="true")
+    settings, accounts = load_config()
+    activas, motivos = write_capabilities_detail(settings, accounts)
+    assert "marcado" not in activas
+    texto = "; ".join(motivos)
+    assert "MCP_ACCOUNT_ALLOW_MARK_<N>" in texto
+    assert "MCP_ENABLE_MARK" in texto
+
+    monkeypatch.setenv("MCP_ACCOUNT_ALLOW_MARK_1", "true")
+    settings, accounts = load_config()
+    activas, motivos = write_capabilities_detail(settings, accounts)
+    assert "marcado" in activas
+    assert not any("marcado" in motivo for motivo in motivos)
+
+
 def test_un_bearer_igual_al_global_no_arranca(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MCP_BEARER_TOKEN", "token-global-de-prueba-0123456789")
     _cuenta(monkeypatch, 1, MCP_ACCOUNT_BEARER_1="token-global-de-prueba-0123456789")
