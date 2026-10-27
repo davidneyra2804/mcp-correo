@@ -271,14 +271,19 @@ Release con las notas de los commits.
 sed -i 's/__version__ = ".*"/__version__ = "1.1.0"/' version.py
 sed -i 's/^version = ".*"/version = "1.1.0"/' pyproject.toml
 sed -i 's/ARG MCP_VERSION=.*/ARG MCP_VERSION=1.1.0/' Dockerfile
+sed -i 's/mcp-correo 1\.0\.1 |/mcp-correo 1.1.0 |/' docs/configuracion.md
+sed -i 's|mcp-correo:1\.0\.1|mcp-correo:1.1.0|' README.md
 git commit -am "version 1.1.0"
 git tag v1.1.0 && git push origin v1.1.0
 ```
 
+Los dos últimos `sed` no son opcionales: un test comprueba que la
+documentación no habla de una versión vieja.
+
 La imagen publicada se usa en Portainer sin reconstruir:
 
 ```
-MCP_IMAGE=ghcr.io/davidneyra2804/mcp-correo:1.0.0
+MCP_IMAGE=ghcr.io/davidneyra2804/mcp-correo:1.0.1
 MCP_PULL_POLICY=always
 ```
 

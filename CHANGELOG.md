@@ -47,4 +47,48 @@ explícita de quien lo opera.
 - Auditoría JSONL por llamada, sin cuerpos ni credenciales. Si no se puede
   escribir, la tool no muta el buzón ni emite un token.
 
+## [1.0.1] — 2026-10-26
+
+Correcciones de una auditoría completa del proyecto.
+
+### Corregido
+
+- **El logging no lo configuraba el proyecto.** Los mensajes salían porque el
+  SDK configura el logger raíz de rebote al construir el servidor MCP, con su
+  formato. Si el SDK cambiaba, el banner de arranque se iba con él. Ahora se
+  configura antes de nada, con el mismo formato que uvicorn.
+- **`MCP_SMTP_SECURITY` no hacía nada** en las cuentas por entorno: la cuenta
+  fijaba siempre el modo, así que el global era código muerto. Ahora la cuenta
+  solo lo fija si dice `SMTP_USE_SSL`, y el puerto por defecto acompaña al modo
+  (465 para `ssl`, 587 para `starttls`).
+- **Los destinatarios ocultos se quedaban en la copia de Enviados.** El mismo
+  mensaje llevaba `Bcc` por SMTP y sin `Bcc` al guardarlo.
+- **`MCP_CONFIG` a un fichero inexistente impedía arrancar**, aunque las
+  cuentas estuvieran definidas por entorno. Pasaba en el despliegue con systemd.
+- **`/mcp/0` resolvía a una cuenta arbitraria** del `accounts.toml`.
+- **`find_unanswered` afirmaba un criterio que no había comprobado** cuando no
+  podía abrir la carpeta de enviados. Ahora lo dice.
+- **El rotador de auditoría moría con una traza** en bucle de reinicios si un
+  tamaño no era un número. Y una clave `"password"` entrecomillada se colaba en
+  el TOML generado.
+
+### Consistencia
+
+- El entrypoint ya no decide si hay cuentas: solo prepara el fichero. Era el
+  sitio donde aparecían las discrepancias de esquema.
+- El mapa de capacidades, el límite de carpeta y la lista de cabeceras viven
+  ahora en un solo sitio.
+- `tests/test_ficticio.py` impide que un dominio, un correo o un rastro personal
+  se cuelen en el repositorio.
+
+### Documentación
+
+- «No expone nada por sí mismo» era falso: publica `127.0.0.1:8765`.
+- «El proceso arranca y avisa» era falso: aborta.
+- Variables del servidor que nadie documentaba: `MCP_CONFIG`,
+  `MCP_ALLOW_NONLOCAL_BIND`, `MCP_ACCOUNTS_TOML*`, `MCP_GENERATED_CONFIG`,
+  `CADDY_*`, `CLOUDFLARED_VERSION`.
+- El nginx del despliegue con systemd no servía las rutas por cuenta.
+
+[1.0.1]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.1
 [1.0.0]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.0
