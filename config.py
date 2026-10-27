@@ -883,11 +883,15 @@ def write_capabilities_detail(
         variable_global = "MCP_" + global_name.upper()
         variable_cuenta = f"MCP_ACCOUNT_{account_name.upper()}_<N>"
         if not getattr(settings, global_name):
-            motivos.append(f"{corta} necesita {variable_global}=true")
+            motivos.append(f"{corta}: falta {variable_global}=true")
         elif not any(getattr(account, account_name) for account in accounts.values()):
-            motivos.append(
-                f"{corta} necesita {variable_global}=true y {variable_cuenta}=true en la cuenta"
-            )
+            # Solo se dice lo que falta. Decir "necesita X e Y" cuando X ya
+            # está puesto hace dudar de lo que hay que tocar.
+            ejemplo = ""
+            indices = sorted(cuenta.index for cuenta in accounts.values() if cuenta.index)
+            if indices:
+                ejemplo = f" (por ejemplo, {variable_cuenta.replace('<N>', str(indices[0]))}=true)"
+            motivos.append(f"{corta}: falta {variable_cuenta}=true en la cuenta{ejemplo}")
         else:
             activas.append(corta)
     return activas, motivos

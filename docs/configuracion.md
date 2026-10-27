@@ -254,7 +254,7 @@ En el arranque, el proceso dice de dónde salió la configuración:
 ```
 INFO     Escritura activa: ninguna
 INFO     Servidor listo: 2 cuentas, escucha 0.0.0.0:8765, escritura=apagada
-INFO     mcp-correo 1.0.7 | Configuración: variables de entorno. Cuentas: archivo, principal
+INFO     mcp-correo 1.0.8 | Configuración: variables de entorno. Cuentas: archivo, principal
 ```
 
 La línea de capacidades (`Escritura activa: ...`) dice qué tools de escritura

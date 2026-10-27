@@ -381,14 +381,31 @@ def test_el_texto_explica_por_que_una_capacidad_no_esta(
     activas, motivos = write_capabilities_detail(settings, accounts)
     assert "marcado" not in activas
     texto = "; ".join(motivos)
-    assert "MCP_ACCOUNT_ALLOW_MARK_<N>" in texto
-    assert "MCP_ENABLE_MARK" in texto
+    # Solo dice lo que falta. Si dijera "necesita X e Y" con X ya puesto,
+    # no se sabria que tocar.
+    assert "falta MCP_ACCOUNT_ALLOW_MARK_<N>=true" in texto
+    assert "MCP_ENABLE_MARK" not in texto
+    # Y da un ejemplo que se puede copiar.
+    assert "MCP_ACCOUNT_ALLOW_MARK_1=true" in texto
 
     monkeypatch.setenv("MCP_ACCOUNT_ALLOW_MARK_1", "true")
     settings, accounts = load_config()
     activas, motivos = write_capabilities_detail(settings, accounts)
     assert "marcado" in activas
     assert not any("marcado" in motivo for motivo in motivos)
+
+
+def test_el_texto_dice_el_global_cuando_eso_es_lo_que_falta(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from config import write_capabilities_detail
+
+    _cuenta(monkeypatch, 1)
+    settings, accounts = load_config()
+    _activas, motivos = write_capabilities_detail(settings, accounts)
+    texto = "; ".join(motivos)
+    assert "marcado: falta MCP_ENABLE_MARK=true" in texto
+    assert "ALLOW_MARK" not in texto
 
 
 def test_un_bearer_igual_al_global_no_arranca(monkeypatch: pytest.MonkeyPatch) -> None:
