@@ -48,6 +48,60 @@ def default_client_factory(account: Account, settings: ServerSettings) -> IMAPCl
     )
 
 
+def probar_imap(
+    account: Account, settings: ServerSettings, factory: ClientFactory | None = None
+) -> dict:
+    """Comprueba que las credenciales del IMAP sirven. No toca el buzón.
+
+    Es lo que usa el botón de "probar" del panel: conectar, entrar, mirar
+    las carpetas y cerrar. Si algo está mal en el host, el puerto, el SSL
+    o la contraseña, se ve aquí y no cuando el agente intenta leer.
+    """
+    abrir = factory or default_client_factory
+    try:
+        raw = abrir(account, settings)
+    except (IMAPClientError, imaplib.IMAP4.error, TimeoutError, OSError) as exc:
+        _fallo_de_conexion(account, exc)
+    try:
+        try:
+            raw.login(account.username, account.password)
+        except (IMAPClientError, imaplib.IMAP4.error, TimeoutError, OSError) as exc:
+            _fallo_de_conexion(account, exc)
+        carpetas = 0
+        try:
+            carpetas = len(raw.list_folders())
+        except (IMAPClientError, imaplib.IMAP4.error, TimeoutError, OSError):
+            # El login ya ha funcionado. Que no se listen las carpetas no
+            # invalida la prueba.
+            logger.info("No se pudieron listar las carpetas de %s", account.key)
+    finally:
+        try:
+            raw.logout()
+        except (IMAPClientError, imaplib.IMAP4.error, OSError):
+            logger.info("Cierre de sesión IMAP incompleto en %s", account.key)
+    return {
+        "ok": True,
+        "folders": carpetas,
+        "detail": f"Conectado a {account.imap_host}:{account.imap_port} y el login ha funcionado.",
+    }
+
+
+def _fallo_de_conexion(account: Account, exc: BaseException) -> NoReturn:
+    """El error de una conexión fallida, sin el secreto dentro."""
+    safe = str(exc).replace(account.password, "***")[:400] if account.password else str(exc)[:400]
+    logger.warning("IMAP %s (%s): %s", account.key, type(exc).__name__, safe)
+    if isinstance(exc, TimeoutError):
+        raise MailError(
+            f"Tiempo de espera IMAP agotado ({account.imap_port}) en la cuenta {account.key}."
+        ) from None
+    if isinstance(exc, OSError) and not isinstance(exc, imaplib.IMAP4.error):
+        raise MailError(
+            f"No se pudo conectar por IMAP con la cuenta {account.key} "
+            f"({account.imap_host}:{account.imap_port})."
+        ) from None
+    raise MailError(f"El servidor IMAP rechazó la operación en la cuenta {account.key}.") from None
+
+
 class MailService:
     def __init__(
         self,

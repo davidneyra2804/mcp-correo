@@ -32,9 +32,11 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from audit import AuditError, AuditLog
 from config import (
     Account,
+    DashboardSettings,
     ServerSettings,
     ensure_local_bind,
     load_config,
+    load_dashboard_settings,
     require_bearer_token,
     write_capabilities,
     write_capabilities_detail,
@@ -49,10 +51,14 @@ from scope import reset_scope, set_scope
 from store.accounts import (
     AccountSnapshot,
     AccountSource,
+    DatabaseAccounts,
     DomainInfo,
     account_secrets,
     como_fuente,
 )
+from store.crypto import Cipher
+from store.db import Database
+from store.store import Store, importar_cuentas
 from version import __version__
 
 logger = logging.getLogger("mcp_correo.server")
@@ -167,6 +173,12 @@ class Runtime:
     service: MailService
     audit: AuditLog
     mcp: MCPServer
+    #: La fuente de cuentas. Con el panel, la de la base de datos.
+    source: AccountSource | None = None
+    #: El almacén, si el panel está activo.
+    store: Store | None = None
+    #: Los ajustes del panel, si está activo.
+    dashboard: DashboardSettings | None = None
 
 
 #: Pista que sustituye al "Invalid Host header" del SDK, que no dice nada
@@ -289,7 +301,7 @@ class BearerAuth:
             await _error(send, 404 if kind == "global" else 403, "not found")
             return
         reach = self._reach(snapshot, kind, key)
-        if not _covers(reach, allowed):
+        if not self._permite(kind, key, route_kind, resolved):
             await _error(send, 403, "forbidden")
             return
         route = f"/mcp/{resolved}" if route_kind != "root" else MCP_ROOT
@@ -385,6 +397,32 @@ class BearerAuth:
             return ("domain", frozenset(domain.accounts), domain.name)
         return ("", frozenset(), "")
 
+    def _permite(self, kind: str, key: str | None, route_kind: str, resolved: str) -> bool:
+        """Si la credencial abre esta ruta.
+
+        - La general abre todas.
+        - La de un dominio abre la ruta de su dominio y las de sus cuentas.
+        - La de una cuenta abre solo la ruta de esa cuenta.
+
+        La regla va sobre el tipo de ruta, no sobre los datos: aunque un
+        dominio tuviera una sola cuenta, la credencial de esa cuenta no
+        abre la ruta del dominio. Las rutas son las que acotan.
+        """
+        if kind == "global":
+            return True
+        if route_kind == "root":
+            # La ruta general es la puerta de la credencial general. Las
+            # credenciales acotadas tienen su propia ruta, y usan esa.
+            return False
+        if kind == "domain":
+            if route_kind == "domain":
+                return resolved == key
+            cuenta = self._accounts.get(resolved)
+            return cuenta is not None and cuenta.domain == key
+        if kind == "account":
+            return route_kind == "account" and resolved == key
+        return False
+
     def _reach(
         self, snapshot: AccountSnapshot, kind: str, key: str | None
     ) -> frozenset[str] | None:
@@ -424,6 +462,8 @@ def create_app(
     audit: AuditLog | None = None,
     smtp_factory: SmtpFactory | None = None,
     clock: Any | None = None,
+    store: Store | None = None,
+    dashboard: DashboardSettings | None = None,
 ) -> tuple[BearerAuth, Runtime]:
     source = como_fuente(accounts)
     service = MailService(settings, source, client_factory=client_factory)
@@ -458,10 +498,13 @@ def create_app(
     app = BearerAuth(inner, token, accounts, settings.allowed_hosts)
     runtime = Runtime(
         settings=settings,
-        accounts=accounts,
+        accounts=dict(source.snapshot().accounts),
         service=service,
         audit=audit_log,
         mcp=mcp,
+        source=source,
+        store=store,
+        dashboard=dashboard,
     )
     return app, runtime
 
@@ -879,17 +922,6 @@ def _presented_bearer(scope: Scope) -> str | None:
     return received.decode("utf-8", errors="ignore")
 
 
-def _covers(reach: frozenset[str] | None, scope: frozenset[str]) -> bool:
-    """Si la credencial cubre el ámbito de la ruta.
-
-    ``reach`` es None cuando la credencial es la general: alcanza todo.
-    Si no, el ámbito de la ruta tiene que estar dentro de lo que alcanza.
-    """
-    if reach is None:
-        return True
-    return scope <= reach
-
-
 def _split_mcp_path(path: str) -> tuple[bool, str | None]:
     """(¿es una ruta del MCP?, identificador de cuenta).
 
@@ -923,22 +955,72 @@ async def _unauthorized(send: Send) -> None:
     await _error(send, 401, "unauthorized")
 
 
+def _preparar_la_base(
+    dashboard: DashboardSettings,
+    settings: ServerSettings,
+    cuentas: Mapping[str, Account],
+    audit: AuditLog,
+) -> tuple[Store, AccountSource]:
+    """Prepara la base de datos y devuelve el almacén y la fuente.
+
+    Con el panel activo, la base de datos es la fuente de las cuentas. Las
+    del entorno se importan **una vez**, y solo si la base está vacía: en
+    cuanto la base tiene una cuenta, la base manda. Dos fuentes a la vez
+    son dos verdades, y de dos verdades sale una que nadie sabe cuál es.
+    """
+    database = Database(dashboard.db_path)
+    database.prepare()
+    cipher = Cipher(dashboard.key)
+    store = Store(database, cipher, settings)
+    store.comprobar_clave()
+    importadas = importar_cuentas(store, cuentas)
+    if importadas:
+        logger.info(
+            "Cuentas importadas del entorno: %d. A partir de aquí la base de datos manda.",
+            importadas,
+        )
+    elif cuentas:
+        logger.info(
+            "La base de datos ya tiene cuentas: las %d del entorno se ignoran.",
+            len(cuentas),
+        )
+    else:
+        logger.info("No hay cuentas todavía. Se dan de alta desde el panel.")
+    source = DatabaseAccounts(
+        store,
+        settings,
+        on_reload=lambda snapshot: audit.add_secrets(account_secrets(snapshot)),
+    )
+    return store, source
+
+
 def _bootstrap() -> BearerAuth:
     token = require_bearer_token()
-    settings, accounts = load_config()
+    dashboard = load_dashboard_settings()
+    settings, cuentas = load_config(allow_empty=dashboard.enabled)
     ensure_local_bind(settings.bind_host)
-    application, runtime = create_app(settings, accounts, token)
+    audit = AuditLog(settings.audit_log, secrets=[token])
+    store: Store | None = None
+    if dashboard.enabled:
+        store, source = _preparar_la_base(dashboard, settings, cuentas, audit)
+    else:
+        source = como_fuente(cuentas)
+    application, runtime = create_app(
+        settings, source, token, audit=audit, store=store, dashboard=dashboard
+    )
     global RUNTIME
     RUNTIME = runtime
-    caps = write_capabilities(settings, accounts)
+    if dashboard.enabled and store is not None:
+        _levantar_el_panel(dashboard, store, settings, audit)
+    caps = write_capabilities(settings, runtime.accounts, dynamic=dashboard.enabled)
     logger.info(
         "Servidor listo: %d cuentas, escucha %s:%s, escritura=%s",
-        len(accounts),
+        len(runtime.accounts),
         settings.bind_host,
         settings.bind_port,
         ", ".join(name for name, enabled in caps.items() if enabled) or "ninguna",
     )
-    _, motivos = write_capabilities_detail(settings, accounts)
+    _, motivos = write_capabilities_detail(settings, runtime.accounts)
     if motivos:
         # Encender el interruptor global no basta: la cuenta también tiene
         # que permitirlo. Sin esta línea, el síntoma es que la tool no
@@ -948,7 +1030,7 @@ def _bootstrap() -> BearerAuth:
         "mcp-correo %s | Configuración: %s. Cuentas: %s",
         __version__,
         "variables de entorno" if settings.config_source == "env" else "accounts.toml",
-        ", ".join(sorted(accounts)),
+        ", ".join(sorted(runtime.accounts)),
     )
     logger.info(
         "Hosts permitidos: %s. Orígenes: %s",
@@ -956,6 +1038,18 @@ def _bootstrap() -> BearerAuth:
         ", ".join(settings.allowed_origins) or "(ninguno)",
     )
     return application
+
+
+def _levantar_el_panel(
+    dashboard: DashboardSettings,
+    store: Store,
+    settings: ServerSettings,
+    audit: AuditLog,
+) -> None:
+    """Levanta el panel en su puerto, en un hilo aparte."""
+    from dashboard.runner import lanzar
+
+    lanzar(dashboard, store, settings, audit)
 
 
 RUNTIME: Runtime | None = None

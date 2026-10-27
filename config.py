@@ -211,6 +211,18 @@ class ServerSettings:
 
 
 @dataclass(frozen=True)
+class DashboardSettings:
+    """Los ajustes del panel. Apagado si no hay base de datos."""
+
+    enabled: bool = False
+    db_path: str = ""
+    key: str = ""
+    token: str = ""
+    bind_host: str = "127.0.0.1"
+    bind_port: int = 8766
+
+
+@dataclass(frozen=True)
 class Account:
     """Cuenta IMAP. `password` y `bearer` no aparecen en repr ni en trazas."""
 
@@ -279,8 +291,14 @@ def resolve_config_path() -> Path | None:
     return None
 
 
-def load_config(path: Path | None = None) -> tuple[ServerSettings, dict[str, Account]]:
-    """Carga servidor y cuentas. Entorno primero, TOML como alternativa."""
+def load_config(
+    path: Path | None = None, allow_empty: bool = False
+) -> tuple[ServerSettings, dict[str, Account]]:
+    """Carga servidor y cuentas. Entorno primero, TOML como alternativa.
+
+    ``allow_empty`` es para el modo panel: allí las cuentas pueden no
+    existir todavía, porque las da de alta el panel.
+    """
     config_path = path if path is not None else resolve_config_path()
     server_raw, accounts_raw = _read_toml(config_path)
     settings = _server_settings(server_raw)
@@ -295,13 +313,65 @@ def load_config(path: Path | None = None) -> tuple[ServerSettings, dict[str, Acc
     else:
         accounts = {key: _account(str(key), value) for key, value in accounts_raw.items()}
         settings = replace(settings, config_source="toml")
-    if not accounts:
+    if not accounts and not allow_empty:
         raise SystemExit(
             "No hay cuentas. Define las variables de cada cuenta "
             "(MCP_ACCOUNT_<CAMPO>_<N>), o añade una sección [accounts.<clave>] "
             "al accounts.toml."
         )
     return settings, accounts
+
+
+def load_dashboard_settings() -> DashboardSettings:
+    """Los ajustes del panel.
+
+    El panel se activa con ``MCP_DASHBOARD_DB``. Si está, las tres
+    variables del panel son obligatorias: sin la clave no se pueden
+    descifrar las contraseñas, y sin el token no se puede entrar. El
+    proceso para y dice cuál falta, en vez de arrancar a medias.
+    """
+    db_path = _env_text("MCP_DASHBOARD_DB")
+    if not db_path:
+        return DashboardSettings()
+    key = _env_text("MCP_DASHBOARD_KEY")
+    if not key:
+        raise SystemExit(
+            "Con MCP_DASHBOARD_DB hace falta MCP_DASHBOARD_KEY: es la clave con la que "
+            "se cifran las contraseñas de las cuentas. Se genera con: openssl rand -base64 48"
+        )
+    if len(key) < MIN_TOKEN_LENGTH:
+        raise SystemExit(
+            f"MCP_DASHBOARD_KEY es demasiado corta (mínimo {MIN_TOKEN_LENGTH} caracteres). "
+            "Se genera con: openssl rand -base64 48"
+        )
+    token = _env_text("MCP_DASHBOARD_TOKEN")
+    if not token:
+        raise SystemExit(
+            "Con MCP_DASHBOARD_DB hace falta MCP_DASHBOARD_TOKEN: es la credencial "
+            "de acceso al panel. Se genera con: openssl rand -base64 48"
+        )
+    if len(token) < MIN_TOKEN_LENGTH:
+        raise SystemExit(
+            f"MCP_DASHBOARD_TOKEN es demasiado corto (mínimo {MIN_TOKEN_LENGTH} caracteres). "
+            "Se genera con: openssl rand -base64 48"
+        )
+    global_token = os.environ.get("MCP_BEARER_TOKEN", "").strip()
+    if global_token and token == global_token:
+        raise SystemExit(
+            "MCP_DASHBOARD_TOKEN es el mismo que MCP_BEARER_TOKEN. Son dos superficies "
+            "distintas: el panel no puede abrirse con el token del MCP."
+        )
+    bind_host = _env_text("MCP_DASHBOARD_BIND_HOST") or "127.0.0.1"
+    bind_port = _port(_env_int("MCP_DASHBOARD_BIND_PORT") or 8766, "MCP_DASHBOARD_BIND_PORT")
+    ensure_local_bind(bind_host)
+    return DashboardSettings(
+        enabled=True,
+        db_path=db_path,
+        key=key,
+        token=token,
+        bind_host=bind_host,
+        bind_port=bind_port,
+    )
 
 
 def ensure_local_bind(bind_host: str) -> None:
@@ -869,6 +939,21 @@ WRITE_GATES: dict[str, tuple[str, str, str, str]] = {
 MAX_FOLDER_LENGTH = 200
 
 
+def resolve_permission(account_value: bool | None, domain_value: bool | None) -> bool | None:
+    """Qué valor gana entre la cuenta y el dominio.
+
+    La cuenta manda sobre el dominio. Si ninguna de las dos lo dice, None:
+    hereda el interruptor global.
+
+    La regla vive aquí, y no en la base de datos, porque la usan tanto el
+    cargador de las cuentas como el resto del servidor. Es la misma cadena
+    de siempre con un nivel más: global, dominio, cuenta.
+    """
+    if account_value is not None:
+        return account_value
+    return domain_value
+
+
 def account_allows(account: Account, capability: str, settings: ServerSettings) -> bool:
     """Si una cuenta puede usar una capacidad de escritura.
 
@@ -890,8 +975,23 @@ def account_allows(account: Account, capability: str, settings: ServerSettings) 
     return bool(valor)
 
 
-def write_capabilities(settings: ServerSettings, accounts: dict[str, Account]) -> dict[str, bool]:
-    """Una tool de escritura existe solo si alguna cuenta puede usarla."""
+def write_capabilities(
+    settings: ServerSettings, accounts: dict[str, Account], *, dynamic: bool = False
+) -> dict[str, bool]:
+    """Una tool de escritura existe solo si alguna cuenta puede usarla.
+
+    Con cuentas dinámicas (el panel) el conjunto de cuentas cambia con el
+    tiempo, y la lista de tools se fija al arrancar. En ese modo se
+    registra la tool si el interruptor global está encendido, y el permiso
+    por cuenta se comprueba en cada llamada, que es donde se comprueba de
+    todos modos. Lo que no cambia nunca es quién puede escribir: eso lo
+    decide ``account_allows``.
+    """
+    if dynamic:
+        return {
+            name: bool(getattr(settings, global_name))
+            for name, (global_name, _cuenta, _corta, _larga) in WRITE_GATES.items()
+        }
     return {
         name: any(account_allows(account, name, settings) for account in accounts.values())
         for name in WRITE_GATES

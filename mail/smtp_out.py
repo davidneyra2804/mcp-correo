@@ -63,3 +63,33 @@ def _fail(account: Account, exc: BaseException) -> None:
     safe = str(exc).replace(account.password, "***")[:400] if account.password else str(exc)[:400]
     logger.warning("SMTP %s (%s): %s", account.key, type(exc).__name__, safe)
     raise MailError(f"El servidor SMTP rechazó el envío en la cuenta {account.key}.") from None
+
+
+def probar_smtp(
+    account: Account, settings: ServerSettings, factory: SmtpFactory | None = None
+) -> dict:
+    """Comprueba que las credenciales del SMTP sirven. No envía nada.
+
+    Es lo que usa el botón de "probar" del panel: conectar, entrar y
+    cerrar. Si algo está mal en el host, el puerto, el modo o la
+    contraseña, se ve aquí y no cuando el agente intenta enviar.
+    """
+    abrir = factory or open_smtp
+    try:
+        client = abrir(account, settings)
+    except (smtplib.SMTPException, OSError, TimeoutError) as exc:
+        _fail(account, exc)
+    try:
+        try:
+            client.login(account.username, account.password)
+        except (smtplib.SMTPException, OSError, TimeoutError) as exc:
+            _fail(account, exc)
+    finally:
+        try:
+            client.quit()
+        except (smtplib.SMTPException, OSError):
+            logger.info("Cierre SMTP incompleto en %s", account.key)
+    return {
+        "ok": True,
+        "detail": f"Conectado a {account.smtp_host}:{account.smtp_port} y el login ha funcionado.",
+    }

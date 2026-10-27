@@ -228,11 +228,10 @@ def test_la_imagen_lleva_los_estaticos_del_panel() -> None:
     estaticos = ROOT / "dashboard" / "static"
     if not estaticos.is_dir():
         return
+    assert any(estaticos.iterdir()), "El panel no tiene ficheros estáticos."
     dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
-    assert "dashboard" in dockerfile
-    for fichero in sorted(estaticos.iterdir()):
-        if fichero.is_file():
-            assert fichero.name in dockerfile, f"El estático {fichero.name} no está en la imagen"
+    copiados = _lo_que_copia_el_dockerfile(dockerfile, ROOT)
+    assert "dashboard" in copiados, "La imagen no lleva el panel."
 
 
 def test_la_app_arranca_con_lo_que_cop_el_dockerfile(tmp_path: Path) -> None:
