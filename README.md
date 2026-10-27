@@ -268,7 +268,7 @@ overlay del túnel en *Additional paths*.
 La imagen publicada se usa sin reconstruir:
 
 ```
-MCP_IMAGE=ghcr.io/davidneyra2804/mcp-correo:1.0.1
+MCP_IMAGE=ghcr.io/davidneyra2804/mcp-correo:1.0.2
 MCP_PULL_POLICY=always
 ```
 
@@ -395,8 +395,8 @@ Release con las notas de los commits.
 sed -i 's/__version__ = ".*"/__version__ = "1.2.0"/' version.py
 sed -i 's/^version = ".*"/version = "1.2.0"/' pyproject.toml
 sed -i 's/ARG MCP_VERSION=.*/ARG MCP_VERSION=1.2.0/' Dockerfile
-sed -i 's/mcp-correo 1\.0\.1 |/mcp-correo 1.2.0 |/' docs/configuracion.md
-sed -i 's|mcp-correo:1\.0\.1|mcp-correo:1.2.0|' README.md
+sed -i 's/mcp-correo 1\.0\.2 |/mcp-correo 1.2.0 |/' docs/configuracion.md
+sed -i 's|mcp-correo:1\.0\.2|mcp-correo:1.2.0|' README.md
 git commit -am "version 1.2.0"
 git tag v1.2.0 && git push origin v1.2.0
 ```

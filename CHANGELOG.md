@@ -91,4 +91,23 @@ Correcciones de una auditoría completa del proyecto.
 - El nginx del despliegue con systemd no servía las rutas por cuenta.
 
 [1.0.1]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.1
+## [1.0.2] — 2026-10-26
+
+### Corregido
+
+- **El `Dockerfile` no copiaba `scope.py` a la imagen.** El módulo llegó con
+  las rutas por cuenta y se quedó fuera del `COPY`. La imagen no arrancaba:
+  `ModuleNotFoundError: No module named 'scope'`. Los tests locales pasaban
+  porque corren desde el repositorio, donde el fichero sí está.
+
+### Pruebas
+
+- Una prueba arma un directorio con **exactamente lo que copia el Dockerfile** y
+  arranca el servidor desde ahí. Si un módulo o un fichero se queda fuera de
+  la imagen, se ve.
+- Otra comprueba que la lista de módulos que la app importa coincide con la
+  del `COPY`.
+
+[1.0.2]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.2
+[1.0.1]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.1
 [1.0.0]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.0

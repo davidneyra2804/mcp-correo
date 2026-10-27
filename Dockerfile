@@ -19,7 +19,7 @@ RUN groupadd --system --gid 10001 mcp \
 
 COPY --from=build /opt/venv /opt/venv
 WORKDIR /app
-COPY --chown=mcp:mcp server.py config.py audit.py version.py /app/
+COPY --chown=mcp:mcp server.py config.py audit.py scope.py version.py /app/
 COPY --chown=mcp:mcp mail /app/mail
 COPY --chown=mcp:mcp docker/entrypoint.py docker/rotate_audit.py /app/docker/
 COPY --chown=mcp:mcp accounts.example.toml /app/accounts.example.toml
@@ -27,7 +27,7 @@ COPY --chown=mcp:mcp accounts.example.toml /app/accounts.example.toml
 USER mcp
 
 # La etiqueta tiene que coincidir con version.py. Un test lo comprueba.
-ARG MCP_VERSION=1.0.1
+ARG MCP_VERSION=1.0.2
 LABEL org.opencontainers.image.version="${MCP_VERSION}" \
       org.opencontainers.image.title="mcp-correo" \
       org.opencontainers.image.description="Servidor MCP de correo sobre IMAP y SMTP" \

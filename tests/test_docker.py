@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import importlib.util
 import os
+import re
 from pathlib import Path
 
 import pytest
@@ -146,6 +147,96 @@ def test_el_rotador_acepta_el_default(monkeypatch: pytest.MonkeyPatch) -> None:
     rotate = _load("rotate_audit", "docker/rotate_audit.py")
     monkeypatch.delenv("MCP_AUDIT_KEEP", raising=False)
     assert rotate._entero("MCP_AUDIT_KEEP", 12) == 12
+
+
+def test_la_imagen_lleva_todos_los_modulos_que_necesita() -> None:
+    """Todo módulo del que depende la app tiene que estar en la imagen.
+
+    Los tests corren desde el repositorio, donde todos los ficheros están.
+    La imagen solo lleva los que copia el Dockerfile, así que un módulo que
+    se quede fuera funciona en local y revienta en el contenedor.
+    """
+    import ast
+
+    raiz = ROOT
+    locales = {p.stem for p in raiz.glob("*.py")}
+    vistos: set[str] = set()
+    cola = ["server"]
+    while cola:
+        modulo = cola.pop()
+        if modulo in vistos:
+            continue
+        vistos.add(modulo)
+        ruta = raiz / f"{modulo}.py"
+        if not ruta.exists():
+            continue
+        arbol = ast.parse(ruta.read_text(encoding="utf-8"))
+        for nodo in ast.walk(arbol):
+            nombres = []
+            if isinstance(nodo, ast.Import):
+                nombres = [a.name.split(".")[0] for a in nodo.names]
+            elif isinstance(nodo, ast.ImportFrom) and nodo.level == 0 and nodo.module:
+                nombres = [nodo.module.split(".")[0]]
+            for nombre in nombres:
+                if nombre in locales and nombre not in vistos:
+                    cola.append(nombre)
+
+    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+    copiados = {nombre.removesuffix(".py") for nombre in re.findall(r"([a-z_]+\.py)", dockerfile)}
+    faltan = sorted(vistos - copiados)
+    assert not faltan, f"Módulos que la app necesita y el Dockerfile no copia: {faltan}"
+
+
+def test_la_app_arranca_con_lo_que_cop_el_dockerfile(tmp_path: Path) -> None:
+    """Simula /app con lo que copia el Dockerfile e importa el servidor.
+
+    Los tests corren desde el repositorio, donde están todos los ficheros.
+    Esta prueba arma un directorio con exactamente lo que va en la imagen,
+    y arranca el servidor desde ahí. Si un módulo se queda fuera del
+    Dockerfile, aquí se ve.
+    """
+    import shutil
+    import subprocess
+    import sys
+
+    app = tmp_path / "app"
+    app.mkdir()
+    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+    for linea in dockerfile.splitlines():
+        if not linea.startswith("COPY --chown="):
+            continue
+        partes = [p for p in linea.split()[1:] if not p.startswith("--")]
+        origenes, destino = partes[:-1], partes[-1]
+        # /app/... -> dentro del directorio simulado
+        relativo = destino.lstrip("/")
+        if relativo == "app":
+            relativo = ""
+        elif relativo.startswith("app/"):
+            relativo = relativo[len("app/") :]
+        for origen in origenes:
+            fuente = ROOT / origen
+            destino_final = app / relativo if relativo else app
+            if fuente.is_dir():
+                shutil.copytree(fuente, destino_final, dirs_exist_ok=True)
+            else:
+                destino_final.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(fuente, destino_final)
+
+    env = os.environ.copy()
+    env["MCP_BEARER_TOKEN"] = "token-de-prueba-0123456789abcdef"
+    env["MCP_AUDIT_LOG"] = str(tmp_path / "audit.jsonl")
+    env["MCP_CONFIG"] = str(app / "accounts.example.toml")
+    env["PYTHONPATH"] = str(app)
+    completado = subprocess.run(
+        [sys.executable, "-c", "import server"],
+        cwd=app,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completado.returncode == 0, completado.stdout + completado.stderr
+    assert "Servidor listo" in completado.stdout + completado.stderr
 
 
 def test_el_compose_publica_solo_loopback_y_no_lleva_secretos() -> None:
