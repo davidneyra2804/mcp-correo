@@ -160,12 +160,12 @@ La ruta es global (`/mcp/<cuenta>`), así que el identificador de cuenta no
 puede repetirse: ni entre dominios, ni con el nombre de un dominio. El
 panel lo rechaza al dar de alta.
 
-### 3.10 El panel se ata al loopback y no se publica por defecto
+### 3.10 El panel se ata al loopback
 
-El panel ve las contraseñas. Por defecto se escucha en `127.0.0.1` y el
-compose no publica su puerto. Publicarlo es una decisión consciente, y
-recomendada: solo detrás de Cloudflare Access o de un proxy con
-autenticación propia.
+El panel ve las contraseñas. Escucha en `127.0.0.1` y el compose publica su
+puerto **en loopback**, como el del MCP. Publicarlo en abierto es una
+decisión consciente, y recomendada: solo detrás de Cloudflare Access o de
+un proxy con autenticación propia.
 
 ### 3.11 El panel tiene su propia credencial, distinta de la del MCP
 
@@ -206,8 +206,7 @@ solo la guía.
 que el asistente del operador usa. Por encima solo están el dominio y la
 cuenta, que la **sobreescriben** en su ámbito.
 
-La regla, en una frase: **la credencial presentada tiene que cubrir el
-ámbito de la ruta**.
+La regla, en una frase: **la credencial tiene que abrir la ruta**.
 
 | Credencial | Alcance |
 | --- | --- |
@@ -217,11 +216,15 @@ La regla, en una frase: **la credencial presentada tiene que cubrir el
 
 Y de ahí sale, sin casos especiales, qué credencial vale en qué ruta:
 
-| Ruta | Ámbito de la ruta | Credenciales que la cubren |
+| Ruta | Ámbito de la ruta | Credenciales que la abren |
 | --- | --- | --- |
 | `/mcp` | El dominio por defecto (o vacío) | Solo la general |
 | `/mcp/<dominio>` | Las cuentas de ese dominio | La general, la de ese dominio |
 | `/mcp/<cuenta>` | Esa cuenta | La general, la de esa cuenta, la de su dominio |
+
+La regla va sobre el **tipo de ruta**, no sobre los datos: aunque un
+dominio tuviera una sola cuenta, la credencial de esa cuenta **no** abre
+la ruta del dominio. Las rutas son las que acotan.
 
 Las dos reglas que de aquí salen, y que **no cambian** lo que ya hace el
 código:
@@ -247,9 +250,12 @@ El modelo es **a nivel de cuenta**: una cuenta, un ámbito, una credencial.
 El dominio y la general son cobertura hacia arriba, para quien la necesite,
 no el punto de partida.
 
-Por eso, en el panel, **crear una cuenta genera su token** por defecto, y
-se muestra una sola vez. Crear un dominio **no** genera token: es una
-agrupación, y su credencial es opcional.
+Por eso, en el panel, **crear una cuenta genera su token**, y se muestra
+una sola vez. Crear un dominio **no** genera token: es una agrupación, y
+su credencial es opcional.
+
+Y ningún token se repite: ni entre cuentas, ni entre dominios, ni entre
+los dos niveles. Un token repetido hace que la ruta no aísle nada.
 
 ### 3.16 Probar antes de guardar
 
@@ -690,8 +696,9 @@ store/
   __init__.py
   db.py         # conexión, esquema, migraciones, revisión
   crypto.py     # cifrado y descifrado de contraseñas
-  models.py     # dataclasses de dominio y de cuenta
-  accounts.py   # DatabaseAccounts: la fuente de cuentas
+  models.py     # las filas y cómo se convierten en cuentas
+  store.py      # las operaciones: dominios, cuentas y tokens
+  accounts.py   # la fuente de cuentas (estática y de la base)
   errors.py     # errores del panel, con mensajes accionables
 dashboard/
   __init__.py
@@ -814,8 +821,8 @@ se actualizan, y se añade una que fija el comportamiento nuevo.
 | `MCP_DASHBOARD_TOKEN` | — | Credencial de acceso al panel. Obligatoria con el panel. Mínimo 16 caracteres. |
 | `MCP_DASHBOARD_BIND_HOST` | `127.0.0.1` | Dirección de escucha del panel. |
 | `MCP_DASHBOARD_BIND_PORT` | `8766` | Puerto de escucha del panel. |
-| `MCP_DASHBOARD_PUBLISH_PORT` | `8766` | Puerto publicado en el host. Solo con `MCP_DASHBOARD_PUBLISH=1`. |
-| `MCP_DASHBOARD_PUBLISH` | `0` | Publica el puerto del panel. Por defecto no se publica. |
+| `MCP_DASHBOARD_PUBLISH_BIND` | `127.0.0.1` | Dirección del puerto publicado en el host. |
+| `MCP_DASHBOARD_PUBLISH_PORT` | `8766` | Puerto publicado en el host. |
 
 Las tres primeras son obligatorias en modo panel: si falta alguna, el
 arranque para diciendo cuál falta y qué hacer. Nunca se arranca a medias.
@@ -905,8 +912,8 @@ sitio, no atraviesa el código.
 | Decisión | Supuesto por defecto | Cómo se cambia |
 | --- | --- | --- |
 | **Token del panel: ¿uno o varios?** | Uno solo: `MCP_DASHBOARD_TOKEN`. Con varios, cada uno sería un usuario con su propio nombre, y la auditoría podría decir quién hizo qué. Es más trabajo y no aporta nada con una sola persona operando. | Una tabla `users` y una sesión por token. El resto no cambia. |
-| **¿Se publica el panel?** | No. Se escucha en `127.0.0.1` y el compose no publica el puerto. Se accede por túnel SSH o por un proxy local. | `MCP_DASHBOARD_PUBLISH=1` publica el puerto en el host (siempre en loopback). Si además se expone por el túnel, se recomienda Cloudflare Access delante. |
-| **¿El panel sustituye a las variables de entorno?** | Sí: con el panel activo la base de datos es la fuente única, y las cuentas del entorno se importan una vez si la base está vacía. Mantener las dos a la vez es la forma segura de tener dos verdades. | El importador es una función aparte (`store.seed`). Cambiarlo para que no importe, o para que importe en cada arranque, no toca el resto. |
+| **¿Se publica el panel?** | En loopback, como el MCP. Se accede por túnel SSH o por un proxy local. Si además se expone por el túnel, se recomienda Cloudflare Access delante. | `MCP_DASHBOARD_PUBLISH_BIND` y `MCP_DASHBOARD_PUBLISH_PORT` cambian el puerto del host. |
+| **¿El panel sustituye a las variables de entorno?** | Sí: con el panel activo la base de datos es la fuente única, y las cuentas del entorno se importan una vez si la base está vacía. Mantener las dos a la vez es la forma segura de tener dos verdades. | El importador es una función aparte (`store.importar_cuentas`). Cambiarlo para que no importe, o para que importe en cada arranque, no toca el resto. |
 
 Y una cuarta, de diseño, que se puede aplazar:
 

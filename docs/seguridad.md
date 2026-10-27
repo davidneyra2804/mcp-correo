@@ -19,6 +19,25 @@ Hecho en el código:
 - Escucha por defecto en `127.0.0.1`. En el contenedor, `0.0.0.0` solo con `MCP_ALLOW_NONLOCAL_BIND=1`, y el compose publica `127.0.0.1:8765`.
 - Imagen sin token ni contraseñas. Usuario `mcp` no root, raíz de solo lectura, `cap_drop: ALL` y `no-new-privileges`. `GET /health` no pide token y no devuelve datos del buzón.
 
+Si el panel está activo:
+
+- El panel es una superficie aparte, con su propia credencial
+  (`MCP_DASHBOARD_TOKEN`), que tiene que ser distinta del bearer del MCP.
+  El token del MCP no abre el panel, y el del panel no abre `/mcp`.
+- Escucha en `127.0.0.1` y su puerto se publica en loopback. El panel ve las
+  contraseñas de las cuentas: publicarlo en abierto es una decisión que hay
+  que querer.
+- La sesión es una cookie firmada con HMAC, `HttpOnly` y `SameSite=Strict`,
+  con caducidad. Las peticiones que cambian algo exigen la cabecera
+  `X-MCP-Dashboard`, que un formulario de otro sitio no puede poner.
+- Las contraseñas de las cuentas se cifran con AES-GCM y una clave que
+  **no** está en la base de datos (`MCP_DASHBOARD_KEY`). El arranque
+  comprueba que la clave corresponde a la base.
+- El panel no registra tools ni puede leer ni escribir un buzón. Solo
+  gestiona la configuración y prueba conexiones.
+- La API nunca devuelve una contraseña, y todo lo que hace el panel queda
+  auditado sin secretos.
+
 Lo aplica quien despliega:
 
 - Token aleatorio (`openssl rand -base64 48`) y rotación. Archivo de entorno `0600`. TOML `0640`.
@@ -26,6 +45,8 @@ Lo aplica quien despliega:
 - Certificado TLS, rate limit y, si se conocen, las IP de salida del cliente en el proxy.
 - Usuario de servicio sin shell, systemd endurecido o el compose con los límites del repositorio, y rotación del JSONL.
 - No publicar el puerto 8765 en una interfaz que no sea loopback, y no exponerlo sin Bearer ni sin TLS.
+- Si activas el panel, tampoco publiques su puerto fuera de loopback. Si
+  hace falta entrar desde fuera, mejor detrás de Cloudflare Access.
 - En Portainer, token y contraseñas solo en Environment variables. El TOML montado o en `MCP_ACCOUNTS_TOML_B64` no lleva la clave `password`.
 - Comprobar en el cliente de correo que `get_message` no pone `\Seen`.
 

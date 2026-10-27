@@ -94,14 +94,29 @@ en el segundo paso. Con el borrado pasa lo mismo: `permanent` se fija en
 
 ## Rutas
 
-| Ruta | Credencial | Qué ve |
+| Ruta | Ámbito | Qué ve |
 | --- | --- | --- |
-| `/mcp` | `MCP_BEARER_TOKEN` | Todas las cuentas. |
-| `/mcp/<cuenta>` | el global, o el `MCP_ACCOUNT_BEARER_<N>` de esa cuenta | Solo esa cuenta. |
+| `/mcp` | El dominio por defecto, si hay uno | La guía: el catálogo de rutas. Y las cuentas del dominio por defecto. |
+| `/mcp/<dominio>` | Las cuentas de ese dominio | Varias cuentas a la vez. |
+| `/mcp/<cuenta>` | Esa cuenta | Una cuenta. La unidad real de seguridad. |
 
-`<cuenta>` puede ser el correo, el `NAME` de la cuenta o su número. Con el
-bearer de una cuenta, la ruta tiene que ser la suya: en cualquier otra
-responde 403.
+`/mcp` **no** expone todos los buzones: es la puerta de entrada, y dice qué
+hay y por dónde se entra. `list_accounts` devuelve el catálogo de rutas, con
+la ruta de cada cuenta y de cada dominio. Para abrir un buzón hay que
+nombrarlo.
+
+`<cuenta>` puede ser el correo, el `NAME` de la cuenta o su número.
+
+Hay tres credenciales, y la más específica manda cuando se presenta:
+
+| Credencial | Abre | En qué rutas vale |
+| --- | --- | --- |
+| `MCP_BEARER_TOKEN` (la general) | Todas las cuentas | Todas |
+| La del dominio | Las cuentas de ese dominio | `/mcp/<dominio>` y las cuentas suyas |
+| La de la cuenta | Esa cuenta | `/mcp/<cuenta>` |
+
+La regla: **la credencial tiene que abrir la ruta**. La de una cuenta no
+abre la ruta de un dominio, y la de un dominio no abre la de otro.
 
 El aislamiento no es cosmético. La ruta acota el conjunto de cuentas que una
 tool puede tocar, y la comprobación está en un único punto del código. Un
@@ -111,15 +126,33 @@ ni aunque se lo filtren.
 En una ruta de una sola cuenta, el argumento `account` de las tools es
 opcional: la cuenta ya la fija la ruta y no hace falta que el modelo la sepa.
 
+## El panel de control
+
+Un panel web, en **otro puerto**, para dar de alta las cuentas sin tocar el
+despliegue. Con el panel activo, las cuentas salen de una base de datos
+SQLite, se organizan por dominios, y **en cuanto existen ya están en
+`/mcp`**: no hay que reiniciar.
+
+El panel tiene su propia credencial, su propia sesión y su propia capa
+anti-CSRF. Y no puede leer ni escribir un buzón: solo gestiona la
+configuración y prueba conexiones.
+
+Ver [docs/dashboard.md](docs/dashboard.md).
+
 ## Seguridad
 
 - **Bearer.** `MCP_BEARER_TOKEN` es obligatorio (mínimo 16 caracteres). Se
   compara el SHA-256 con `hmac.compare_digest`. Sin token, `/mcp` responde
   401. `GET /health` responde `{"status":"ok"}` y no devuelve correo: es la
   sonda del contenedor.
-- **Credenciales por cuenta.** `MCP_ACCOUNT_BEARER_<N>` da acceso a una sola
-  cuenta y solo por su ruta. No puede ser igual al bearer global ni repetirse
-  entre cuentas.
+- **Credenciales por cuenta y por dominio.** La de una cuenta da acceso a
+  una sola cuenta y solo por su ruta; la de un dominio, a las de ese
+  dominio. No puede ser igual al bearer global ni repetirse.
+- **Contraseñas cifradas en la base.** Las contraseñas de las cuentas se
+  cifran con AES-GCM y una clave que **no** está en la base de datos
+  (`MCP_DASHBOARD_KEY`). Si se pierde la clave, no se pueden descifrar.
+- **El panel no lee buzones.** Ni una tool. El panel gestiona la
+  configuración; los buzones son del MCP.
 - **Solo lectura por defecto.** `MCP_ENABLE_SEND`, `MCP_ENABLE_MARK`,
   `MCP_ENABLE_DELETE` y `MCP_ENABLE_DRAFTS` salen en `false`, y cada cuenta
   repite `allow_*`. Un interruptor solo admite `true`, `false`, `1` y `0`:
@@ -152,6 +185,8 @@ flowchart LR
   cliente[Cliente MCP]
   proxy[Proxy TLS]
   mcp[mcp-correo]
+  panel[Panel]
+  sqlite[(SQLite)]
   imap[Servidor IMAP]
   smtp[Servidor SMTP]
 
@@ -160,6 +195,8 @@ flowchart LR
   proxy -->|"HTTP loopback"| mcp
   mcp -->|"IMAPS 993"| imap
   mcp -->|"SMTPS 465 o STARTTLS 587"| smtp
+  panel -->|"escribe"| sqlite
+  mcp -->|"lee, en cada peticion"| sqlite
 ```
 
 El asistente solo necesita el puerto 443 hacia el proxy. IMAP y SMTP salen de
@@ -169,6 +206,10 @@ operación que lo necesita. El `From` de un envío es el usuario de la cuenta.
 
 Con Cloudflare Tunnel, el proxy TLS es el edge de Cloudflare y `cloudflared`
 habla HTTP plano con el contenedor por la red de Docker. No hace falta Caddy.
+
+El panel es un segundo servidor HTTP **en el mismo proceso**, en otro
+puerto. Comparte la base de datos y la auditoría, y no comparte nada más:
+no registra tools ni puede tocar un buzón.
 
 ## Inicio rápido
 
@@ -232,6 +273,10 @@ export MCP_ACCOUNT_PASSWORD_1='contraseña-ficticia-principal'
 | `MCP_ACCOUNT_ALLOW_SEND_<N>`, `MCP_ACCOUNT_ALLOW_MARK_<N>`, `MCP_ACCOUNT_ALLOW_DELETE_<N>`, `MCP_ACCOUNT_ALLOW_DRAFTS_<N>` | Overrides **por cuenta**. Opcionales: si no están, la cuenta hereda el global. Si están, mandan ellos. |
 | `MCP_BIND_HOST`, `MCP_BIND_PORT` | Por defecto `127.0.0.1` y `8765`. |
 | `MCP_AUDIT_LOG` | JSONL. Por defecto `./audit.jsonl`. |
+| `MCP_DASHBOARD_DB` | Ruta del fichero SQLite. **Su presencia activa el panel**, y con él las cuentas en base de datos. |
+| `MCP_DASHBOARD_KEY` | Clave con la que se cifran las contraseñas. Obligatoria con el panel. No está en la base de datos. |
+| `MCP_DASHBOARD_TOKEN` | Credencial de acceso al panel. Obligatoria con el panel, y distinta de `MCP_BEARER_TOKEN`. |
+| `MCP_DASHBOARD_BIND_HOST`, `MCP_DASHBOARD_BIND_PORT` | Por defecto `127.0.0.1` y `8766`. |
 
 Las cuentas se descubren solas por sus índices: no hay que declarar ninguna
 lista. `MCP_ACCOUNTS` es opcional y solo sirve como comprobación cruzada de
@@ -274,7 +319,7 @@ overlay del túnel en *Additional paths*.
 La imagen publicada se usa sin reconstruir:
 
 ```
-MCP_IMAGE=ghcr.io/davidneyra2804/mcp-correo:1.1.0
+MCP_IMAGE=ghcr.io/davidneyra2804/mcp-correo:2.0.0
 MCP_PULL_POLICY=always
 ```
 
@@ -284,6 +329,7 @@ Con `MCP_PULL_POLICY` vacío, el compose construye la imagen localmente y
 Las guías completas:
 
 - [Configuración por variables de entorno](docs/configuracion.md)
+- [El panel de control](docs/dashboard.md)
 - [Portainer y Docker](docs/despliegue-portainer.md)
 - [Cloudflare Tunnel](docs/despliegue-tunel-cloudflare.md)
 - [systemd y nginx](docs/despliegue-systemd.md)
@@ -333,8 +379,13 @@ responde 403.
 
 ## Qué se guarda
 
-Solo una cosa: un JSONL con una línea por llamada a una tool, con fecha, tool,
-cuenta y argumentos reducidos. Está en el volumen `audit` del stack.
+Dos cosas, y solo dos:
+
+- Un **JSONL** con una línea por llamada a una tool, con fecha, tool, cuenta
+  y argumentos reducidos. Está en el volumen `audit` del stack. Con el panel
+  activo, también se anotan sus cambios.
+- Una **base SQLite** con los dominios y las cuentas, en el volumen `data`,
+  y solo si el panel está activo. Las contraseñas van cifradas.
 
 ```bash
 docker compose exec mcp cat /var/log/mcp-correo/audit.jsonl
@@ -352,6 +403,8 @@ scope.py                  # el ámbito de la petición: qué cuentas puede tocar
 audit.py                  # JSONL de cada llamada
 version.py                # la versión, fuente de verdad
 mail/                     # IMAP, SMTP, MIME, confirmación y escritura
+store/                    # la base de datos: esquema, cifrado y cuentas
+dashboard/                # el panel: su API, su sesión y su interfaz
 .env.example              # todas las variables, con valores ficticios
 accounts.example.toml     # configuración alternativa en TOML
 Dockerfile                # imagen slim, usuario mcp, sin secretos
@@ -359,9 +412,10 @@ docker-compose.yml        # base: el MCP y la rotación de la auditoría
 docker-compose.tunnel.yml # overlay de Cloudflare Tunnel
 docker-compose.proxy.yml  # overlay de Caddy con TLS propio
 docker-compose.local.yml  # overlay de desarrollo local
-docker/                   # entrada del contenedor y rotación del JSONL
+docker/                   # entrada del contenedor, rotación del JSONL y sonda
+herramientas/             # scripts de apoyo, como la prueba de humo
 deploy/                   # systemd, nginx, Caddy opcional y logrotate
-docs/                     # configuración, despliegue y checklist
+docs/                     # configuración, despliegue, panel y checklist
 tests/                    # pytest con IMAP y SMTP simulados, sin red
 AGENTS.md                 # directrices para quien trabaje en el proyecto
 ```

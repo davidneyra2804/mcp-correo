@@ -216,15 +216,17 @@ async def crear_cuenta(request: Request) -> JSONResponse:
     store: Store = request.app.state.store
     datos = await _cuerpo(request)
 
-    def _crear() -> int:
+    def _crear() -> tuple[int, str]:
         return store.crear_cuenta(datos)
 
     try:
-        identificador = await _en_hilo(_crear)
+        identificador, token = await _en_hilo(_crear)
     except StoreError as exc:
         return _error(exc)
     _auditar(request, "dashboard_add_account", str(datos.get("name", "")), {})
-    return JSONResponse({"ok": True, "id": identificador})
+    # El token se devuelve aquí y no se vuelve a mostrar: la API solo dice
+    # que la cuenta tiene credencial propia.
+    return JSONResponse({"ok": True, "id": identificador, "token": token})
 
 
 async def cambiar_cuenta(request: Request) -> JSONResponse:

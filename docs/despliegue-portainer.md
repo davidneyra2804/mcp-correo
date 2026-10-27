@@ -81,16 +81,38 @@ Las que no puedes dejar de definir:
 | `MCP_IMAGE` | no | Imagen ya publicada. Junto con `MCP_PULL_POLICY=always`. |
 | `MCP_PULL_POLICY` | no | Vacía: `build` en `mcp` y `never` en `audit-rotate`. `always` solo si `MCP_IMAGE` apunta a un registro. |
 | `MCP_PUBLISH_BIND` / `MCP_PUBLISH_PORT` | no | Por defecto `127.0.0.1` y `8765`. |
+| `MCP_DASHBOARD_DB` | no | Ruta del fichero SQLite. **Su presencia activa el panel** y convierte la base de datos en la fuente de las cuentas. |
+| `MCP_DASHBOARD_KEY` | con el panel | Clave con la que se cifran las contraseñas. No está en la base: guárdala. |
+| `MCP_DASHBOARD_TOKEN` | con el panel | Credencial de acceso al panel. Distinta de `MCP_BEARER_TOKEN`. |
 | `MCP_AUDIT_MAX_BYTES` / `MCP_AUDIT_KEEP` / `MCP_AUDIT_ROTATE_SECONDS` | no | Rotación: 10 MiB, 12 copias, cada hora. |
 | `CLOUDFLARE_TUNNEL_TOKEN` | solo con el túnel | Token del túnel, del panel de Cloudflare. |
 
 Si añades otra cuenta, sus variables `MCP_ACCOUNT_<CAMPO>_<N>` tienen que estar
 también en las variables del stack. Una línea vacía no sirve: el proceso no
-arranca si falta el secreto de una cuenta declarada.
+arranca si falta el secreto de una cuenta declarado.
 
 `MCP_BEARER_TOKEN` y las contraseñas van solo en Environment variables de
 Portainer. No se copian al repositorio, no van dentro de la imagen y no se
 escriben en ningún fichero del servidor.
+
+### El panel, si lo activas
+
+Con `MCP_DASHBOARD_DB` (por ejemplo `/var/lib/mcp-correo/cuentas.db`) el
+panel arranca en el puerto 8766 y las cuentas pasan a estar en la base de
+datos. En el stack hace falta además `MCP_DASHBOARD_KEY` y
+`MCP_DASHBOARD_TOKEN`.
+
+La base tiene que caer en el volumen `data`, que el compose ya declara y
+monta en `/var/lib/mcp-correo`. El contenedor es de solo lectura: sin ese
+volumen, la base no se puede escribir.
+
+Las cuentas que ya tengas en `MCP_ACCOUNT_<CAMPO>_<N>` se importan **una
+vez**, y solo si la base está vacía. A partir de ahí, la base manda: para
+cambiar una cuenta, desde el panel.
+
+El puerto del panel se publica en loopback, como el del MCP. Publicarlo
+en abierto es una decisión que hay que querer: el panel ve las
+contraseñas. Ver [El panel de control](dashboard.md).
 
 ### Cómo llegan las variables al contenedor
 
@@ -208,6 +230,12 @@ en loopback.
   `MCP_AUDIT_MAX_BYTES` y borra lo que exceda `MCP_AUDIT_KEEP`. El servidor
   abre el fichero en cada línea, así que el renombrado no pierde la línea
   siguiente.
+
+- Base de datos del panel: volumen nombrado `data`, montado en
+  `/var/lib/mcp-correo`. Solo existe si activas el panel. **Copia de
+  seguridad**: el fichero contiene las cuentas y las contraseñas
+  cifradas, pero sin `MCP_DASHBOARD_KEY` no sirven de nada. Copia las dos
+  cosas, y la clave aparte.
 
 - Actualizar: en el stack, **Pull and redeploy**. Los secretos de Environment
   variables y el volumen `audit` se conservan. Para cambiar el token o una

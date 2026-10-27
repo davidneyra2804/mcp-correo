@@ -285,6 +285,7 @@ function editarCuenta(cuenta, dominioId) {
         return false;
       }
       avisar("Cuenta guardada.", "ok");
+      if (respuesta.token) mostrarToken(respuesta.token);
       await cargar();
       return true;
     },

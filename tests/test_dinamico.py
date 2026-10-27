@@ -75,7 +75,8 @@ def _cuenta(
         "imap_host": "imap.corp.example.com",
     }
     cuerpo.update(extra)
-    return store.crear_cuenta(cuerpo)
+    identificador, _token = store.crear_cuenta(cuerpo)
+    return identificador
 
 
 def _llamar(http: TestClient, path: str, token: str = TOKEN) -> dict:

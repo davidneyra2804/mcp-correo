@@ -421,6 +421,29 @@ def test_el_ejemplo_de_env_documenta_todas_las_variables() -> None:
     assert "MCP_ACCOUNT_USERNAME_1=" in text
 
 
+def test_el_ejemplo_de_env_documenta_las_variables_del_panel() -> None:
+    """Las variables del panel también se documentan, y se leen."""
+    from config import DASHBOARD_ENV
+
+    text = (ROOT / ".env.example").read_text(encoding="utf-8")
+    missing = sorted(name for name in DASHBOARD_ENV if name not in text)
+    assert not missing, f"El ejemplo no documenta: {', '.join(missing)}"
+    fuente = (ROOT / "config.py").read_text(encoding="utf-8")
+    huerfanas = sorted(name for name in DASHBOARD_ENV if f'"{name}"' not in fuente)
+    assert not huerfanas, f"Variables del panel que el código no lee: {huerfanas}"
+
+
+def test_el_compose_declara_las_variables_del_panel() -> None:
+    """El compose pasa las variables del panel al contenedor."""
+    from config import DASHBOARD_ENV
+
+    text = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+    missing = sorted(name for name in DASHBOARD_ENV if f"{name}:" not in text)
+    assert not missing, f"El compose no declara: {', '.join(missing)}"
+    # Y el panel necesita un volumen donde escribir la base.
+    assert "/var/lib/mcp-correo" in text
+
+
 def test_el_overlay_del_tunel_no_lleva_el_token_dentro() -> None:
     text = (ROOT / "docker-compose.tunnel.yml").read_text(encoding="utf-8")
     assert "cloudflare/cloudflared" in text

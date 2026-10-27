@@ -55,6 +55,27 @@ entorno gana y el arranque avisa por log.
 | `MCP_CONFIG` | ruta | — | Dónde está el `accounts.toml`. Si se define y el fichero no existe, se avisa y se sigue con la configuración por entorno. |
 | `MCP_ALLOW_NONLOCAL_BIND` | `1` | sin definir | Permite escuchar fuera de loopback. **El compose lo pone**: en el contenedor hace falta, porque el proxy o el túnel llegan por la red de Docker. |
 
+### Variables del panel
+
+El panel de control es una segunda superficie HTTP, en su propio puerto.
+Nada de esto cambia el comportamiento del MCP si no se usa: **el panel se
+activa con `MCP_DASHBOARD_DB`**, y sin esa variable no hay panel, ni base
+de datos, ni nada que configurar.
+
+| Variable | Default | Qué hace |
+| --- | --- | --- |
+| `MCP_DASHBOARD_DB` | — | Ruta del fichero SQLite. **Su presencia activa el panel.** |
+| `MCP_DASHBOARD_KEY` | — | Clave con la que se cifran las contraseñas de las cuentas. **Obligatoria con el panel.** No está en la base de datos. |
+| `MCP_DASHBOARD_TOKEN` | — | Credencial de acceso al panel. **Obligatoria con el panel.** Distinta de `MCP_BEARER_TOKEN`. |
+| `MCP_DASHBOARD_BIND_HOST` | `127.0.0.1` | Dirección de escucha del panel. Fuera de loopback exige `MCP_ALLOW_NONLOCAL_BIND=1`. |
+| `MCP_DASHBOARD_BIND_PORT` | `8766` | Puerto de escucha del panel. |
+
+Si el panel está activo y falta `MCP_DASHBOARD_KEY` o
+`MCP_DASHBOARD_TOKEN`, el proceso **no arranca**, y el mensaje dice cuál
+falta. No se arranca a medias.
+
+Ver [El panel de control](dashboard.md).
+
 ### Variables de solo Docker
 
 No las lee el proceso, pero el compose las usa:
@@ -155,22 +176,84 @@ Y `list_accounts` dice, por cuenta, lo que puede hacer (`can_send`, `can_mark`,
 
 ## Rutas
 
-El servidor expone dos formas de entrar:
+El servidor expone tres formas de entrar:
 
-| Ruta | Credencial | Qué ve |
+| Ruta | Ámbito | Qué ve |
 | --- | --- | --- |
-| `/mcp` | `MCP_BEARER_TOKEN` | Todas las cuentas. |
-| `/mcp/<cuenta>` | `MCP_BEARER_TOKEN` o el `BEARER` de esa cuenta | Solo esa cuenta. |
+| `/mcp` | El dominio por defecto, si hay uno | La guía: el catálogo de rutas. Y las cuentas del dominio por defecto, si lo hay. |
+| `/mcp/<dominio>` | Las cuentas de ese dominio | Varias cuentas a la vez. |
+| `/mcp/<cuenta>` | Esa cuenta | Una cuenta. La unidad real de seguridad. |
+
+**`/mcp` no expone todas las cuentas.** Es la puerta de entrada: dice qué
+hay y por dónde se entra. Para abrir un buzón hay que nombrar su cuenta
+o su dominio.
+
+El catálogo de rutas lo da `list_accounts`, que devuelve el ámbito de la
+ruta y, con él, los dominios y las cuentas que hay:
+
+```json
+{
+  "route": "/mcp",
+  "scope": ["ada@corp.example.com"],
+  "default_domain": "corp.example.com",
+  "domains": [
+    {"domain": "corp.example.com", "route": "/mcp/corp.example.com",
+     "default": true, "accounts": ["ada@corp.example.com"]}
+  ],
+  "accounts": [
+    {"account": "ada@corp.example.com", "route": "/mcp/ada@corp.example.com",
+     "domain": "corp.example.com", "own_credential": true,
+     "can_send": true, "can_mark": true, "can_delete": false, "can_draft": true}
+  ]
+}
+```
+
+`scope` son las cuentas que la ruta abre. `accounts` lleva el detalle
+solo de esas. El catálogo enseña nombres y rutas, nunca credenciales.
 
 `<cuenta>` identifica la cuenta de tres maneras, indistintas:
 
-- el correo (`ada@example.com`),
-- el `NAME` que le hayas puesto (`principal`),
-- su número (`1`).
+- el nombre que le hayas puesto (`principal`),
+- su correo (`ada@corp.example.com`),
+- su número.
 
-Con el bearer global, la ruta acota: `/mcp` ve todas y `/mcp/ada@example.com`
-ve una. Con el bearer de una cuenta, la ruta tiene que ser la suya: en
-cualquier otra responde **403**. En `/mcp` un bearer de cuenta no vale.
+El nombre de un dominio se resuelve en `/mcp/<dominio>`. Si una cuenta y
+un dominio se llamaran igual, gana la cuenta, y el panel no deja que
+pase.
+
+### Credenciales
+
+`MCP_BEARER_TOKEN` es **el bearer general**: la credencial por defecto. Por
+encima solo están el dominio y la cuenta, que la sobreescriben en su
+ámbito.
+
+| Credencial | Dónde vive | Abre | En qué rutas vale |
+| --- | --- | --- | --- |
+| General | `MCP_BEARER_TOKEN` | Todas las cuentas | `/mcp`, `/mcp/<dominio>`, `/mcp/<cuenta>` |
+| De dominio | `domains.bearer` | Las cuentas de ese dominio | `/mcp/<dominio>`, `/mcp/<cuenta>` de ese dominio |
+| De cuenta | `accounts.bearer` | Esa cuenta | `/mcp/<cuenta>` |
+
+La regla, en una frase: **la credencial tiene que abrir la ruta**. La
+general las abre todas. La de un dominio abre la ruta de su dominio y las
+de sus cuentas. La de una cuenta abre solo la ruta de esa cuenta.
+
+Cuando se presenta una credencial más específica, manda esa: si
+presentas la de una cuenta, esa es la que cuenta, aunque la general
+también valiera.
+
+| Situación | Respuesta |
+| --- | --- |
+| Sin cabecera `Authorization` | 401 |
+| Bearer que no es ninguno de los conocidos | 401 |
+| Bearer de cuenta o de dominio en `/mcp` | 403 |
+| Bearer de cuenta en `/mcp/<cuenta>` de otra | 403 |
+| Bearer de cuenta en `/mcp/<dominio>` | 403 |
+| Bearer de dominio en `/mcp/<dominio>` de otro | 403 |
+| Bearer de dominio en `/mcp/<cuenta>` de otro dominio | 403 |
+| Bearer general en `/mcp/<cuenta>` que no existe | 404 |
+| Bearer general en `/mcp/<dominio>` que no existe | 404 |
+| `/health` | 200, sin token |
+| Ruta que no es `/mcp`, `/mcp/<algo>` ni `/health` | 404 |
 
 El aislamiento no es cosmético. Una tool que pida una cuenta fuera del ámbito
 falla con un error, y `list_accounts` solo devuelve las cuentas de la ruta.
@@ -203,16 +286,32 @@ El `BEARER` de una cuenta:
 - es opcional: sin él, la cuenta solo se alcanza con el bearer global,
 - necesita al menos 16 caracteres,
 - no puede ser igual al bearer global (si lo fuera, la ruta no aislaría nada),
-- no puede repetirse entre cuentas.
+- no puede repetirse entre cuentas, ni coincidir con el de un dominio.
 
-| Situación | Respuesta |
-| --- | --- |
-| Sin cabecera `Authorization` | 401 |
-| Bearer que no es ninguno de los conocidos | 401 |
-| Bearer de una cuenta en `/mcp` o en la ruta de otra | 403 |
-| Bearer global en `/mcp/<cuenta>` de otra | 404 |
-| `/health` | 200, sin token |
-| Ruta que no es `/mcp`, `/mcp/<algo>` ni `/health` | 404 |
+### Los dominios
+
+Los dominios solo existen con el panel activo: son filas de la base de
+datos. Un dominio agrupa cuentas y les da:
+
+- un **servidor IMAP y SMTP por defecto**, que las cuentas heredan si no
+  tienen el suyo,
+- unos **permisos** (`allow_send`, `allow_mark`, `allow_delete`,
+  `allow_drafts`), que las cuentas heredan si no tienen los suyos,
+- una **credencial propia**, opcional, que abre la ruta del dominio.
+
+La cadena de permisos es la de siempre con un nivel más:
+
+| | `MCP_ENABLE_SEND` (global) | `allow_send` del dominio | `allow_send` de la cuenta | Resultado |
+| --- | --- | --- | --- | --- |
+| 1 | `false` | lo que sea | lo que sea | **Apagada** |
+| 2 | `true` | sin definir | sin definir | **Encendida** (hereda) |
+| 3 | `true` | sin definir | `false` | **Apagada** para esa cuenta |
+| 4 | `true` | `false` | lo que sea | **Apagada** en el dominio |
+| 5 | `true` | `false` | `true` | **Apagada**: manda el dominio |
+
+El **dominio por defecto** es el que abre la ruta `/mcp`. Solo puede
+haber uno, y la base de datos lo garantiza. Si no hay ninguno, `/mcp` es
+solo la guía.
 
 
 ## Cómo se interpretan los valores
@@ -253,8 +352,13 @@ El proceso no avisa y sigue: para. Cada mensaje dice qué corregir.
 | `Dos cuentas comparten el nombre X` | Dos cuentas con el mismo correo. Distingue una con `MCP_ACCOUNT_NAME_<N>`. |
 | `MCP_ACCOUNTS no lista la cuenta 2, que sí tiene variables` | La comprobación cruzada no cuadra. |
 | `MCP_ENABLE_SEND debe ser true, false, 1 o 0` | Un interruptor mal escrito. |
-| `No hay cuentas` | Ni variables de cuenta ni `accounts.toml`. |
+| `No hay cuentas` | Ni variables de cuenta ni `accounts.toml`. Con el panel activo no pasa: las cuentas pueden llegar después. |
 | `bind_host '0.0.0.0' no es loopback` | Falta `MCP_ALLOW_NONLOCAL_BIND=1`. En el contenedor lo pone el compose. |
+| `Con MCP_DASHBOARD_DB hace falta MCP_DASHBOARD_KEY` | El panel está activo y falta la clave con la que se cifran las contraseñas. |
+| `Con MCP_DASHBOARD_DB hace falta MCP_DASHBOARD_TOKEN` | El panel está activo y falta su credencial de acceso. |
+| `MCP_DASHBOARD_TOKEN es el mismo que MCP_BEARER_TOKEN` | Son dos superficies distintas: el panel no puede abrirse con el token del MCP. |
+| `La clave no corresponde a esta base de datos` | `MCP_DASHBOARD_KEY` es de otra instalación, o la base es de otra. Sin la clave correcta no se descifran las contraseñas. |
+| `La base de datos es de la versión N y este código solo entiende hasta la M` | La base es más nueva que el servidor. Actualiza el servidor. |
 
 ## Cómo ver qué se ha cargado
 
@@ -263,7 +367,7 @@ En el arranque, el proceso dice de dónde salió la configuración:
 ```
 INFO     Escritura activa: ninguna
 INFO     Servidor listo: 2 cuentas, escucha 0.0.0.0:8765, escritura=apagada
-INFO     mcp-correo 1.1.0 | Configuración: variables de entorno. Cuentas: archivo, principal
+INFO     mcp-correo 2.0.0 | Configuración: variables de entorno. Cuentas: archivo, principal
 ```
 
 La línea de capacidades (`Escritura activa: ...`) dice qué tools de escritura

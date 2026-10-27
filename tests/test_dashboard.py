@@ -158,6 +158,28 @@ def test_se_marca_el_dominio_por_defecto(cliente: TestClient) -> None:
     assert listado["domains"][0]["default"] is True
 
 
+def test_al_crear_una_cuenta_se_devuelve_su_token_una_vez(cliente: TestClient) -> None:
+    _entrar(cliente)
+    dominio = _dominio(cliente)
+    respuesta = cliente.post(
+        "/api/accounts",
+        json={
+            "domain_id": dominio["id"],
+            "name": "ada@corp.example.com",
+            "username": "ada@corp.example.com",
+            "password": "clave-ficticia",
+        },
+        headers=CSRF,
+    )
+    assert respuesta.status_code == 200, respuesta.text
+    token = respuesta.json()["token"]
+    assert len(token) >= 16
+    # Y no se vuelve a mostrar.
+    listado = cliente.get("/api/domains").text
+    assert token not in listado
+    assert '"has_credential":true' in listado.replace(" ", "")
+
+
 def test_se_genera_un_token_de_cuenta(cliente: TestClient) -> None:
     _entrar(cliente)
     dominio = _dominio(cliente)

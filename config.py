@@ -41,6 +41,16 @@ ACCOUNTS_LIST = "MCP_ACCOUNTS"
 #: Prefijo de las variables de una cuenta: MCP_ACCOUNT_<CAMPO>_<N>
 ACCOUNT_PREFIX = "MCP_ACCOUNT_"
 
+#: Las variables del panel. MCP_DASHBOARD_DB es la que lo activa: sin ella
+#: no hay panel, ni base de datos, ni nada que configurar.
+DASHBOARD_ENV: tuple[str, ...] = (
+    "MCP_DASHBOARD_DB",
+    "MCP_DASHBOARD_KEY",
+    "MCP_DASHBOARD_TOKEN",
+    "MCP_DASHBOARD_BIND_HOST",
+    "MCP_DASHBOARD_BIND_PORT",
+)
+
 #: Dónde se busca el accounts.toml, por orden. El entrypoint del contenedor
 #: usa las dos primeras; la última es la del despliegue con systemd.
 _TOML_PATHS = ("accounts.toml", "/etc/mcp-correo/accounts.toml", "/config/accounts.toml")

@@ -204,7 +204,10 @@ class Store:
                 _texto(datos.get("label")), "La etiqueta del dominio", 100
             )
         if "bearer" in datos:
-            campos["bearer"] = _texto(datos.get("bearer")) or None
+            token = _texto(datos.get("bearer"))
+            if token:
+                self._comprobar_token(token, excluir_dominio=identificador)
+            campos["bearer"] = token or None
         for permiso in ("allow_send", "allow_mark", "allow_delete", "allow_drafts"):
             if permiso in datos:
                 campos[permiso] = _booleano(datos.get(permiso), permiso)
@@ -245,7 +248,13 @@ class Store:
 
     # --- cuentas -------------------------------------------------------------
 
-    def crear_cuenta(self, datos: Mapping[str, object]) -> int:
+    def crear_cuenta(self, datos: Mapping[str, object]) -> tuple[int, str]:
+        """Crea una cuenta. Devuelve su identificador y su token.
+
+        El token se genera si no viene dado: el modelo de seguridad es a
+        nivel de cuenta, y una cuenta sin credencial propia solo se abre
+        con el bearer general.
+        """
         nombre = self._nombre_cuenta(datos.get("name"))
         usuario = _sin_saltos(_texto(datos.get("username")), "El usuario de la cuenta", 200)
         if not usuario:
@@ -263,6 +272,8 @@ class Store:
         if self.cuenta_por_usuario(usuario) is not None:
             raise StoreError(f"Ya existe una cuenta con el usuario {usuario}.")
         self._comprobar_nombre_del_dominio(nombre)
+        token = _texto(datos.get("bearer")) or nuevo_token()
+        self._comprobar_token(token)
         with self.db.write() as con:
             cur = con.execute(
                 "INSERT INTO accounts(domain_id, name, label, sender, username, password, "
@@ -300,12 +311,12 @@ class Store:
                     _booleano(datos.get("allow_mark"), "allow_mark"),
                     _booleano(datos.get("allow_delete"), "allow_delete"),
                     _booleano(datos.get("allow_drafts"), "allow_drafts"),
-                    _texto(datos.get("bearer")) or None,
+                    token,
                     1,
                     ahora(),
                 ),
             )
-            return int(cur.lastrowid or 0)
+            return int(cur.lastrowid or 0), token
 
     def cambiar_cuenta(self, identificador: int, datos: Mapping[str, object]) -> None:
         registro = self.cuenta(identificador)
@@ -341,7 +352,10 @@ class Store:
                 _texto(datos.get("sender")), "El nombre visible del remitente", 100
             )
         if "bearer" in datos:
-            campos["bearer"] = _texto(datos.get("bearer")) or None
+            token = _texto(datos.get("bearer"))
+            if token:
+                self._comprobar_token(token, excluir_cuenta=identificador)
+            campos["bearer"] = token or None
         if "enabled" in datos:
             campos["enabled"] = 1 if _booleano(datos.get("enabled"), "enabled") else 0
         for permiso in ("allow_send", "allow_mark", "allow_delete", "allow_drafts"):
@@ -472,6 +486,30 @@ class Store:
                 f"Ya existe un dominio llamado {nombre}. El nombre de una cuenta "
                 "no puede ser el de un dominio: las dos van en la misma ruta."
             )
+
+    def _comprobar_token(
+        self,
+        token: str,
+        excluir_cuenta: int | None = None,
+        excluir_dominio: int | None = None,
+    ) -> None:
+        """Un token no puede repetirse en ningún nivel.
+
+        Un token repetido hace que la ruta no aísle nada: la credencial
+        de una cuenta abriría la de otra.
+        """
+        if not token:
+            return
+        for cuenta in self.cuentas():
+            if cuenta.id == excluir_cuenta:
+                continue
+            if cuenta.bearer and cuenta.bearer == token:
+                raise StoreError(f"Ese token ya lo usa la cuenta {cuenta.name}.")
+        for dominio in self.dominios():
+            if dominio.id == excluir_dominio:
+                continue
+            if dominio.bearer and dominio.bearer == token:
+                raise StoreError(f"Ese token ya lo usa el dominio {dominio.name}.")
 
     def _actualizar(
         self, con: sqlite3.Connection, tabla: str, identificador: int, campos: Mapping[str, object]

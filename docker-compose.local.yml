@@ -19,3 +19,6 @@ services:
       MCP_ACCOUNT_INBOX_HOST_2: mail.archivo.example.com
       MCP_ACCOUNT_SMTP_HOST_2: mail.archivo.example.com
       MCP_ACCOUNT_PASSWORD_2: contraseña-ficticia-archivo
+      # El panel no se activa aquí: en local, las cuentas vienen del
+      # entorno. Para probarlo, pon MCP_DASHBOARD_DB y las otras dos
+      # variables en tu .env: el compose base las pasa tal cual.

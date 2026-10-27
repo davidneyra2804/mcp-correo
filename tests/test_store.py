@@ -49,7 +49,8 @@ def _cuenta(store: Store, dominio: int, **extra: object) -> int:
         "imap_host": "imap.corp.example.com",
     }
     datos.update(extra)
-    return store.crear_cuenta(datos)
+    identificador, _token = store.crear_cuenta(datos)
+    return identificador
 
 
 # --- el cifrado ---------------------------------------------------------------
@@ -204,6 +205,41 @@ def test_rotar_el_token_invalida_el_anterior(store: Store) -> None:
     token = store.rotar_token("cuenta", cuenta)
     assert token != antes
     assert store.cuenta(cuenta).bearer == token
+
+
+def test_crear_una_cuenta_genera_su_token(store: Store) -> None:
+    """El modelo es a nivel de cuenta: la cuenta nace con credencial."""
+    dominio = _dominio(store)
+    _identificador, token = store.crear_cuenta(
+        {
+            "domain_id": dominio,
+            "name": "ada@corp.example.com",
+            "username": "ada@corp.example.com",
+            "password": "clave-ficticia",
+        }
+    )
+    assert len(token) >= 16
+
+
+def test_un_token_repetido_se_rechaza(store: Store) -> None:
+    """Un token repetido haría que una credencial abriera dos cuentas."""
+    dominio = _dominio(store)
+    _cuenta(store, dominio, bearer="token-repetido-0123456789abcdef")
+    with pytest.raises(StoreError, match="ya lo usa la cuenta"):
+        _cuenta(
+            store,
+            dominio,
+            name="otro@corp.example.com",
+            username="otro@corp.example.com",
+            bearer="token-repetido-0123456789abcdef",
+        )
+
+
+def test_un_token_de_dominio_no_puede_ser_el_de_una_cuenta(store: Store) -> None:
+    dominio = _dominio(store)
+    store.cambiar_dominio(dominio, {"bearer": "token-del-dominio-0123456789abcdef"})
+    with pytest.raises(StoreError, match="ya lo usa el dominio"):
+        _cuenta(store, dominio, bearer="token-del-dominio-0123456789abcdef")
 
 
 # --- la cadena de permisos -----------------------------------------------------

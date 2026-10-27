@@ -148,9 +148,9 @@ def main() -> int:
         print(json.dumps(guia, indent=2, ensure_ascii=False)[:900])
 
         # 4. El token de la cuenta, por su panel.
-        token = pedir(
-            f"{PANEL}/api/accounts/{cuenta['id']}/token", cookie=cookie, metodo="POST"
-        )["token"]
+        token = pedir(f"{PANEL}/api/accounts/{cuenta['id']}/token", cookie=cookie, metodo="POST")[
+            "token"
+        ]
         peticion = urllib.request.Request(
             f"{MCP}/mcp/nueva@corp.example.com",
             data=json.dumps(cuerpo).encode(),

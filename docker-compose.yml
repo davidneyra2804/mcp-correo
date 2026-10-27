@@ -99,10 +99,26 @@ services:
       MCP_SMTP_SECURITY: ${MCP_SMTP_SECURITY:-ssl}
       MCP_ALLOWED_RECIPIENT_DOMAINS: ${MCP_ALLOWED_RECIPIENT_DOMAINS:-}
       MCP_ALLOWED_ATTACHMENT_TYPES: ${MCP_ALLOWED_ATTACHMENT_TYPES:-}
+      # Panel de control. Opt-in: si MCP_DASHBOARD_DB está vacío, no hay
+      # panel, no hay base de datos y el arranque es el de siempre.
+      #
+      # MCP_DASHBOARD_KEY cifra las contraseñas de las cuentas. Si se pierde,
+      # las contraseñas de la base no se pueden descifrar: guardala.
+      MCP_DASHBOARD_DB: ${MCP_DASHBOARD_DB:-}
+      MCP_DASHBOARD_KEY: ${MCP_DASHBOARD_KEY:-}
+      MCP_DASHBOARD_TOKEN: ${MCP_DASHBOARD_TOKEN:-}
+      MCP_DASHBOARD_BIND_HOST: 0.0.0.0
+      MCP_DASHBOARD_BIND_PORT: "8766"
     ports:
       - "${MCP_PUBLISH_BIND:-127.0.0.1}:${MCP_PUBLISH_PORT:-8765}:8765"
+      # El panel, solo en loopback. No lo publiques tal cual: el puerto del
+      # host sale en 127.0.0.1 y quien lo abra tiene las contraseñas.
+      - "${MCP_DASHBOARD_PUBLISH_BIND:-127.0.0.1}:${MCP_DASHBOARD_PUBLISH_PORT:-8766}:8766"
     volumes:
       - audit:/var/log/mcp-correo
+      # La base de datos de las cuentas. El contenedor es de solo lectura:
+      # sin este volumen, la base no se puede escribir.
+      - data:/var/lib/mcp-correo
     # Etiquetas Traefik, opcionales. Sustituye el dominio y la red del proxy.
     # labels:
     #   - "traefik.enable=true"
@@ -167,6 +183,7 @@ services:
 
 volumes:
   audit:
+  data:
 
 # Red externa de un Traefik ya creado. Descomenta junto con las etiquetas.
 # networks:
