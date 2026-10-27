@@ -8,25 +8,26 @@
 </head>
 <body>
 <header>
-  <h1>Panel de mcp-correo</h1>
+  <div><span class="marca">✉</span><strong>Correo</strong><span class="submarca"> / Panel de administración</span></div>
   <form method="post" action="/logout" class="salir">
     <button type="submit">Salir</button>
   </form>
 </header>
 
 <main>
+  <section class="bienvenida"><div><span class="eyebrow">TU ESPACIO DE CORREO</span><h1>Todo tu correo, en un solo lugar.</h1><p>Organiza tus cuentas y decide cómo se conecta tu asistente.</p></div><div class="ilustracion" aria-hidden="true">✉</div></section>
   <section class="acciones">
-    <button id="nuevo-dominio">Nuevo dominio</button>
-    <button id="nueva-cuenta">Nueva cuenta</button>
-    <span id="destacado" class="pista"></span>
+    <div><h2>Tus dominios y cuentas</h2><p class="pista">Cada dominio agrupa las cuentas de una organización.</p></div>
+    <div class="fila"><button id="nuevo-dominio" class="secundario">+ Añadir dominio</button><button id="nueva-cuenta" class="primario">+ Añadir cuenta</button></div>
   </section>
+  <p id="destacado" class="estado-general"></p>
 
   <p id="aviso" class="aviso" hidden></p>
 
   <div id="dominios"></div>
 
   <p id="vacio" class="pista" hidden>
-    No hay dominios todavía. Crea uno y dentro las cuentas.
+    <strong>Empecemos por tu primer dominio</strong><br>Un dominio es la parte que aparece después de @ en una dirección de correo. Añádelo para organizar tus cuentas.
   </p>
 </main>
 
@@ -37,8 +38,8 @@
     <p id="resultado" class="resultado"></p>
     <menu>
       <button value="cancelar" type="submit" class="secundario">Cancelar</button>
-      <button id="probar" type="button" class="secundario">Probar</button>
-      <button value="guardar" type="submit">Guardar</button>
+      <button id="probar" type="button" class="secundario">Comprobar conexión</button>
+      <button value="guardar" type="submit" class="primario">Guardar cambios</button>
     </menu>
   </form>
 </dialog>

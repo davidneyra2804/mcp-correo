@@ -130,3 +130,38 @@ dialog::backdrop { background: #0006; }
 
 menu { display: flex; gap: .5rem; justify-content: flex-end; padding: 0; margin: 1rem 0 0; }
 code { font-family: ui-monospace, monospace; }
+
+/* Panel de administración */
+:root { color-scheme: light; --borde: #e4e9f0; --fondo: #f5f7fb; --texto: #18243a; --error: #b42318; --ok: #137557; }
+body { font: 15px/1.5 system-ui, sans-serif; }
+body > header { background: #fff; padding: 1rem clamp(1rem, 5vw, 4rem); }
+.marca { display: inline-grid; place-items: center; width: 38px; height: 38px; margin-right: .65rem; color: #fff; background: #5367dc; border-radius: 12px; }
+.submarca { color: #8290a4; font-size: .85rem; }
+main { max-width: 1160px; padding: 2rem 1.5rem; }
+.bienvenida { display: flex; justify-content: space-between; align-items: center; background: #e9edff; border-radius: 20px; padding: 2.3rem; margin-bottom: 2rem; }
+.bienvenida h1 { font-size: clamp(1.6rem, 3vw, 2.3rem); margin: .4rem 0; letter-spacing: -.04em; }
+.bienvenida p { color: #58677e; margin: 0; }
+.eyebrow { color: #5367dc; font-size: .72rem; font-weight: 800; letter-spacing: .12em; }
+.ilustracion { font-size: 4rem; color: #697bea; padding: 0 2rem; }
+.acciones { justify-content: space-between; gap: 1rem; }
+.acciones h2 { font-size: 1.3rem; margin: 0; }
+.acciones p { margin: .25rem 0; }
+button { background: #fff; border: 1px solid #dce3ee; border-radius: 9px; padding: .55rem .8rem; font-weight: 600; color: #35445c; }
+button:hover { background: #f1f4fb; border-color: #a9b7d1; }
+button.primario { background: #5267dc; color: white; border-color: #5267dc; }
+button.primario:hover { background: #4053c2; }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid #aab8ff; outline-offset: 2px; }
+.estado-general { padding: .8rem 1rem; border-radius: 10px; background: #edf2ff; color: #465680; font-size: .9rem; }
+.dominio { background: #fff; border-radius: 16px; padding: 1.4rem; box-shadow: 0 5px 20px #25365b08; }
+.dominio > header { align-items: center; gap: 1rem; padding-bottom: 1rem; flex-wrap: wrap; }
+.dominio h3 { font-size: 1.08rem; }
+.cuenta { padding: 1rem 0 .2rem; align-items: center; }
+.cuenta .ruta { padding: .2rem .5rem; background: #f3f5fa; border-radius: 5px; font-size: .82rem; overflow-wrap: anywhere; }
+.cuenta .fila { margin-left: auto; }
+#vacio { text-align: center; padding: 3rem; background: #fff; border: 1px dashed #cbd5e3; border-radius: 16px; }
+#vacio strong { color: #263551; font-size: 1.1rem; }
+dialog { width: min(560px, 94vw); max-height: 90vh; overflow: auto; box-shadow: 0 24px 80px #15204438; padding: 1.8rem; }
+dialog h2 { font-size: 1.3rem; }
+.campo input, .campo select { background: #fff; min-height: 42px; }
+.aviso { overflow-wrap: anywhere; background: #fff; }
+@media (max-width: 600px) { .ilustracion, .submarca { display: none; } .bienvenida { padding: 1.5rem; } .acciones { align-items: stretch; } .cuenta .fila { margin-left: 0; } menu { flex-wrap: wrap; } }
