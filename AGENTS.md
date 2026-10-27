@@ -36,6 +36,15 @@ MCP_ACCOUNT_PASSWORD_1=la-clave
 Para añadir una cuenta: copias el bloque y cambias el número. No hay listas
 que mantener, ni variables que enumerar en el compose.
 
+**Con el panel activo, las cuentas no van por el entorno.** Viven en la base
+de datos y las gestiona el panel. Las del entorno se importan **una sola
+vez**, y solo si la base está vacía. A partir de ahí la base manda, y las
+variables de cuenta ya no se leen.
+
+Eso no cambia la regla: el panel es **opt-in** (`MCP_DASHBOARD_DB`), y sin
+esa variable el arranque es el de siempre. Un despliegue que ya funciona no
+puede romperse por añadir una función.
+
 ### 2. Fallar pronto, y con un mensaje que diga qué hacer
 
 Un valor mal escrito **aborta el arranque**. Nunca se ignora en silencio.
@@ -102,8 +111,16 @@ con valores ficticios.
 | `mail/confirm.py` | Token de un solo uso y cupo diario, en memoria |
 | `mail/compose.py` | Construcción del mensaje y escapado de cabeceras |
 | `mail/readonly.py` | Proxy que bloquea la escritura en las rutas de lectura |
+| `store/db.py` | La base de datos: esquema, migraciones, revisión |
+| `store/crypto.py` | El cifrado de las contraseñas, con la clave fuera de la base |
+| `store/store.py` | Las operaciones: dominios, cuentas y tokens |
+| `store/accounts.py` | La fuente de cuentas: estática o de la base, con recarga |
+| `dashboard/app.py` | El panel: rutas, sesión y anti-CSRF |
+| `dashboard/api.py` | Los handlers del panel, incluida la prueba de conexión |
+| `dashboard/ui.py` | La interfaz y el login |
 | `docker/entrypoint.py` | Prepara el `accounts.toml` si lo hay. Nada más |
 | `docker/rotate_audit.py` | Rota el JSONL de auditoría |
+| `docker/healthcheck.py` | La sonda: el MCP y, si está, el panel |
 
 ## El modelo de rutas y permisos
 
@@ -111,25 +128,30 @@ con valores ficticios.
 
 | Ruta | Credencial | Ámbito |
 | --- | --- | --- |
-| `/mcp` | `MCP_BEARER_TOKEN` | todas las cuentas |
-| `/mcp/<cuenta>` | el global, o el `MCP_ACCOUNT_BEARER_<N>` de esa cuenta | una cuenta |
+| `/mcp` | `MCP_BEARER_TOKEN` | la guía (el catálogo de rutas) y el dominio por defecto |
+| `/mcp/<dominio>` | el global, o el del dominio | las cuentas de ese dominio |
+| `/mcp/<cuenta>` | el global, el de la cuenta o el de su dominio | una cuenta |
 
-`<cuenta>` puede ser el correo, el `NAME` de la cuenta o su índice. El bearer
-de una cuenta **solo** vale en su ruta: en cualquier otra, 403.
+`<cuenta>` puede ser el correo, el `NAME` de la cuenta o su índice.
+`<dominio>` es el nombre del dominio. El bearer de una cuenta **solo**
+vale en su ruta: en cualquier otra, 403. Y la ruta general es solo de la
+credencial general: la de un dominio o la de una cuenta, ahí, responde 403.
 
 El aislamiento se aplica en **un solo punto**: `MailService._account()`. El
 ámbito viaja en un `ContextVar` (`scope.py`), porque las tools del SDK son
 síncronas y se ejecutan en un hilo del pool.
 
 **Permisos de escritura.** El global es el maestro y además el valor por
- defecto; el permiso por cuenta es un override opcional.
+ defecto. Con el panel hay un nivel más: el dominio. El más específico
+manda, y el que no dice nada hereda.
 
-| Global | Permiso de la cuenta | Resultado |
-| --- | --- | --- |
-| `false` | lo que sea | apagada |
-| `true` | sin definir | encendida (la cuenta lo hereda) |
-| `true` | `true` | encendida |
-| `true` | `false` | apagada para esa cuenta |
+| Global | Del dominio | De la cuenta | Resultado |
+| --- | --- | --- | --- |
+| `false` | lo que sea | lo que sea | apagada |
+| `true` | sin definir | sin definir | encendida (hereda) |
+| `true` | sin definir | `true` | encendida |
+| `true` | sin definir | `false` | apagada para esa cuenta |
+| `true` | `false` | lo que sea | apagada en el dominio |
 
 ## El flujo de trabajo
 
@@ -181,6 +203,23 @@ Cada una de estas costó una release rota.
 - **Un argumento obligatorio que la ruta ya determina.** `account` en las tools
   era obligatorio incluso en `/mcp/<cuenta>`, donde la ruta ya dice cuál es.
   El modelo tenía que adivinar la clave.
+- **Un snapshot que se queda viejo.** El panel añade una cuenta y `/mcp` no la
+  ve. El conjunto de cuentas no es un diccionario del arranque: es una
+  **fuente** que se recarga, y la recarga se comprueba en cada petición
+  (el contador de revisiones vive en la base). Si alguna vez se cachea sin
+  invalidar, el síntoma es "el panel no hace nada".
+- **Una credencial que cubre de más.** El aislamiento no mira los datos que
+  devuelve la ruta, mira **el tipo de ruta**: la credencial de una cuenta no
+  abre la ruta de un dominio, aunque ese dominio tenga una sola cuenta. Una
+  regla que mire "las cuentas que quedan dentro" deja pasar a la credencial
+  de una cuenta por la ruta de su dominio.
+- **La ruta general como atajo a todo.** `/mcp` exponiendo todas las cuentas
+  convierte al bearer general en un copymachine de buzones. Es la puerta de
+  entrada: la guía, y el dominio por defecto si hay uno.
+- **Dos fuentes de las cuentas a la vez.** Con el panel activo, la base de
+  datos manda y las variables de entorno se ignoran. Mezclarlas es la forma
+  segura de tener dos verdades, y de dos verdades sale una que nadie sabe
+  cuál es.
 
 ## Publicar
 
@@ -190,14 +229,15 @@ La versión vive en `version.py`. Para subir una:
 sed -i 's/__version__ = ".*"/__version__ = "1.2.0"/' version.py
 sed -i 's/^version = ".*"/version = "1.2.0"/' pyproject.toml
 sed -i 's/ARG MCP_VERSION=.*/ARG MCP_VERSION=1.2.0/' Dockerfile
-sed -i 's/mcp-correo 1\.1\.0 |/mcp-correo 1.2.0 |/' docs/configuracion.md README.md
-sed -i 's|mcp-correo:1\.1\.0|mcp-correo:1.2.0|' README.md
+sed -i 's/mcp-correo 2\.0\.0 |/mcp-correo 1.2.0 |/' docs/configuracion.md README.md
+sed -i 's|mcp-correo:2\.0\.0|mcp-correo:1.2.0|' README.md
 git commit -am "version 1.2.0"
 git tag v1.2.0 && git push origin v1.2.0
 ```
 
 Los `sed` de los dos últimos ficheros no son opcionales: hay un test que
-comprueba que la documentación no habla de una versión vieja.
+comprueba que la documentación no habla de una versión vieja. El patrón es
+la versión **actual**, así que hay que cambiarlo en cada subida.
 
 La etiqueta dispara `.github/workflows/release.yml`, que pasa los tests,
 publica la imagen en GHCR y crea el Release. **Si los tests fallan, la imagen
@@ -212,3 +252,8 @@ no se publica.** Así se detectó una fuga de correo real en el CHANGELOG: la
 - [ ] Ningún dato real en el árbol.
 - [ ] Si cambia el contrato de configuración, `.env.example`, el compose y
       `docs/configuracion.md` actualizados, con el CHANGELOG al día.
+- [ ] Si cambian las rutas, el `deploy/nginx-mcp.conf` las sigue: con
+      `location = /mcp` (coincidencia exacta) las rutas por cuenta y por
+      dominio dan 404.
+- [ ] Si el panel cambia, `docs/dashboard.md` y el README cuentan el flujo
+      nuevo.

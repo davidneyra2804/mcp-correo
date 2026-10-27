@@ -19,6 +19,11 @@
 # loopback y sirve para depurar con curl. Si prefieres que no exista,
 # quita el bloque ports: del servicio mcp en docker-compose.yml.
 #
+# El túnel solo lleva el MCP (http://mcp:8765). El panel (8766) no se
+# publica por aquí: su puerto sale en loopback y, si lo expusieras, el
+# panel —que ve las contraseñas de las cuentas— quedaría detrás del mismo
+# filtro de Access que el MCP.
+#
 # Cloudflare Access es opcional. Con un Service Token, el cliente MCP
 # envía CF-Access-Client-Id y CF-Access-Client-Secret además del Bearer.
 # Sin Access, el único secreto es el Bearer del MCP.

@@ -178,9 +178,11 @@ Y apúntalo a la ruta de esa cuenta:
 https://mcp.example.com/mcp/ada@corp.example.com
 ```
 
-En `/mcp` ve todas las cuentas; en `/mcp/ada@corp.example.com` solo esa. El
-bearer de una cuenta no vale en la ruta de otra ni en la de todas: responde
-403. Los detalles están en [configuracion.md](configuracion.md).
+En `/mcp` ve el catálogo de rutas (y las cuentas del dominio por defecto,
+si hay uno marcado); en `/mcp/ada@corp.example.com` solo esa cuenta. El
+bearer de una cuenta no vale en la ruta de otra, ni en la de un dominio,
+ni en la general: responde 403. Los detalles están en
+[configuracion.md](configuracion.md).
 
 ## 4. TLS
 

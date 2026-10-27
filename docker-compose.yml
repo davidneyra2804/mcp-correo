@@ -2,8 +2,8 @@
 # en el formulario del stack, en "Load variables from .env file", o en un
 # fichero .env junto al compose.
 #
-# Este es el stack base: el MCP y la rotación de la auditoría. No expone
-# nada por sí mismo; quien publica es un overlay.
+# Este es el stack base: el MCP, el panel de control (si se activa) y la
+# rotación de la auditoría.
 #
 #   docker-compose.tunnel.yml   Cloudflare Tunnel. No hace falta abrir
 #                                ningún puerto en el host.
@@ -19,6 +19,10 @@
 #
 # El contenedor escucha en 0.0.0.0:8765 porque el proxy o el túnel llegan
 # por la red de Docker. El puerto del host sale solo en 127.0.0.1.
+#
+# El panel, si MCP_DASHBOARD_DB está definido, escucha además en 0.0.0.0:8766
+# y su puerto sale también en 127.0.0.1. El panel ve las contraseñas de las
+# cuentas: no lo publiques fuera de loopback.
 #
 # No pongas secretos en este archivo: Portainer los rellena como ${VAR}.
 # El contrato completo de variables está en docs/configuracion.md.
@@ -72,6 +76,9 @@ services:
       # los indices de MCP_ACCOUNT_<CAMPO>_<N>, que llegan por env_file.
       # MCP_ACCOUNTS es opcional y solo sirve como comprobacion cruzada:
       # si se define, tiene que coincidir con las cuentas que existen.
+      #
+      # Con el panel activo, esto se importa una vez en la base de datos y
+      # a partir de ahí la base manda. Ver docs/dashboard.md.
       MCP_ACCOUNTS: ${MCP_ACCOUNTS:-}
       # Interruptores globales. Apagados por defecto.
       MCP_ENABLE_SEND: ${MCP_ENABLE_SEND:-false}
@@ -154,9 +161,10 @@ services:
       - mcp
     entrypoint: ["python", "/app/docker/rotate_audit.py"]
     command: ["--loop"]
-    # El HEALTHCHECK de la imagen espera un servidor HTTP en el 8765. Este
-    # servicio no sirve HTTP: es un bucle que vigila el fichero. Sin esto
-    # el contenedor quedaría "unhealthy" para siempre, conConnection refused.
+    # El HEALTHCHECK de la imagen espera un servidor HTTP en el 8765 (y en
+    # el 8766 si el panel está activo). Este servicio no sirve HTTP: es un
+    # bucle que vigila el fichero. Sin esto el contenedor quedaría
+    # "unhealthy" para siempre, con Connection refused.
     healthcheck:
       disable: true
     restart: unless-stopped
@@ -182,7 +190,10 @@ services:
           memory: 64M
 
 volumes:
+  # La auditoría: un JSONL por llamada.
   audit:
+  # La base de datos del panel: dominios y cuentas. Solo se usa si
+  # MCP_DASHBOARD_DB está definido.
   data:
 
 # Red externa de un Traefik ya creado. Descomenta junto con las etiquetas.

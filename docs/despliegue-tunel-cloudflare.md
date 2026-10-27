@@ -39,15 +39,23 @@ desplegarlo sin tocar ficheros.
 El Service URL es el nombre del servicio en la red de Compose, no
 `127.0.0.1`: dentro del contenedor `cloudflared`, el loopback es el suyo.
 
-El túnel publica un solo hostname. Las dos rutas del MCP cuelgan de él:
+El túnel publica un solo hostname. Las tres rutas del MCP cuelgan de él:
 
 ```
-https://mcp.example.com/mcp                   -> todas las cuentas
-https://mcp.example.com/mcp/ada@example.com   -> solo esa
+https://mcp.example.com/mcp                   -> la guía: el catálogo de rutas
+https://mcp.example.com/mcp/corp.example.com  -> las cuentas de un dominio
+https://mcp.example.com/mcp/ada@example.com   -> una cuenta
 ```
 
 No hace falta una ruta de tunnel por cada cuenta: el subpath lo decide el
 servidor, no Cloudflare.
+
+**El panel no va por el túnel.** Vive en el puerto 8766 del contenedor y
+su puerto sale en loopback. Publicarlo en el mismo hostname abriría el
+panel a todo el que pase el filtro de Access, y el panel ve las
+contraseñas de las cuentas. Si hace falta entrar al panel desde fuera,
+móntalo en otro hostname con su propia política de Access, o entra por
+túnel SSH.
 
 ## 3. Las variables
 
@@ -161,7 +169,7 @@ que es lo que necesita el Inspector abierto en el navegador.
 # El túnel está conectado
 docker compose logs cloudflared
 
-# El MCP responde por el túnel, con todas las cuentas
+# El MCP responde por el túnel
 curl -i https://mcp.example.com/mcp \
   -H "Authorization: Bearer $MCP_BEARER_TOKEN" \
   -H 'Content-Type: application/json' \
@@ -220,7 +228,8 @@ petición entra al servidor; la ruta decide qué buzones ve el cliente que
 entra. Se pueden usar las dos a la vez: Access con un Service Token para
 todo el servidor, y el `MCP_ACCOUNT_BEARER_<N>` para que cada agente solo
 vea su buzón. El Service Token no sustituye al bearer por cuenta: sin él, un
-cliente que pase el filtro de Access vería todas las cuentas de `/mcp`.
+cliente que pase el filtro de Access vería el catálogo de rutas entero, y
+con el bearer general, todas las cuentas.
 
 ## 7. Qué hacer en el edge
 

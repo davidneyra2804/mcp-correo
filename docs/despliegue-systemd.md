@@ -42,34 +42,22 @@ nginx no vaya a publicar ese puerto.
 
 `deploy/mcp-correo.service` corre como `mcpmail`, sin privilegios nuevos, con el sistema de archivos en solo lectura salvo `/var/log/mcp-correo`, un tope de 512 MiB y un solo worker. Ese `--workers 1` sujeta los tokens de confirmación y el cupo diario, que no se comparten entre procesos.
 
-`deploy/nginx-mcp.conf` ofrece TLS 1.2+, limita a 60 peticiones por minuto por IP y solo hace proxy de `/mcp` hacia `127.0.0.1:8765`. El `server_name` de ejemplo es `mcp.example.com`. La IP comentada `203.0.113.10` es de documentación (TEST-NET, RFC 5737), no una dirección de nadie.
+`deploy/nginx-mcp.conf` ofrece TLS 1.2+, limita a 60 peticiones por minuto por IP y hace proxy de `/mcp` hacia `127.0.0.1:8765`. El `server_name` de ejemplo es `mcp.example.com`. La IP comentada `203.0.113.10` es de documentación (TEST-NET, RFC 5737), no una dirección de nadie.
 
-Ojo: `location = /mcp` es una coincidencia **exacta**, así que con este nginx
-**no funcionan las rutas por cuenta** (`/mcp/<cuenta>` darían 404). Si las
-necesitas, cambia esa línea por `location /mcp {` y ajusta el `proxy_pass`
-para que no reescriba la ruta:
-
-```nginx
-location /mcp {
-    limit_req zone=mcp burst=20 nodelay;
-    limit_req_status 429;
-
-    proxy_pass http://127.0.0.1:8765;
-    proxy_http_version 1.1;
-    proxy_set_header Host $host;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
-    proxy_buffering off;
-    proxy_read_timeout 120s;
-}
-```
-
-Con `proxy_pass` sin parte de ruta, nginx pasa la ruta tal cual.
+El `location` es un prefijo (`location /mcp`), no una coincidencia exacta,
+para que funcionen las tres rutas: `/mcp`, `/mcp/<cuenta>` y
+`/mcp/<dominio>`. Con `proxy_pass` sin parte de ruta, nginx pasa la ruta
+tal cual. El panel (8766) **no** se proxyea: se queda en loopback, detrás de
+un túnel SSH o de otro filtro.
 
 `deploy/logrotate.conf` rota `/var/log/mcp-correo/audit.jsonl` cada semana, conserva 12 copias y usa `copytruncate` porque el proceso de systemd mantiene el descriptor abierto.
 
-El firewall puede dejar 22 restringido a la IP de administración, más 80 y 443. El puerto 8765 no se publica.
+El firewall puede dejar 22 restringido a la IP de administración, más 80 y 443. El puerto 8765 no se publica, y el 8766 tampoco.
 
-Conexión desde el cliente MCP: URL `https://mcp.example.com/mcp` y cabecera `Authorization: Bearer <token>`.
+Conexión desde el cliente MCP: URL `https://mcp.example.com/mcp` y cabecera `Authorization: Bearer <token>`. Para un buzón concreto, `https://mcp.example.com/mcp/ada@corp.example.com`.
+
+Si activas el panel, pon la base de datos en `/var/lib/mcp-correo` y añade
+esa ruta a `ReadWritePaths` en la unidad: con `ProtectSystem=strict`, sin
+eso el proceso no puede escribir la base.
 
 La alternativa con Docker está en [despliegue-portainer.md](despliegue-portainer.md). Las dos no se usan a la vez sobre el mismo puerto.

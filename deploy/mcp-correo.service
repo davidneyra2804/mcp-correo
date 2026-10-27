@@ -35,6 +35,9 @@ LockPersonality=yes
 MemoryDenyWriteExecute=yes
 CapabilityBoundingSet=
 ReadWritePaths=/var/log/mcp-correo
+# Si activas el panel, la base de datos también tiene que poder escribirse.
+# Ponla en /var/lib/mcp-correo y añade esa ruta aquí:
+# ReadWritePaths=/var/lib/mcp-correo
 MemoryMax=512M
 
 [Install]
