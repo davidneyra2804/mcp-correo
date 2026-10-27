@@ -26,6 +26,9 @@ Lo que se pide tiene cinco piezas. Cada una encaja con algo que ya existe:
 | Exposición en tiempo real por `/mcp` | El enrutado resuelve contra un diccionario congelado al arrancar | El enrutado resuelve contra una fuente que se recarga |
 | Token por cuenta | `MCP_ACCOUNT_BEARER_<N>` ya existe | Se genera y se rota desde el panel; sigue valiendo solo en su ruta |
 | Token por dominio | No existe | Un token que abre todas las cuentas de un dominio, y solo en sus rutas |
+| `/mcp` como guía, no como photocopy | Hoy expone **todas** las cuentas | Pasa a ser el catálogo de rutas (la guía) y el dominio marcado por defecto |
+| Dominio por defecto | No existe | Un dominio marcado como tal en el panel: es el que abre `/mcp` |
+| Probar antes de guardar | No hay panel | Un botón que valida IMAP y SMTP con la contraseña puesta, sin guardar nada |
 
 Lo importante: **nada de esto rompe lo que ya funciona**. El panel es
 opt-in. Si no se activa, el servidor se comporta exactamente igual que hoy,
@@ -170,13 +173,107 @@ autenticación propia.
 bearer global. El token del MCP no abre el panel, y el del panel no abre
 `/mcp`. Son dos superficies con dos superficies de credencial.
 
+### 3.12 `/mcp` es la guía, y el dominio por defecto
+
+Hoy `/mcp` expone todas las cuentas. Eso convierte a la ruta general en un
+copymachine de buzones: quien tenga el bearer general lo tiene todo.
+
+El cambio: **`/mcp` es la puerta de entrada**, y su contenido son dos cosas:
+
+1. **La guía**: el catálogo de rutas, para que el agente sepa a dónde ir.
+   Es de solo lectura y no abre ningún buzón.
+2. **El dominio por defecto**, si hay uno marcado en el panel: sus cuentas
+   quedan en el ámbito de la ruta.
+
+Si no hay dominio por defecto, `/mcp` es solo la guía, y las tools de buzón
+responden con un error que dice qué rutas hay.
+
+La consequence importante: **la ruta general ya no es un atajo a todo**. Para
+llegar a un buzón hay que nombrar el dominio o la cuenta.
+
+### 3.13 Hay un dominio por defecto, y como mucho uno
+
+Se marca en el panel, y la base de datos lo garantiza: un índice único
+parcial impide que haya dos.
+
+Es una decisión de operación, no de seguridad: es la puerta por la que se
+entra sin tener que escribir la ruta. Si no hay ninguno marcado, `/mcp` es
+solo la guía.
+
+### 3.14 La precedencia de las credenciales
+
+`MCP_BEARER_TOKEN` es **el bearer general**: la credencial por defecto, la
+que el asistente del operador usa. Por encima solo están el dominio y la
+cuenta, que la **sobreescriben** en su ámbito.
+
+La regla, en una frase: **la credencial presentada tiene que cubrir el
+ámbito de la ruta**.
+
+| Credencial | Alcance |
+| --- | --- |
+| La general (`MCP_BEARER_TOKEN`) | Todas las cuentas |
+| La de un dominio | Las cuentas de ese dominio |
+| La de una cuenta | Esa cuenta |
+
+Y de ahí sale, sin casos especiales, qué credencial vale en qué ruta:
+
+| Ruta | Ámbito de la ruta | Credenciales que la cubren |
+| --- | --- | --- |
+| `/mcp` | El dominio por defecto (o vacío) | Solo la general |
+| `/mcp/<dominio>` | Las cuentas de ese dominio | La general, la de ese dominio |
+| `/mcp/<cuenta>` | Esa cuenta | La general, la de esa cuenta, la de su dominio |
+
+Las dos reglas que de aquí salen, y que **no cambian** lo que ya hace el
+código:
+
+- La credencial más específica gana cuando se presenta. Si presentas la de
+  una cuenta, esa es la que cuenta, aunque la general también valiera.
+- Una credencial de cuenta **no** vale en la ruta de un dominio: el ámbito
+  de `/mcp/<dominio>` son varias cuentas y una credencial de cuenta solo
+  cubre una. Responde 403.
+
+> **Variante que se deja documentada, no implementada.** Con la regla de
+> arriba, la credencial general sigue alcanzando las cuentas que tienen
+> credencial propia. La otra lectura de "se sobreescribe" es que la general
+> **pierde** el acceso a las cuentas y dominios que ya tienen la suya: el
+> operador sella un buzón y la general deja de entrar. Es un cambio de una
+> función (`alcance_de_la_credencial`), pero tiene un coste: el asistente
+> del operador se quedaría fuera de un buzón en cuanto ese buzón tenga
+> token propio. Se decide al implementar, no está activo por defecto.
+
+### 3.15 El nivel de seguridad es la cuenta, y el token se genera solo
+
+El modelo es **a nivel de cuenta**: una cuenta, un ámbito, una credencial.
+El dominio y la general son cobertura hacia arriba, para quien la necesite,
+no el punto de partida.
+
+Por eso, en el panel, **crear una cuenta genera su token** por defecto, y
+se muestra una sola vez. Crear un dominio **no** genera token: es una
+agrupación, y su credencial es opcional.
+
+### 3.16 Probar antes de guardar
+
+Dar de alta una cuenta exige poner la contraseña del correo. Si algo está
+mal (el host, el puerto, el SSL, el usuario), el error aparece cuando el
+agente intenta leer el buzón, que es tarde y confuso.
+
+El panel tiene un botón de **probar**: con los parámetros de la cuenta y la
+contraseña que se acaba de escribir, abre una conexión IMAP (y otra SMTP,
+opcionalmente), hace login, mira las carpetas y se cierra. Dice qué pasó y
+no guarda nada.
+
+Es un endpoint del panel, con su autenticación, y usa el mismo código de
+conexión que usa el resto del servidor: si el login va a fallar, falla
+igual y el mensaje es el mismo.
+
 ## 4. Arquitectura: los dos puertos
 
 ```
                     ┌──────────────────────────────────────┐
                     │            proceso mcp-correo         │
-   cliente MCP ────▶│ :8765  /mcp  /mcp/<cuenta>            │
-                    │        /mcp/<dominio>  /health        │
+   cliente MCP ────▶│ :8765  /mcp  (la guía)                │
+                    │        /mcp/<dominio>  /mcp/<cuenta>  │
+                    │        /health                        │
                     │                                      │
    navegador ──────▶│ :8766  /  /api/...  /health          │
                     │        (sesión propia, CSRF)          │
@@ -188,14 +285,15 @@ bearer global. El token del MCP no abre el panel, y el del panel no abre
                               └───────────┘
 ```
 
-- **:8765** — el MCP. Sin cambios en su contrato: `/mcp`, `/mcp/<cuenta>`,
-  `/health`. Sigue siendo la superficie que consume un asistente.
+- **:8765** — el MCP. Su contrato cambia (§8): `/mcp` pasa a ser la guía,
+  y se añaden `/mcp/<dominio>` y el concepto de dominio por defecto.
 - **:8766** — el panel. Solo interfaz web y su API. **No** registra tools,
   no habla con el SDK de MCP y no puede ejecutar nada del buzón.
 
 El panel **no** puede leer ni escribir un buzón: solo gestiona la
-configuración (dominios, cuentas, tokens). Esa frontera se mantiene a
-propósito: un panel abierto no debe poder enviar correo.
+configuración (dominios, cuentas, tokens) y prueba conexiones. Esa
+frontera se mantiene a propósito: un panel abierto no debe poder enviar
+correo.
 
 ### 4.1 Variables de escucha
 
@@ -226,6 +324,7 @@ CREATE TABLE domains (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     name          TEXT    NOT NULL UNIQUE,     -- corp.example.com
     label         TEXT    NOT NULL DEFAULT '',
+    is_default    INTEGER NOT NULL DEFAULT 0,  -- el que abre /mcp
     bearer        TEXT,                       -- NULL = sin token propio
     allow_send    INTEGER,                    -- NULL = sin definir (hereda)
     allow_mark    INTEGER,
@@ -239,6 +338,10 @@ CREATE TABLE domains (
     smtp_security TEXT,
     created_at    TEXT    NOT NULL
 );
+
+-- Como mucho un dominio por defecto. Lo garantiza la base, no el código.
+CREATE UNIQUE INDEX un_dominio_por_defecto
+    ON domains(is_default) WHERE is_default = 1;
 
 CREATE TABLE accounts (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -395,38 +498,86 @@ después del arranque podría aparecer en el log.
 
 ## 8. Rutas y tabla de respuestas
 
-Las rutas del MCP pasan a ser tres formas:
+Las rutas del MCP pasan a ser tres formas, con un ámbito cada una:
 
-| Ruta | Qué expone |
-| --- | --- |
-| `/mcp` | Todas las cuentas |
-| `/mcp/<cuenta>` | Una cuenta |
-| `/mcp/<dominio>` | Las cuentas de un dominio |
+| Ruta | Ámbito | Para qué |
+| --- | --- | --- |
+| `/mcp` | El dominio por defecto, si hay uno; si no, vacío | La puerta de entrada: la guía y, si está marcado, el dominio por defecto |
+| `/mcp/<dominio>` | Las cuentas de ese dominio | Cubrir hacia arriba un grupo de buzones |
+| `/mcp/<cuenta>` | Esa cuenta | La unidad real de seguridad |
+
+### 8.1 La guía
+
+En `/mcp`, lo que se expone es el **catálogo de rutas**: qué dominios hay,
+qué cuentas hay en cada uno y con qué ruta se entra. No abre ningún buzón.
+
+Eso lo da `list_accounts`, que ya era la tool que el modelo tenía que
+llamar primero ("si no conoces la clave de la cuenta, llama primero a
+`list_accounts`"). Pasa a devolver:
+
+```json
+{
+  "route": "/mcp",
+  "scope": ["ada@corp.example.com"],
+  "default_domain": "corp.example.com",
+  "domains": [
+    {"domain": "corp.example.com", "route": "/mcp/corp.example.com",
+     "accounts": ["ada@corp.example.com", "archivo@corp.example.com"]}
+  ],
+  "accounts": [
+    {"account": "ada@corp.example.com", "route": "/mcp/ada@corp.example.com",
+     "domain": "corp.example.com", "label": "Correo de Ada",
+     "can_send": true, "can_mark": true, "can_delete": false, "can_draft": true}
+  ]
+}
+```
+
+- `scope` son las cuentas que la ruta abre. En `/mcp`, las del dominio por
+  defecto. En `/mcp/<dominio>`, las del dominio. En `/mcp/<cuenta>`, esa.
+- `accounts` lleva el detalle (qué puede hacer cada cuenta) **solo de las
+  cuentas del ámbito**. En `/mcp` sin dominio por defecto, el ámbito está
+  vacío y no hay detalle, pero sí el catálogo de rutas.
+- El catálogo muestra nombres y rutas, nunca credenciales. Si una cuenta
+  tiene token propio, el catálogo lo dice (`"own_credential": true`), sin
+  enseñarlo.
+
+### 8.2 Resolución del identificador
 
 `<cuenta>` se resuelve, en este orden:
 
-1. El `name` de la cuenta (idéntico, sin distinguir mayúsculas).
+1. El `name` de la cuenta (sin distinguir mayúsculas).
 2. El `username` de la cuenta.
-3. El `name` de un dominio → todas sus cuentas.
-4. Un número → el `id` de la cuenta.
+3. Un número → el `id` de la cuenta.
 
-Un `name` de cuenta tiene prioridad sobre un nombre de dominio, y el panel
-no deja crear una cuenta con el nombre de un dominio ni al revés (§3.9).
+El `name` de un dominio se resuelve **en su propia ruta**, `/mcp/<dominio>`.
+Como las dos rutas tienen la misma forma, hay que decidir el orden, y se
+decide así: **una cuenta tiene prioridad sobre un dominio**, y el panel no
+deja crear una cuenta con el nombre de un dominio ni al revés (§3.9). Si
+alguna vez colisionaran por un camino que no sea el panel (una importación,
+por ejemplo), la cuenta gana y el arranque lo avisa.
 
-### 8.1 Respuestas
+### 8.3 El dominio por defecto
+
+- Vive en la base de datos: una marca en el dominio.
+- Como mucho uno: un índice único parcial lo garantiza.
+- Si no hay ninguno, `/mcp` es solo la guía.
+- El panel lo marca y lo quita con un botón, y al marcar uno, el anterior
+  deja de serlo.
+
+### 8.4 Respuestas
 
 | Situación | Respuesta |
 | --- | --- |
 | Sin cabecera `Authorization` | 401 |
 | Token que no es ninguno de los conocidos | 401 |
-| Token de cuenta en `/mcp` | 403 |
+| Token de cuenta o de dominio en `/mcp` | 403 |
 | Token de cuenta en `/mcp/<cuenta>` de otra | 403 |
 | Token de cuenta en `/mcp/<dominio>` | 403 |
-| Token de dominio en `/mcp` | 403 |
 | Token de dominio en `/mcp/<dominio>` de otro | 403 |
 | Token de dominio en `/mcp/<cuenta>` de otro dominio | 403 |
-| Token global en `/mcp/<cuenta>` que no existe | 404 |
-| Token global en `/mcp/<dominio>` que no existe | 404 |
+| Token de cuenta o de dominio en la ruta que le es propia | 200 |
+| Token general en `/mcp/<cuenta>` que no existe | 404 |
+| Token general en `/mcp/<dominio>` que no existe | 404 |
 | Ruta que no es `/mcp`, `/mcp/<algo>` ni `/health` | 404 |
 
 El 403 y el 404 se mantienen como están: el 403 dice "tu credencial no vale
@@ -446,16 +597,50 @@ aquí" y el 404 dice "aquí no hay nada". No se mezclan.
 | `/api/domains` | POST | Crea un dominio |
 | `/api/domains/{id}` | PATCH | Cambia un dominio |
 | `/api/domains/{id}` | DELETE | Borra un dominio y sus cuentas |
+| `/api/domains/{id}/default` | POST | Marca el dominio como por defecto (o lo quita) |
+| `/api/domains/{id}/token` | POST | Genera un token nuevo para el dominio |
 | `/api/accounts` | POST | Crea una cuenta |
 | `/api/accounts/{id}` | PATCH | Cambia una cuenta |
 | `/api/accounts/{id}` | DELETE | Borra una cuenta |
 | `/api/accounts/{id}/token` | POST | Genera un token nuevo para la cuenta |
-| `/api/domains/{id}/token` | POST | Genera un token nuevo para el dominio |
+| `/api/test/imap` | POST | Prueba una conexión IMAP, sin guardar nada |
+| `/api/test/smtp` | POST | Prueba una conexión SMTP, sin enviar nada |
 | `/health` | GET | Sonda del panel |
 
 La API **nunca** devuelve una contraseña. Al leer una cuenta, el campo de
 la contraseña es `"password_set": true`. Al editarla, la contraseña solo se
 cambia si se manda una nueva.
+
+### 9.1.1 Probar antes de guardar
+
+`POST /api/test/imap` recibe los parámetros de la cuenta (host, puerto,
+SSL, usuario, contraseña) y, si viene `domain_id`, los completa con los
+defaults del dominio. Después abre la conexión, hace login, cuenta las
+carpetas y se cierra.
+
+```json
+{"ok": true, "folders": 7, "detail": "Conectado a imap.corp.example.com:993."}
+{"ok": false, "error": "El servidor IMAP rechazó el login."}
+```
+
+Lo mismo con `POST /api/test/smtp`: conecta, hace login y cierra, **sin
+enviar nada**.
+
+Cuatro reglas:
+
+1. **No guarda nada.** El endpoint es de prueba: la contraseña viaja en la
+   petición, se usa y se descarta.
+2. **Usa el mismo código que el resto del servidor.** La conexión se hace
+   con la misma fábrica y los mismos manejos de error, así que el mensaje
+   que sale es el mismo que saldría al leer el buzón.
+3. **La contraseña no sale en el mensaje.** El error va limpio, como en el
+   resto del servidor.
+4. **Al editar sin escribir contraseña**, la prueba usa la que ya está
+   guardada. Si no hay ninguna, dice que hay que escribirla.
+
+Como la prueba abre una conexión de verdad, el endpoint es un vector de
+fuerza bruta si se expone. Va detrás de la sesión del panel, y por eso no
+se publica el puerto por defecto (§3.10).
 
 ### 9.2 Autenticación
 
@@ -475,7 +660,15 @@ como estáticos desde la imagen.
 
 - Los dominios se listan como secciones, cada una con sus cuentas.
 - Alta, edición y baja de dominio y de cuenta, en la misma página.
-- Los tokens se generan con un botón y **se muestran una sola vez**.
+- Cada cuenta lleva su **ruta** a la vista, tal y como se escribe:
+  `/mcp/ada@corp.example.com`. Es la información que el operador necesita
+  para apuntar un cliente.
+- Un botón marca el dominio como **por defecto**. Solo uno puede estarlo.
+- Los tokens se generan con un botón y **se muestran una sola vez**. Al
+  crear una cuenta, su token se genera **automáticamente**: el modelo es a
+  nivel de cuenta (§3.15).
+- Un botón de **probar** junto al de guardar: valida IMAP y SMTP con lo
+  que hay en el formulario, y dice qué pasó (§9.1.1).
 - Las contraseñas se escriben en un campo de contraseña y nunca se
   devuelven.
 
@@ -518,8 +711,9 @@ Ficheros que cambian:
 | Fichero | Qué cambia |
 | --- | --- |
 | `config.py` | `Account` gana `domain`; `resolve_permission()`; `write_capabilities(..., dynamic=)`; los ajustes del panel; `load_config()` no aborta sin cuentas en modo panel |
-| `server.py` | `BearerAuth` consulta la fuente; token de dominio; resolución de la ruta; el hilo del panel |
-| `mail/imap.py` | `MailService` recibe una fuente en vez de un diccionario |
+| `server.py` | `BearerAuth` consulta la fuente; token de dominio; resolución de la ruta; la guía; el hilo del panel |
+| `mail/imap.py` | `MailService` recibe una fuente en vez de un diccionario; `probar_imap()` para el botón de probar |
+| `mail/smtp_out.py` | `probar_smtp()` para el botón de probar |
 | `audit.py` | Los secretos pasan a ser un conjunto con cerrojo, con `add_secret()` |
 | `docker/entrypoint.py` | Nada: sigue preparando el TOML, y el panel no lo necesita |
 | `docker/healthcheck.py` | Nuevo: comprueba el MCP y, si está, el panel |
@@ -564,22 +758,26 @@ importación.
 en `/mcp/<cuenta>` en la siguiente petición; al borrarla, la ruta da 404;
 el permiso por cuenta se sigue aplicando en la llamada.
 
-### Fase 4 — El token de dominio
+### Fase 4 — El token de dominio y las rutas
 
 - La ruta `/mcp/<dominio>`.
-- El token de dominio y la intersección de ámbitos.
+- El token de dominio y la regla de "la credencial tiene que cubrir el
+  ámbito de la ruta".
+- El dominio por defecto y la marca en la base.
 - La unicidad de los tokens entre los tres niveles.
 
-**Pruebas:** en `tests/test_dinamico.py`, la tabla de respuestas de §8.1
-completa.
+**Pruebas:** en `tests/test_dinamico.py`, la tabla de respuestas de §8.4
+completa, y el comportamiento de la guía en `/mcp`.
 
 ### Fase 5 — El panel
 
 - La app, la autenticación, la API, la interfaz.
 - La auditoría de las mutaciones.
+- El botón de **probar** (§9.1.1).
 
 **Pruebas:** `tests/test_dashboard.py` — login, sesión, CSRF, la API, que
-la contraseña nunca sale, la auditoría, la generación de tokens.
+la contraseña nunca sale, la auditoría, la generación de tokens, y la
+prueba de conexión con un doble de IMAP.
 
 ### Fase 6 — Empaquetado y documentación
 
@@ -588,6 +786,24 @@ la contraseña nunca sale, la auditoría, la generación de tokens.
   el README, el CHANGELOG, el `.env.example`.
 
 **Pruebas:** las de imagen, extendidas (§13).
+
+### Fase 7 — El cambio de contrato de las rutas
+
+El cambio de `/mcp` (de "todas las cuentas" a "la guía y el dominio por
+defecto") **rompe** el comportamiento actual. Es una versión mayor, y hay
+que decirlo en el CHANGELOG y en la documentación de las rutas.
+
+Lo que se rompe, exactamente:
+
+| Antes | Ahora |
+| --- | --- |
+| `/mcp` con el bearer general expone todas las cuentas | `/mcp` expone la guía y el dominio por defecto |
+| `/mcp/<cuenta>` | igual |
+| No hay `/mcp/<dominio>` | existe, y expone las cuentas del dominio |
+| `list_accounts` devuelve las cuentas del ámbito | devuelve el ámbito **y** el catálogo de rutas |
+
+**Pruebas:** las de `tests/test_routing.py` que hablan del ámbito de `/mcp`
+se actualizan, y se añade una que fija el comportamiento nuevo.
 
 ## 12. Configuración nueva
 
@@ -621,6 +837,15 @@ Además de las de cada fase:
   `tests/test_ficticio.py` lo comprueba en cada commit.
 - **Documentación**: los tests que comprueban que el `.env.example` y el
   compose declaran todas las variables nuevas.
+- **La guía**: una prueba fija que en `/mcp`, sin dominio por defecto, la
+  lista de cuentas del ámbito está vacía pero el catálogo de rutas no; y
+  que con dominio por defecto, el ámbito son sus cuentas. Otra fija que el
+  catálogo **no** enseña contraseñas ni tokens.
+- **La cobertura de la credencial**: una prueba por cada fila de la tabla
+  de §8.4. La que más importa: la credencial de una cuenta en la ruta de
+  un dominio responde 403, y la de un dominio en la ruta de otro, 403.
+- **El dominio por defecto**: como mucho uno. Lo comprueba la base, y hay
+  una prueba que intenta poner dos.
 
 ## 14. Seguridad
 
@@ -653,6 +878,14 @@ Las trampas que este proyecto ya ha pagado, y cómo se repiten aquí:
   proyecto: el panel añade una cuenta y `/mcp` no la ve. Por eso la
   comprobación de la revisión va en cada petición, y hay una prueba que
   escribe en la base y llama a `/mcp` sin reiniciar nada.
+- **La ruta general como atajo a todo.** `/mcp` exponiendo todas las
+  cuentas hace que el bearer general sea un copymachine de buzones. Por
+  eso `/mcp` es la guía y el dominio por defecto, y para llegar a un buzón
+  hay que nombrarlo.
+- **Una credencial que cubre de más.** El ámbito de una ruta tiene que
+  caber dentro del alcance de la credencial. Si alguna vez una credencial
+  de cuenta abriera la ruta de un dominio, el aislamiento deja de aislar.
+  Es la regla de §3.14, y tiene una prueba por cada combinación.
 - **El arranque dice lo que ya está puesto.** Los mensajes del arranque
   tienen que decir solo lo que falta: qué variable falta, qué clave no
   corresponde, qué cuenta se ignoró.
@@ -669,7 +902,6 @@ Tres cosas que el plan asume y que son decisión de quien opera. Cada una
 tiene un **supuesto por defecto**, que es con el que se implementa si no se
 dice lo contrario. Cambiar un supuesto es una línea: está aislado en un
 sitio, no atraviesa el código.
-
 | Decisión | Supuesto por defecto | Cómo se cambia |
 | --- | --- | --- |
 | **Token del panel: ¿uno o varios?** | Uno solo: `MCP_DASHBOARD_TOKEN`. Con varios, cada uno sería un usuario con su propio nombre, y la auditoría podría decir quién hizo qué. Es más trabajo y no aporta nada con una sola persona operando. | Una tabla `users` y una sesión por token. El resto no cambia. |
@@ -681,6 +913,11 @@ Y una cuarta, de diseño, que se puede aplazar:
 4. **¿Los permisos por dominio y por cuenta se editan en el panel?** El plan
    los permite (los campos son tri-estado), pero la interfaz puede exponerlos
    más adelante: la API ya los acepta y la cadena los respeta.
+5. **¿La credencial general pierde el acceso a las cuentas que ya tienen
+   token propio?** El plan asume que **no**: la general los alcanza a todos,
+   y la credencial específica es una alternativa que, cuando se presenta,
+   manda. La variante que sella las cuentas está escrita y aislada en
+   `alcance_de_la_credencial()` (§3.14), y activarla es cambiar esa función.
 
 ## 17. Fuera de alcance
 
@@ -693,3 +930,5 @@ Y una cuarta, de diseño, que se puede aplazar:
 - **Cifrado de los tokens**: se guardan en claro, como `MCP_BEARER_TOKEN`
   hoy. Un token es revocable (se borra y se genera otro); una contraseña
   de correo, no.
+- **Que el panel pueda enviar o leer correo**: ni una línea. El panel
+  gestiona la configuración; los buzones son del MCP.
