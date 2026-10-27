@@ -14,7 +14,7 @@ from typing import Any
 from imapclient.exceptions import CapabilityError, IMAPClientError
 
 from config import WRITE_GATES, Account, account_allows
-from mail.compose import build_outgoing, without_bcc
+from mail.compose import build_outgoing, format_sender, without_bcc
 from mail.confirm import ConfirmationStore, SendQuota
 from mail.errors import MailError
 from mail.imap import MailService, examine_folder, folder_name
@@ -66,6 +66,7 @@ class MailboxWriter:
             raise MailError(f"Tope diario de envíos alcanzado ({self.quota.daily_cap}).")
         raw, public, preview_body = build_outgoing(
             sender=account.username,
+            sender_name=account.sender,
             to=to,
             cc=cc,
             bcc=bcc,
@@ -79,7 +80,7 @@ class MailboxWriter:
         public["sent_folder"] = account.sent_folder
         preview = {
             "account": account.key,
-            "from": account.username,
+            "from": format_sender(account.sender, account.username),
             "to": public["to"],
             "cc": public["cc"],
             "bcc": public["bcc"],
@@ -242,6 +243,7 @@ class MailboxWriter:
             draft_settings = replace(draft_settings, allowed_recipient_domains=())
         raw, public, _preview = build_outgoing(
             sender=account.username,
+            sender_name=account.sender,
             to=to,
             cc=cc,
             bcc=None,

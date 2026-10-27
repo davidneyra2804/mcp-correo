@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from email import message_from_bytes
 from email.message import EmailMessage
 from email.policy import default as default_policy
-from email.utils import format_datetime, make_msgid
+from email.utils import format_datetime, formataddr, make_msgid
 from typing import Any
 
 from config import ServerSettings
@@ -18,6 +18,17 @@ _EMAIL = re.compile(r"^[^@\s<>]+@[^@\s<>]+\.[^@\s<>]+$")
 _MSGID = re.compile(r"^<?[^<>\s]+@[^<>\s]+>?$")
 _MAX_ATTACHMENTS = 10
 _PREVIEW_CHARS = 400
+
+
+def format_sender(name: str, address: str) -> str:
+    """La cabecera From, con nombre visible si la cuenta tiene uno.
+
+    `formataddr` se encarga del escapado de la RFC 5322: si el nombre lleva
+    coma o comillas, lo entrecomilla y lo escapa.
+    """
+    if not name:
+        return address
+    return formataddr((name, address))
 
 
 def build_outgoing(
@@ -32,6 +43,7 @@ def build_outgoing(
     references: str | None,
     attachments: list[dict[str, str]] | None,
     settings: ServerSettings,
+    sender_name: str = "",
 ) -> tuple[bytes, dict[str, Any], str]:
     """Devuelve bytes, resumen sin cuerpo y una vista previa recortada del texto."""
     if not _EMAIL.fullmatch(sender):
@@ -58,7 +70,7 @@ def build_outgoing(
         raise MailError("El cuerpo supera el tamaño máximo del mensaje.")
 
     message = EmailMessage()
-    message["From"] = sender
+    message["From"] = format_sender(sender_name, sender)
     message["To"] = ", ".join(recipients["to"])
     if recipients["cc"]:
         message["Cc"] = ", ".join(recipients["cc"])

@@ -290,4 +290,40 @@ Correcciones de una auditoría completa del proyecto.
 [1.0.3]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.3
 [1.0.2]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.2
 [1.0.1]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.1
+## [1.1.0] — 2026-10-26
+
+### Añadido
+
+- **Nombre visible del remitente: `MCP_ACCOUNT_SENDER_<N>`.** El `From` de los
+  correos salientes era solo la dirección, así que quien lo recibía veía el
+  nombre de la cuenta sin el dominio. Con esta variable:
+
+  ```bash
+  MCP_ACCOUNT_SENDER_1=David Neyra
+  ```
+
+  el `From` pasa a ser `David Neyra <david.neyra@vyrts.com>`, y en el
+  `accounts.toml` se llama `sender`.
+
+  El nombre se escapa con las reglas de la RFC 5322: si lleva coma o comillas,
+  se entrecomilla, para que no parta la dirección en dos. Un salto de línea se
+  rechaza al cargar la configuración, no ya al enviar: acabaría en una cabecera
+  y permitiría inyectar un `Bcc` de verdad. El sobre SMTP sigue llevando la
+  dirección pelada.
+
+### Documentación
+
+- `SENDER` en la lista de campos de cuenta, en el `.env.example` y en el
+  ejemplo de `accounts.toml`.
+
+[1.1.0]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.1.0
+[1.0.9]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.9
+[1.0.8]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.8
+[1.0.7]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.7
+[1.0.6]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.6
+[1.0.5]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.5
+[1.0.4]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.4
+[1.0.3]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.3
+[1.0.2]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.2
+[1.0.1]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.1
 [1.0.0]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.0

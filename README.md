@@ -225,7 +225,7 @@ export MCP_ACCOUNT_PASSWORD_1='contraseña-ficticia-principal'
 | Variable | Uso |
 | --- | --- |
 | `MCP_BEARER_TOKEN` | Obligatoria. Da acceso a todas las cuentas. En producción, `openssl rand -base64 48`. |
-| `MCP_ACCOUNT_<CAMPO>_<N>` | Una cuenta. Campos: `NAME`, `LABEL`, `INBOX_TYPE`, `INBOX_HOST`, `INBOX_PORT`, `INBOX_USE_SSL`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USE_SSL`, `USERNAME`, `PASSWORD` o `PASSWORD_ENV`, `DRAFTS_FOLDER`, `SENT_FOLDER`, `TRASH_FOLDER`, `ALLOW_SEND`, `ALLOW_MARK`, `ALLOW_DELETE`, `ALLOW_DRAFTS`, `BEARER`. |
+| `MCP_ACCOUNT_<CAMPO>_<N>` | Una cuenta. Campos: `NAME`, `LABEL`, `SENDER`, `INBOX_TYPE`, `INBOX_HOST`, `INBOX_PORT`, `INBOX_USE_SSL`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USE_SSL`, `USERNAME`, `PASSWORD` o `PASSWORD_ENV`, `DRAFTS_FOLDER`, `SENT_FOLDER`, `TRASH_FOLDER`, `ALLOW_SEND`, `ALLOW_MARK`, `ALLOW_DELETE`, `ALLOW_DRAFTS`, `BEARER`. |
 | `MCP_PUBLIC_HOST` | El nombre público del servidor. Arma `allowed_hosts` y `allowed_origins`. Con túnel, es el hostname del túnel. |
 | `MCP_ALLOWED_HOSTS`, `MCP_ALLOWED_ORIGINS` | Listas separadas por comas. Sustituyen a las derivadas de `MCP_PUBLIC_HOST`. |
 | `MCP_ENABLE_SEND`, `MCP_ENABLE_MARK`, `MCP_ENABLE_DELETE`, `MCP_ENABLE_DRAFTS` | Interruptores **globales** de escritura. Son el maestro: apagados, la capacidad está apagada para todas las cuentas. Encendidos, las cuentas los heredan. |
@@ -274,7 +274,7 @@ overlay del túnel en *Additional paths*.
 La imagen publicada se usa sin reconstruir:
 
 ```
-MCP_IMAGE=ghcr.io/davidneyra2804/mcp-correo:1.0.9
+MCP_IMAGE=ghcr.io/davidneyra2804/mcp-correo:1.1.0
 MCP_PULL_POLICY=always
 ```
 

@@ -108,6 +108,7 @@ descuadre de cuentas es un error de configuración, no un aviso.
 | --- | --- | --- | --- |
 | `NAME` | texto | el correo | Identificador de la cuenta en las rutas. Solo hace falta si dos cuentas comparten correo. |
 | `LABEL` | texto | el identificador | Nombre que ve el asistente en `list_accounts`. |
+| `SENDER` | texto | vacío | Nombre visible en los correos salientes. Con él, el `From` es `Nombre <correo>`. Sin él, solo la dirección. |
 | `INBOX_TYPE` | `imap` | `imap` | Protocolo de entrada. Solo se admite IMAP. |
 | `INBOX_HOST` | texto | — | **Obligatorio.** Servidor IMAP. |
 | `INBOX_PORT` | entero | `993` | Puerto IMAP. |
@@ -262,7 +263,7 @@ En el arranque, el proceso dice de dónde salió la configuración:
 ```
 INFO     Escritura activa: ninguna
 INFO     Servidor listo: 2 cuentas, escucha 0.0.0.0:8765, escritura=apagada
-INFO     mcp-correo 1.0.9 | Configuración: variables de entorno. Cuentas: archivo, principal
+INFO     mcp-correo 1.1.0 | Configuración: variables de entorno. Cuentas: archivo, principal
 ```
 
 La línea de capacidades (`Escritura activa: ...`) dice qué tools de escritura

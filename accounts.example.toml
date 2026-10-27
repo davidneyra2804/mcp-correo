@@ -55,6 +55,8 @@ allowed_origins = [
 
 [accounts.principal]
 label = "Correo principal — ejemplo ficticio"
+# Nombre visible en los correos salientes. Sin esto, el From es la dirección.
+sender = "Ada Lovelace"
 imap_host = "mail.example.com"
 imap_port = 993
 imap_ssl = true

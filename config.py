@@ -63,6 +63,7 @@ DEFAULT_ATTACHMENT_TYPES: tuple[str, ...] = (
 #: Campos que admite una cuenta en el TOML.
 _ACCOUNT_FIELDS: tuple[str, ...] = (
     "label",
+    "sender",
     "imap_host",
     "imap_port",
     "imap_ssl",
@@ -88,6 +89,7 @@ _ACCOUNT_KEYS = frozenset(_ACCOUNT_FIELDS)
 _ACCOUNT_ENV_FIELDS: dict[str, str] = {
     "name": "NAME",
     "label": "LABEL",
+    "sender": "SENDER",
     "inbox_type": "INBOX_TYPE",
     "inbox_host": "INBOX_HOST",
     "inbox_port": "INBOX_PORT",
@@ -219,6 +221,8 @@ class Account:
     username: str
     password: str = field(repr=False, compare=False)
     bearer: str = field(repr=False, compare=False, default="")
+    #: Nombre visible en los correos salientes. Vacío = solo la dirección.
+    sender: str = ""
     imap_ssl: bool = True
     smtp_host: str = ""
     smtp_port: int = 465
@@ -718,6 +722,7 @@ def _account_from_env(index: int, settings: ServerSettings) -> Account:
     return Account(
         key=key,
         label=text("label") or key,
+        sender=_display_name(text("sender"), var("sender")),
         imap_host=inbox_host,
         imap_port=_port(number("inbox_port", 993), f"{var('inbox_port')}"),
         imap_ssl=flag("inbox_use_ssl", True),
@@ -827,6 +832,7 @@ def _account(key: str, raw: object) -> Account:
     return Account(
         key=key,
         label=label,
+        sender=_display_name(raw.get("sender"), f"{key}.sender"),
         imap_host=imap_host,
         imap_port=_port(raw.get("imap_port", 993), f"{key}.imap_port"),
         imap_ssl=bool(raw.get("imap_ssl", True)),
@@ -972,6 +978,30 @@ def _optional_folder(value: object, field_name: str) -> str:
     ):
         raise SystemExit(f"{field_name} no es un nombre de carpeta válido")
     return value
+
+
+def _display_name(value: object, field_name: str) -> str:
+    """El nombre visible de una cuenta en los correos salientes.
+
+    Acaba en una cabecera, así que un salto de línea dejaría inyectar
+    cabeceras (un Bcc de verdad, por ejemplo). Se rechaza al cargar la
+    configuración, no ya al enviar.
+    """
+    if value is None:
+        return ""
+    if not isinstance(value, str):
+        raise SystemExit(f"{field_name} tiene que ser un texto")
+    name = value.strip()
+    if not name:
+        return ""
+    if any(char in name for char in "\r\n\x00"):
+        raise SystemExit(
+            f"{field_name} no puede llevar saltos de línea ni caracteres nulos: "
+            "acaba en una cabecera de correo."
+        )
+    if len(name) > 100:
+        raise SystemExit(f"{field_name} es demasiado largo (máximo 100 caracteres).")
+    return name
 
 
 def _domains(value: object) -> tuple[str, ...]:
