@@ -226,4 +226,27 @@ Correcciones de una auditoría completa del proyecto.
 [1.0.3]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.3
 [1.0.2]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.2
 [1.0.1]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.1
+## [1.0.8] — 2026-10-26
+
+### Corregido
+
+- **El arranque listaba las dos variables de una capacidad aunque la global ya
+  estuviera puesta.** Decía *"marcado necesita `MCP_ENABLE_MARK=true` y
+  `MCP_ACCOUNT_ALLOW_MARK_<N>=true`"*, y con la global ya en `true` eso lleva
+  a dudar de la que ya está bien. Ahora cada capacidad dice **solo lo que
+  falta**, y cuando es el permiso por cuenta, con un ejemplo copiable:
+
+  ```
+  INFO     Por qué están apagadas: marcado: falta MCP_ACCOUNT_ALLOW_MARK_<N>=true
+           en la cuenta (por ejemplo, MCP_ACCOUNT_ALLOW_MARK_1=true)
+  ```
+
+[1.0.8]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.8
+[1.0.7]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.7
+[1.0.6]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.6
+[1.0.5]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.5
+[1.0.4]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.4
+[1.0.3]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.3
+[1.0.2]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.2
+[1.0.1]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.1
 [1.0.0]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.0
