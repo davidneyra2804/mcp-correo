@@ -149,7 +149,7 @@ class MailService:
         message_uid = _uid(uid)
 
         def run(client: ReadOnlyIMAP) -> dict:
-            _examine(client, folder)
+            examine_folder(client, folder)
             _ensure_size(client, message_uid, folder, self.settings.max_message_bytes)
             fetched = client.fetch([message_uid], ["BODY.PEEK[]"])
             raw = _body_bytes(fetched.get(message_uid))
@@ -174,7 +174,7 @@ class MailService:
             raise MailError("index debe ser mayor o igual que 0")
 
         def run(client: ReadOnlyIMAP) -> dict:
-            _examine(client, folder)
+            examine_folder(client, folder)
             _ensure_size(client, message_uid, folder, self.settings.max_message_bytes)
             fetched = client.fetch([message_uid], ["BODY.PEEK[]"])
             raw = _body_bytes(fetched.get(message_uid))
@@ -197,7 +197,7 @@ class MailService:
         account_obj = self._account(account)
 
         def run(client: ReadOnlyIMAP) -> dict:
-            _examine(client, folder)
+            examine_folder(client, folder)
             criteria = _criteria(unanswered=True, since=since_day)
             uids = _highest_uids(client.search(criteria), self.settings.max_results)
             summaries = _fetch_summaries(client, uids) if uids else []
@@ -245,7 +245,7 @@ class MailService:
         bounded = _clamp_limit(limit, self.settings)
 
         def run(client: ReadOnlyIMAP) -> dict:
-            _examine(client, folder)
+            examine_folder(client, folder)
             uids = _highest_uids(client.search(["ALL"]), bounded)
             if not uids:
                 return {"threads": [], "threading": "references", "window": bounded}
@@ -290,7 +290,7 @@ class MailService:
         bounded = _clamp_limit(limit, self.settings)
 
         def run(client: ReadOnlyIMAP) -> dict:
-            _examine(client, folder)
+            examine_folder(client, folder)
             charset = "UTF-8" if _needs_charset(criteria) else None
             uids = _highest_uids(client.search(criteria, charset=charset), bounded)
             messages = _newest_first(_fetch_summaries(client, uids))
@@ -378,11 +378,11 @@ _SPECIAL_USE = frozenset(
 )
 
 
-def _examine(client: ReadOnlyIMAP, folder: str) -> None:
-    name = _folder(folder)
+def examine_folder(client: Any, folder: str) -> None:
+    name = folder_name(folder)
     try:
         client.select_folder(name, readonly=True)
-    except (IMAPClientError, imaplib.IMAP4.error) as exc:
+    except (IMAPClientError, imaplib.IMAP4.error, TimeoutError, OSError) as exc:
         logger.info("EXAMINE falló en %s (%s)", name, type(exc).__name__)
         raise MailError(f"No se pudo abrir la carpeta {name}") from None
 
@@ -545,7 +545,7 @@ def _clean_text(value: str | None, field_name: str) -> str | None:
     return value
 
 
-def _folder(folder: str) -> str:
+def folder_name(folder: str) -> str:
     if not isinstance(folder, str) or not folder.strip() or len(folder) > MAX_FOLDER_LENGTH:
         raise MailError("Nombre de carpeta inválido")
     if any(char in folder for char in "\r\n\x00"):

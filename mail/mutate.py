@@ -17,7 +17,7 @@ from config import WRITE_GATES, Account
 from mail.compose import build_outgoing, without_bcc
 from mail.confirm import ConfirmationStore, SendQuota
 from mail.errors import MailError
-from mail.imap import MailService, _folder
+from mail.imap import MailService, examine_folder, folder_name
 from mail.mime import decode_header_value, format_addresses
 from mail.smtp_out import SmtpFactory, open_smtp, transmit
 
@@ -104,7 +104,7 @@ class MailboxWriter:
         account = self._gated(account_key, "delete")
         if not isinstance(permanent, bool):
             raise MailError("permanent debe ser true o false.")
-        folder_name = _folder(folder)
+        carpeta = folder_name(folder)
         chosen = _uid_list(uids, self.service.settings.max_delete_per_call)
         with self.service.session(account.key) as client:
             trash = None if permanent else self._resolve_trash(client, account)
@@ -113,10 +113,10 @@ class MailboxWriter:
                     "No hay carpeta Papelera. Sin ella solo se puede borrar "
                     "si prepare_delete recibe permanent=true."
                 )
-            self._examine(client, account, folder_name)
-            messages = self._summaries(client, folder_name, chosen)
+            examine_folder(client, carpeta)
+            messages = self._summaries(client, carpeta, chosen)
         public = {
-            "folder": folder_name,
+            "folder": carpeta,
             "uids": chosen,
             "permanent": permanent,
             "trash_folder": trash or "",
@@ -205,12 +205,12 @@ class MailboxWriter:
 
     def mark(self, account_key: str, uids: list[int], folder: str = "INBOX", *, seen: bool) -> dict:
         account = self._gated(account_key, "mark")
-        folder_name = _folder(folder)
+        carpeta = folder_name(folder)
         chosen = _uid_list(uids, self.service.settings.max_mark_per_call)
         with self.service.session(account.key, writable=True) as client:
             try:
-                client.select_folder(folder_name, readonly=False)
-                self._ensure_present(client, folder_name, chosen)
+                client.select_folder(carpeta, readonly=False)
+                self._ensure_present(client, carpeta, chosen)
                 if seen:
                     client.add_flags(chosen, ["\\Seen"])
                 else:
@@ -221,7 +221,7 @@ class MailboxWriter:
                 self.service._raise_imap(account, exc)
         return {
             "account": account.key,
-            "folder": folder_name,
+            "folder": carpeta,
             "uids": chosen,
             "flag": "\\Seen",
             "action": "add" if seen else "remove",
@@ -294,12 +294,6 @@ class MailboxWriter:
         self._ensure_present(client, folder, uids)
         client.delete_messages(uids)
         client.expunge(uids)
-
-    def _examine(self, client: Any, account: Account, folder: str) -> None:
-        try:
-            client.select_folder(folder, readonly=True)
-        except (IMAPClientError, imaplib.IMAP4.error, TimeoutError, OSError) as exc:
-            self.service._raise_imap(account, exc)
 
     def _resolve_trash(self, client: Any, account: Account) -> str | None:
         try:
