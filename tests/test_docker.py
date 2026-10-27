@@ -239,6 +239,32 @@ def test_la_app_arranca_con_lo_que_cop_el_dockerfile(tmp_path: Path) -> None:
     assert "Servidor listo" in completado.stdout + completado.stderr
 
 
+def test_solo_el_servidor_hereda_el_healthcheck() -> None:
+    """El HEALTHCHECK de la imagen espera HTTP en el 8765.
+
+    El resto de servicios que usan la imagen no sirven HTTP: heredar el
+    healthcheck los dejaría "unhealthy" para siempre, con Connection
+    refused, aunque funcionen.
+    """
+    compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
+    for nombre, servicio in compose["services"].items():
+        if nombre == "mcp":
+            continue
+        if servicio.get("image", "").startswith("cloudflare/") or "caddy" in nombre:
+            continue
+        salud = servicio.get("healthcheck")
+        assert salud is not None and salud.get("disable") is True, (
+            f"El servicio {nombre} hereda el healthcheck de la imagen, "
+            "pero no sirve HTTP. Desactívalo con healthcheck: disable: true"
+        )
+
+
+def test_el_rotador_dice_que_esta_vivo() -> None:
+    """Un sidecar callado parece un contenedor parado."""
+    fuente = (ROOT / "docker/rotate_audit.py").read_text(encoding="utf-8")
+    assert "Rotador de auditoría" in fuente
+
+
 def test_el_compose_publica_solo_loopback_y_no_lleva_secretos() -> None:
     text = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
     dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")

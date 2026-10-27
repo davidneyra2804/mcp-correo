@@ -38,6 +38,11 @@ def main() -> None:
     max_bytes = _entero("MCP_AUDIT_MAX_BYTES", 10485760)
     keep = _entero("MCP_AUDIT_KEEP", 12)
     interval = _entero("MCP_AUDIT_ROTATE_SECONDS", 3600)
+    # Un servicio que no dice nada parece muerto. Se dice qué está vigilando.
+    print(
+        f"Rotador de auditoría: {path} (cada {interval}s, desde {max_bytes} bytes, {keep} copias)",
+        flush=True,
+    )
     while True:
         try:
             if rotate_once(path, max_bytes, keep):

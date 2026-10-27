@@ -110,4 +110,25 @@ Correcciones de una auditoría completa del proyecto.
 
 [1.0.2]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.2
 [1.0.1]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.1
+## [1.0.3] — 2026-10-26
+
+### Corregido
+
+- **El contenedor de `audit-rotate` se quedaba "unhealthy" para siempre.** El
+  `HEALTHCHECK` de la imagen espera un servidor HTTP en el 8765, y este
+  servicio no sirve HTTP: es un bucle que vigila el fichero. Fallaba con
+  *Connection refused* en cada intento. Ahora el servicio desactiva el
+  healthcheck heredado.
+- **El rotador no decía nada al arrancar.** Como solo imprimía cuando rotaba
+  algo, y eso tarda una hora, el log salía vacío y el contenedor parecía
+  parado. Ahora dice qué está vigilando.
+
+### Pruebas
+
+- Una comprueba que solo el servicio del servidor hereda el `HEALTHCHECK` de
+  la imagen: los demás tienen que desactivarlo.
+
+[1.0.3]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.3
+[1.0.2]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.2
+[1.0.1]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.1
 [1.0.0]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.0

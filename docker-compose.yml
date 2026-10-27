@@ -138,6 +138,11 @@ services:
       - mcp
     entrypoint: ["python", "/app/docker/rotate_audit.py"]
     command: ["--loop"]
+    # El HEALTHCHECK de la imagen espera un servidor HTTP en el 8765. Este
+    # servicio no sirve HTTP: es un bucle que vigila el fichero. Sin esto
+    # el contenedor quedaría "unhealthy" para siempre, conConnection refused.
+    healthcheck:
+      disable: true
     restart: unless-stopped
     read_only: true
     cap_drop:
