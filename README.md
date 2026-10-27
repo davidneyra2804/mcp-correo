@@ -363,6 +363,7 @@ docker/                   # entrada del contenedor y rotación del JSONL
 deploy/                   # systemd, nginx, Caddy opcional y logrotate
 docs/                     # configuración, despliegue y checklist
 tests/                    # pytest con IMAP y SMTP simulados, sin red
+AGENTS.md                 # directrices para quien trabaje en el proyecto
 ```
 
 ## Desarrollo y tests
@@ -379,6 +380,9 @@ python3 -m venv .venv
 ```
 
 CI hace lo mismo con Python 3.12.
+
+Si vas a tocar el proyecto, [AGENTS.md](AGENTS.md) tiene las directrices: qué
+se considera un fallo, qué trampas ya se han pagado y cómo se publica.
 
 ## Versionado
 
