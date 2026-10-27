@@ -234,20 +234,12 @@ def test_la_imagen_lleva_los_estaticos_del_panel() -> None:
     assert "dashboard" in copiados, "La imagen no lleva el panel."
 
 
-def test_la_app_arranca_con_lo_que_cop_el_dockerfile(tmp_path: Path) -> None:
-    """Simula /app con lo que copia el Dockerfile e importa el servidor.
-
-    Los tests corren desde el repositorio, donde están todos los ficheros.
-    Esta prueba arma un directorio con exactamente lo que va en la imagen,
-    y arranca el servidor desde ahí. Si un módulo se queda fuera del
-    Dockerfile, aquí se ve.
-    """
+def _simular_app(tmp_path: Path) -> Path:
+    """Arma un directorio con exactamente lo que va en la imagen."""
     import shutil
-    import subprocess
-    import sys
 
     app = tmp_path / "app"
-    app.mkdir()
+    app.mkdir(exist_ok=True)
     dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
     for linea in dockerfile.splitlines():
         if not linea.startswith("COPY --chown="):
@@ -268,7 +260,21 @@ def test_la_app_arranca_con_lo_que_cop_el_dockerfile(tmp_path: Path) -> None:
             else:
                 destino_final.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(fuente, destino_final)
+    return app
 
+
+def test_la_app_arranca_con_lo_que_cop_el_dockerfile(tmp_path: Path) -> None:
+    """Simula /app con lo que copia el Dockerfile e importa el servidor.
+
+    Los tests corren desde el repositorio, donde están todos los ficheros.
+    Esta prueba arma un directorio con exactamente lo que va en la imagen,
+    y arranca el servidor desde ahí. Si un módulo se queda fuera del
+    Dockerfile, aquí se ve.
+    """
+    import subprocess
+    import sys
+
+    app = _simular_app(tmp_path)
     env = os.environ.copy()
     env["MCP_BEARER_TOKEN"] = "token-de-prueba-0123456789abcdef"
     env["MCP_AUDIT_LOG"] = str(tmp_path / "audit.jsonl")
@@ -284,6 +290,53 @@ def test_la_app_arranca_con_lo_que_cop_el_dockerfile(tmp_path: Path) -> None:
     )
     assert completado.returncode == 0, completado.stdout + completado.stderr
     assert "Servidor listo" in completado.stdout + completado.stderr
+
+
+def test_el_panel_arranca_con_lo_que_cop_el_dockerfile(tmp_path: Path) -> None:
+    """El panel también tiene que estar en la imagen, con sus estáticos.
+
+    Si el paquete del panel se queda fuera, el servidor arranca y el
+    panel no: el error sale en el primer arranque con MCP_DASHBOARD_DB, en
+    el contenedor, y no en los tests.
+    """
+    import subprocess
+    import sys
+
+    app = _simular_app(tmp_path)
+    env = os.environ.copy()
+    env["MCP_BEARER_TOKEN"] = "token-de-prueba-0123456789abcdef"
+    env["MCP_DASHBOARD_DB"] = str(tmp_path / "cuentas.db")
+    env["MCP_DASHBOARD_KEY"] = "clave-de-prueba-0123456789abcdef"
+    env["MCP_DASHBOARD_TOKEN"] = "token-del-panel-0123456789abcdef"
+    env["MCP_AUDIT_LOG"] = str(tmp_path / "audit.jsonl")
+    env["MCP_CONFIG"] = str(app / "accounts.example.toml")
+    env["PYTHONPATH"] = str(app)
+    completado = subprocess.run(
+        # Se duerme un poco: el panel arranca en su hilo, y su log sale
+        # desde ahí.
+        [sys.executable, "-c", "import server, time; time.sleep(1)"],
+        cwd=app,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    salida = completado.stdout + completado.stderr
+    assert completado.returncode == 0, salida
+    assert "Panel en marcha" in salida, salida
+    # Y los estáticos están: una interfaz que no se sirve no se ve.
+    assert (app / "dashboard" / "static" / "panel.html").is_file()
+    assert (app / "dashboard" / "static" / "panel.js").is_file()
+
+
+def test_la_sonda_de_salud_comprueba_los_dos_puertos() -> None:
+    """La sonda mira el MCP y, si está, el panel."""
+    fuente = (ROOT / "docker" / "healthcheck.py").read_text(encoding="utf-8")
+    assert "MCP_BIND_PORT" in fuente
+    assert "MCP_DASHBOARD_BIND_PORT" in fuente
+    assert "MCP_DASHBOARD_DB" in fuente
+    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+    assert "docker/healthcheck.py" in dockerfile
 
 
 def test_solo_el_servidor_hereda_el_healthcheck() -> None:

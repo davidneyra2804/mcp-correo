@@ -10,6 +10,12 @@ accounts.toml
 audit.jsonl
 *.log
 
+# La base de datos del panel. Lleva las cuentas y las contraseñas
+# cifradas: no se versiona nunca.
+*.db
+*.db-wal
+*.db-shm
+
 # Python
 __pycache__/
 *.py[cod]
