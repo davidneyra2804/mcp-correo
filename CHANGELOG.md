@@ -196,4 +196,34 @@ Correcciones de una auditoría completa del proyecto.
 [1.0.3]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.3
 [1.0.2]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.2
 [1.0.1]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.1
+## [1.0.7] — 2026-10-26
+
+### Corregido
+
+- **El argumento `account` de las tools era obligatorio incluso en una ruta de
+  una sola cuenta.** En `/mcp/<cuenta>` la cuenta ya la fija la ruta, pero el
+  modelo tenía que además saber la clave y pasarla. Si no la pasaba,
+  pydantic rechazaba la llamada antes de llegar al código:
+  `Tool 'list_messages' rejected arguments: ['account']`.
+
+  Ahora `account` es opcional en todas las tools. Si la ruta expone una sola
+  cuenta, se usa esa. Si expone varias, hay que indicarla, y el error dice
+  cuáles hay: *"Indica la cuenta. En esta ruta hay: ..."*.
+- **Ruido en el log al cerrar la conexión IMAP.** `logout()` ya cierra el
+  socket, así que el `shutdown()` de después era un doble cierre que fallaba
+  siempre y escribía *"No se pudo cerrar el socket IMAP de ..."* en cada
+  petición. Ahora el cierre explícito solo se hace si `logout()` falla.
+
+### Documentación
+
+- Las rutas por cuenta y el argumento opcional, explicados en el README y en
+  la guía de configuración.
+
+[1.0.7]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.7
+[1.0.6]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.6
+[1.0.5]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.5
+[1.0.4]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.4
+[1.0.3]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.3
+[1.0.2]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.2
+[1.0.1]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.1
 [1.0.0]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.0

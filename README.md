@@ -108,6 +108,9 @@ tool puede tocar, y la comprobación está en un único punto del código. Un
 cliente que solo tiene el bearer de una cuenta **no puede** llegar a las demás
 ni aunque se lo filtren.
 
+En una ruta de una sola cuenta, el argumento `account` de las tools es
+opcional: la cuenta ya la fija la ruta y no hace falta que el modelo la sepa.
+
 ## Seguridad
 
 - **Bearer.** `MCP_BEARER_TOKEN` es obligatorio (mínimo 16 caracteres). Se
@@ -271,7 +274,7 @@ overlay del túnel en *Additional paths*.
 La imagen publicada se usa sin reconstruir:
 
 ```
-MCP_IMAGE=ghcr.io/davidneyra2804/mcp-correo:1.0.6
+MCP_IMAGE=ghcr.io/davidneyra2804/mcp-correo:1.0.7
 MCP_PULL_POLICY=always
 ```
 

@@ -315,6 +315,7 @@ class MailService:
     def _session(self, account_key: str, *, writable: bool = False) -> Iterator[Any]:
         account = self._account(account_key)
         raw = self._factory(account, self.settings)
+        cerrado = False
         try:
             try:
                 raw.login(account.username, account.password)
@@ -324,29 +325,53 @@ class MailService:
             try:
                 yield client
             finally:
+                # logout() ya cierra la conexión. Solo si falla hace falta un
+                # cierre explícito: si no, es un doble cierre que falla y
+                # ensucia el log en cada petición.
                 try:
                     raw.logout()
+                    cerrado = True
                 except (IMAPClientError, imaplib.IMAP4.error, OSError):
                     logger.info("Cierre de sesión IMAP incompleto en %s", account.key)
         finally:
-            shutdown = getattr(raw, "shutdown", None)
-            if callable(shutdown):
-                try:
-                    shutdown()
-                except (IMAPClientError, imaplib.IMAP4.error, OSError):
-                    logger.info("No se pudo cerrar el socket IMAP de %s", account.key)
+            if not cerrado:
+                shutdown = getattr(raw, "shutdown", None)
+                if callable(shutdown):
+                    try:
+                        shutdown()
+                    except (IMAPClientError, imaplib.IMAP4.error, OSError):
+                        logger.info("No se pudo cerrar el socket IMAP de %s", account.key)
 
     def _account(self, key: str) -> Account:
-        account = self.accounts.get(key)
-        if account is None:
-            known = ", ".join(sorted(self.accounts)) or "(ninguna)"
-            raise MailError(f"Cuenta desconocida: {key}. Cuentas configuradas: {known}")
+        """La cuenta que pide la llamada, dentro del ámbito de la ruta.
+
+        Si la clave viene vacía y el ámbito tiene una sola cuenta, se usa
+        esa: en una ruta por cuenta (/mcp/<cuenta>) el modelo no tiene por
+        qué saber la clave. Si hay varias, el error dice cuáles hay.
+        """
         scope = current_scope()
-        if scope is not None and key not in scope:
+        candidatos = {
+            nombre: cuenta
+            for nombre, cuenta in self.accounts.items()
+            if scope is None or nombre in scope
+        }
+        if not key:
+            if len(candidatos) == 1:
+                return next(iter(candidatos.values()))
+            if not candidatos:
+                raise MailError("No hay cuentas disponibles en esta ruta.")
             raise MailError(
-                f"La cuenta {key} no está disponible en esta ruta. "
-                "Esta ruta expone: " + (", ".join(sorted(scope)) or "(ninguna)") + "."
+                "Indica la cuenta. En esta ruta hay: " + ", ".join(sorted(candidatos)) + "."
             )
+        account = candidatos.get(key)
+        if account is None:
+            if key in self.accounts:
+                raise MailError(
+                    f"La cuenta {key} no está disponible en esta ruta. "
+                    "Esta ruta expone: " + (", ".join(sorted(candidatos)) or "(ninguna)") + "."
+                )
+            known = ", ".join(sorted(self.accounts)) or "(ninguna)"
+            raise MailError(f"Cuenta desconocida: {key}. Cuentas configuradas: {known}.")
         return account
 
     def _raise_imap(self, account: Account, exc: BaseException) -> NoReturn:

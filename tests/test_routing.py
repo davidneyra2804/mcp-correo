@@ -17,6 +17,8 @@ from audit import AuditLog
 from config import Account, load_config
 from server import create_app
 
+ROOT = Path(__file__).resolve().parents[1]
+
 TOKEN = os.environ["MCP_BEARER_TOKEN"]
 JSON_HEADERS = {
     "Content-Type": "application/json",
@@ -218,3 +220,56 @@ def test_un_host_permitido_pasa(client: TestClient) -> None:
         headers={**JSON_HEADERS, "Authorization": f"Bearer {TOKEN}", "Host": "127.0.0.1:8765"},
     )
     assert response.status_code == 200
+
+
+def test_en_una_ruta_de_una_cuenta_no_hace_falta_indicar_la_cuenta(
+    client: TestClient,
+) -> None:
+    """En /mcp/<cuenta> la cuenta ya la fija la ruta."""
+    response = client.post(
+        f"/mcp/{ADA}",
+        json={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {"name": "list_accounts", "arguments": {}},
+        },
+        headers={**JSON_HEADERS, "Authorization": f"Bearer {BEARER_ADA}"},
+    )
+    assert response.status_code == 200, response.text
+    import json
+
+    cuentas = json.loads(response.json()["result"]["content"][0]["text"])["accounts"]
+    assert [c["account"] for c in cuentas] == [ADA]
+
+
+def test_sin_cuenta_en_una_ruta_con_varias_sale_el_error_que_dice_cuales(
+    tmp_path: Path,
+) -> None:
+    """En /mcp, sin account, el error dice qué cuentas hay."""
+    from mail.errors import MailError
+    from mail.imap import MailService
+    from scope import reset_scope, set_scope
+
+    settings, accounts = load_config(ROOT / "accounts.example.toml")
+    service = MailService(settings, accounts)
+    token = set_scope(None)
+    try:
+        with pytest.raises(MailError, match="Indica la cuenta"):
+            service._account("")
+    finally:
+        reset_scope(token)
+
+
+def test_sin_cuenta_en_una_ruta_de_una_se_resuelve(tmp_path: Path) -> None:
+    """Con una sola cuenta en el ámbito, la cuenta vacía es esa."""
+    from mail.imap import MailService
+    from scope import reset_scope, set_scope
+
+    settings, accounts = load_config(ROOT / "accounts.example.toml")
+    service = MailService(settings, accounts)
+    token = set_scope(frozenset({"principal"}))
+    try:
+        assert service._account("").key == "principal"
+    finally:
+        reset_scope(token)

@@ -86,6 +86,8 @@ Uso:
 - Si no conoces la clave de la cuenta, llama primero a list_accounts.
 - La ruta decide qué cuentas hay. /mcp las expone todas; /mcp/<cuenta>
   solo una. Las que devuelva list_accounts son las disponibles aquí.
+- El argumento account es opcional: si la ruta expone una sola cuenta, se
+  usa esa. Si expone varias, indícala.
 - list_folders devuelve los nombres reales y los flags SPECIAL-USE.
 - list_messages, search_messages y get_message no marcan los mensajes como leídos.
 - get_message trunca el cuerpo. get_attachment respeta tipo y tamaño.
@@ -420,19 +422,19 @@ def _register_tools(mcp: MCPServer, service: MailService, audit: AuditLog) -> No
         return guarded("list_accounts", "-", {}, service.list_accounts)
 
     @mcp.tool(annotations=READ_ONLY, structured_output=False)
-    def list_folders(account: str) -> dict:
+    def list_folders(account: str = "") -> dict:
         """Carpetas IMAP con flags, incluidos los SPECIAL-USE."""
         args = {"account": account}
         return guarded("list_folders", account, args, lambda: service.list_folders(account))
 
     @mcp.tool(annotations=READ_ONLY, structured_output=False)
     def list_messages(
-        account: str,
         folder: str = "INBOX",
         unseen: bool = False,
         since: str | None = None,
         sender: str | None = None,
         limit: int = 20,
+        account: str = "",
     ) -> dict:
         """Lista mensajes recientes sin marcarlos como leídos. since usa el formato AAAA-MM-DD."""
         args = {
@@ -452,7 +454,6 @@ def _register_tools(mcp: MCPServer, service: MailService, audit: AuditLog) -> No
 
     @mcp.tool(annotations=READ_ONLY, structured_output=False)
     def search_messages(
-        account: str,
         folder: str = "INBOX",
         subject: str | None = None,
         text: str | None = None,
@@ -461,6 +462,7 @@ def _register_tools(mcp: MCPServer, service: MailService, audit: AuditLog) -> No
         since: str | None = None,
         before: str | None = None,
         limit: int = 20,
+        account: str = "",
     ) -> dict:
         """Busca por SUBJECT, TEXT, FROM, TO y rango de fechas. No modifica flags."""
         args = {
@@ -485,8 +487,8 @@ def _register_tools(mcp: MCPServer, service: MailService, audit: AuditLog) -> No
 
     @mcp.tool(annotations=READ_ONLY, structured_output=False)
     def get_message(
-        account: str,
         uid: int,
+        account: str = "",
         folder: str = "INBOX",
         max_chars: int | None = None,
     ) -> dict:
@@ -501,8 +503,8 @@ def _register_tools(mcp: MCPServer, service: MailService, audit: AuditLog) -> No
 
     @mcp.tool(annotations=READ_ONLY, structured_output=False)
     def get_attachment(
-        account: str,
         uid: int,
+        account: str = "",
         folder: str = "INBOX",
         index: int = 0,
         filename: str | None = None,
@@ -526,10 +528,10 @@ def _register_tools(mcp: MCPServer, service: MailService, audit: AuditLog) -> No
 
     @mcp.tool(annotations=READ_ONLY, structured_output=False)
     def find_unanswered(
-        account: str,
         folder: str = "INBOX",
         since: str | None = None,
         limit: int = 20,
+        account: str = "",
     ) -> dict:
         """Mensajes sin flag \\Answered y sin respuesta en Enviados que cite su Message-ID."""
         args = {"account": account, "folder": folder, "since": since, "limit": limit}
@@ -541,7 +543,7 @@ def _register_tools(mcp: MCPServer, service: MailService, audit: AuditLog) -> No
         )
 
     @mcp.tool(annotations=READ_ONLY, structured_output=False)
-    def list_threads(account: str, folder: str = "INBOX", limit: int = 20) -> dict:
+    def list_threads(folder: str = "INBOX", limit: int = 20, account: str = "") -> dict:
         """Agrupa los mensajes recientes de la carpeta por References e In-Reply-To."""
         args = {"account": account, "folder": folder, "limit": limit}
         return guarded(
@@ -570,10 +572,10 @@ def _register_write_tools(
 
         @mcp.tool(annotations=PREPARE, structured_output=False)
         def prepare_send(
-            account: str,
             to: list[str],
             subject: str,
             body: str,
+            account: str = "",
             cc: list[str] | None = None,
             bcc: list[str] | None = None,
             in_reply_to: str | None = None,
@@ -626,7 +628,7 @@ def _register_write_tools(
             return run(action)
 
         @mcp.tool(annotations=SEND, structured_output=False)
-        def send_message(account: str, confirm_token: str) -> dict:
+        def send_message(confirm_token: str, account: str = "") -> dict:
             """Envía el mensaje preparado. Solo tras una orden explícita en esta conversación."""
 
             def action() -> dict:
@@ -653,7 +655,7 @@ def _register_write_tools(
     if caps["mark"]:
 
         @mcp.tool(annotations=MARK, structured_output=False)
-        def mark_read(account: str, uids: list[int], folder: str = "INBOX") -> dict:
+        def mark_read(uids: list[int], account: str = "", folder: str = "INBOX") -> dict:
             """Pone la flag \\Seen. Acción directa y auditada; solo si se pidió."""
 
             def action() -> dict:
@@ -663,7 +665,7 @@ def _register_write_tools(
             return run(action)
 
         @mcp.tool(annotations=MARK, structured_output=False)
-        def mark_unread(account: str, uids: list[int], folder: str = "INBOX") -> dict:
+        def mark_unread(uids: list[int], account: str = "", folder: str = "INBOX") -> dict:
             """Quita la flag \\Seen. Acción directa y auditada; solo si se pidió."""
 
             def action() -> dict:
@@ -676,8 +678,8 @@ def _register_write_tools(
 
         @mcp.tool(annotations=PREPARE, structured_output=False)
         def prepare_delete(
-            account: str,
             uids: list[int],
+            account: str = "",
             folder: str = "INBOX",
             permanent: bool = False,
         ) -> dict:
@@ -715,7 +717,7 @@ def _register_write_tools(
             return run(action)
 
         @mcp.tool(annotations=DELETE, structured_output=False)
-        def delete_message(account: str, confirm_token: str) -> dict:
+        def delete_message(confirm_token: str, account: str = "") -> dict:
             """Ejecuta el borrado preparado. Solo tras una orden explícita en esta conversación."""
 
             def action() -> dict:
@@ -743,10 +745,10 @@ def _register_write_tools(
 
         @mcp.tool(annotations=DRAFT, structured_output=False)
         def create_draft(
-            account: str,
             to: list[str],
             subject: str,
             body: str,
+            account: str = "",
             cc: list[str] | None = None,
             attachments: list[dict[str, str]] | None = None,
         ) -> dict:

@@ -166,6 +166,15 @@ cualquier otra responde **403**. En `/mcp` un bearer de cuenta no vale.
 El aislamiento no es cosmético. Una tool que pida una cuenta fuera del ámbito
 falla con un error, y `list_accounts` solo devuelve las cuentas de la ruta.
 
+En una ruta de una sola cuenta, el argumento `account` de las tools es
+**opcional**: la cuenta ya la fija la ruta, y el modelo no tiene por qué
+saber la clave. Si la ruta expone varias y no se indica ninguna, el error
+dice cuáles hay:
+
+```
+Indica la cuenta. En esta ruta hay: ada@corp.example.com, luis@corp.example.com.
+```
+
 Para dar a un cliente una sola cuenta y que no pueda ver las demás, se le
 entrega su `BEARER` y se le apunta a `/mcp/<cuenta>`:
 
@@ -245,7 +254,7 @@ En el arranque, el proceso dice de dónde salió la configuración:
 ```
 INFO     Escritura activa: ninguna
 INFO     Servidor listo: 2 cuentas, escucha 0.0.0.0:8765, escritura=apagada
-INFO     mcp-correo 1.0.6 | Configuración: variables de entorno. Cuentas: archivo, principal
+INFO     mcp-correo 1.0.7 | Configuración: variables de entorno. Cuentas: archivo, principal
 ```
 
 La línea de capacidades (`Escritura activa: ...`) dice qué tools de escritura
