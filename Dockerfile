@@ -14,20 +14,22 @@ FROM python:3.12-slim
 RUN groupadd --system --gid 10001 mcp \
     && useradd --system --uid 10001 --gid 10001 \
         --no-create-home --shell /usr/sbin/nologin mcp \
-    && mkdir -p /var/log/mcp-correo /app \
-    && chown mcp:mcp /var/log/mcp-correo
+    && mkdir -p /var/log/mcp-correo /var/lib/mcp-correo /app \
+    && chown mcp:mcp /var/log/mcp-correo /var/lib/mcp-correo
 
 COPY --from=build /opt/venv /opt/venv
 WORKDIR /app
 COPY --chown=mcp:mcp server.py config.py audit.py scope.py version.py /app/
 COPY --chown=mcp:mcp mail /app/mail
-COPY --chown=mcp:mcp docker/entrypoint.py docker/rotate_audit.py /app/docker/
+COPY --chown=mcp:mcp store /app/store
+COPY --chown=mcp:mcp dashboard /app/dashboard
+COPY --chown=mcp:mcp docker/entrypoint.py docker/rotate_audit.py docker/healthcheck.py /app/docker/
 COPY --chown=mcp:mcp accounts.example.toml /app/accounts.example.toml
 
 USER mcp
 
 # La etiqueta tiene que coincidir con version.py. Un test lo comprueba.
-ARG MCP_VERSION=1.1.0
+ARG MCP_VERSION=2.0.0
 LABEL org.opencontainers.image.version="${MCP_VERSION}" \
       org.opencontainers.image.title="mcp-correo" \
       org.opencontainers.image.description="Servidor MCP de correo sobre IMAP y SMTP" \
@@ -40,12 +42,14 @@ ENV PATH=/opt/venv/bin:$PATH \
     MCP_BIND_HOST=0.0.0.0 \
     MCP_BIND_PORT=8765 \
     MCP_ALLOW_NONLOCAL_BIND=1 \
-    MCP_AUDIT_LOG=/var/log/mcp-correo/audit.jsonl
+    MCP_AUDIT_LOG=/var/log/mcp-correo/audit.jsonl \
+    MCP_DASHBOARD_BIND_PORT=8766
 
-EXPOSE 8765
+# 8765: el MCP. 8766: el panel de control (solo si MCP_DASHBOARD_DB está).
+EXPOSE 8765 8766
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-    CMD python -c "import os,urllib.request; p=os.environ.get('MCP_BIND_PORT','8765'); urllib.request.urlopen('http://127.0.0.1:'+p+'/health')"
+    CMD ["python", "/app/docker/healthcheck.py"]
 
 ENTRYPOINT ["python", "/app/docker/entrypoint.py"]
 CMD ["python", "server.py"]

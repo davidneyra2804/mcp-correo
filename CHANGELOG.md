@@ -327,3 +327,68 @@ Correcciones de una auditoría completa del proyecto.
 [1.0.2]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.2
 [1.0.1]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.1
 [1.0.0]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.0
+
+## [2.0.0] — 2026-10-26
+
+Un panel de control en un segundo puerto, y las cuentas de correo en una
+base de datos en vez de en variables de entorno. **El contrato de las rutas
+cambia**, y por eso es una versión mayor.
+
+### Añadido
+
+- **Panel de control en su propio puerto.** Una segunda superficie HTTP, en
+  el mismo proceso y otro puerto, para dar de alta dominios y cuentas sin
+  tocar el despliegue. Tiene su propia credencial (`MCP_DASHBOARD_TOKEN`),
+  su propia sesión firmada y su propia capa anti-CSRF. **No puede leer ni
+  escribir un buzón**: solo gestiona la configuración y prueba conexiones.
+- **Las cuentas en una base de datos SQLite.** Con `MCP_DASHBOARD_DB` el
+  panel se activa y la base pasa a ser la fuente de las cuentas. Las
+  variables `MCP_ACCOUNT_<CAMPO>_<N>` se importan **una vez**, y solo si la
+  base está vacía; a partir de ahí la base manda.
+- **Cuentas por dominio.** Un dominio agrupa cuentas y les da un servidor
+  IMAP y SMTP por defecto, unos permisos y una credencial propia. La
+  cadena de permisos crece un nivel: global → dominio → cuenta.
+- **Exposición en tiempo real.** Una cuenta creada en el panel está en su
+  ruta `/mcp/<cuenta>` en la siguiente petición. Sin reiniciar. El
+  contador de revisiones vive en la base, así que funciona igual dentro de
+  un proceso que entre dos.
+- **Ruta por dominio: `/mcp/<dominio>`.** Abre las cuentas del dominio, con
+  la credencial del dominio o la general.
+- **Token por dominio y token por cuenta**, generados y rotados desde el
+  panel. Se muestran una sola vez.
+- **Botón de probar.** Valida la conexión IMAP (y SMTP) con la contraseña
+  recién escrita, antes de guardar. Usa el mismo código que el resto del
+  servidor, así que el mensaje es el mismo que saldría al leer el buzón.
+- **Contraseñas cifradas en reposo**, con AES-GCM y una clave que **no**
+  está en la base de datos (`MCP_DASHBOARD_KEY`). El arranque comprueba que
+  la clave corresponde a la base y, si no, para y lo dice.
+- **Auditoría del panel.** Todo lo que hace queda en el mismo JSONL que las
+  tools, con su propio nombre y sin secretos.
+
+### Cambiado
+
+- **`/mcp` ya no expone todas las cuentas.** Pasa a ser la puerta de
+  entrada: la guía (el catálogo de rutas) y, si hay uno, el dominio marcado
+  como por defecto. Para abrir un buzón hay que nombrar la cuenta o el
+  dominio. `list_accounts` devuelve el catálogo, con la ruta de cada
+  cuenta y de cada dominio.
+- **La credencial tiene que abrir la ruta.** `MCP_BEARER_TOKEN` es el bearer
+  general. El de un dominio abre la ruta de su dominio y las de sus
+  cuentas; el de una cuenta, solo la suya. Una credencial de cuenta en
+  `/mcp/<dominio>` responde 403, aunque el dominio tenga una sola cuenta.
+- **La lista de tools de escritura en modo panel depende del interruptor
+  global**, no de las cuentas: la lista se fija al arrancar y las cuentas
+  pueden cambiar después. El permiso por cuenta se sigue comprobando en
+  cada llamada, que es donde se comprueba de todos modos.
+
+### Seguridad
+
+- El panel escucha en `127.0.0.1` y su puerto se publica en loopback.
+- La sesión del panel es una cookie firmada con HMAC, `HttpOnly` y
+  `SameSite=Strict`, con caducidad.
+- Las peticiones que cambian algo exigen la cabecera `X-MCP-Dashboard`:
+  un formulario de otro sitio no puede poner una cabecera a medida.
+- La API nunca devuelve una contraseña. Al leer una cuenta se ve si tiene
+  contraseña, no cuál es.
+
+[2.0.0]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v2.0.0

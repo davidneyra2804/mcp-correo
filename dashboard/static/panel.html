@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Panel de mcp-correo</title>
+<link rel="stylesheet" href="/static/panel.css">
+</head>
+<body>
+<header>
+  <h1>Panel de mcp-correo</h1>
+  <form method="post" action="/logout" class="salir">
+    <button type="submit">Salir</button>
+  </form>
+</header>
+
+<main>
+  <section class="acciones">
+    <button id="nuevo-dominio">Nuevo dominio</button>
+    <button id="nueva-cuenta">Nueva cuenta</button>
+    <span id="destacado" class="pista"></span>
+  </section>
+
+  <p id="aviso" class="aviso" hidden></p>
+
+  <div id="dominios"></div>
+
+  <p id="vacio" class="pista" hidden>
+    No hay dominios todavía. Crea uno y dentro las cuentas.
+  </p>
+</main>
+
+<dialog id="editor">
+  <form method="dialog" id="formulario">
+    <h2 id="titulo">Cuenta</h2>
+    <div id="campos"></div>
+    <p id="resultado" class="resultado"></p>
+    <menu>
+      <button value="cancelar" type="submit" class="secundario">Cancelar</button>
+      <button id="probar" type="button" class="secundario">Probar</button>
+      <button value="guardar" type="submit">Guardar</button>
+    </menu>
+  </form>
+</dialog>
+
+<script src="/static/panel.js"></script>
+</body>
+</html>

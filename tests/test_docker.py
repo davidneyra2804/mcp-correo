@@ -5,7 +5,6 @@ from __future__ import annotations
 import base64
 import importlib.util
 import os
-import re
 from pathlib import Path
 
 import pytest
@@ -149,17 +148,17 @@ def test_el_rotador_acepta_el_default(monkeypatch: pytest.MonkeyPatch) -> None:
     assert rotate._entero("MCP_AUDIT_KEEP", 12) == 12
 
 
-def test_la_imagen_lleva_todos_los_modulos_que_necesita() -> None:
-    """Todo módulo del que depende la app tiene que estar en la imagen.
+def _modulos_que_necesita_la_app(raiz: Path) -> set[str]:
+    """Los módulos y paquetes de los que depende la app.
 
-    Los tests corren desde el repositorio, donde todos los ficheros están.
+    Los tests corren desde el repositorio, donde están todos los ficheros.
     La imagen solo lleva los que copia el Dockerfile, así que un módulo que
     se quede fuera funciona en local y revienta en el contenedor.
     """
     import ast
 
-    raiz = ROOT
     locales = {p.stem for p in raiz.glob("*.py")}
+    paquetes = {p.name for p in raiz.iterdir() if p.is_dir() and (p / "__init__.py").exists()}
     vistos: set[str] = set()
     cola = ["server"]
     while cola:
@@ -167,7 +166,10 @@ def test_la_imagen_lleva_todos_los_modulos_que_necesita() -> None:
         if modulo in vistos:
             continue
         vistos.add(modulo)
-        ruta = raiz / f"{modulo}.py"
+        if modulo in paquetes:
+            ruta = raiz / modulo / "__init__.py"
+        else:
+            ruta = raiz / f"{modulo}.py"
         if not ruta.exists():
             continue
         arbol = ast.parse(ruta.read_text(encoding="utf-8"))
@@ -178,29 +180,66 @@ def test_la_imagen_lleva_todos_los_modulos_que_necesita() -> None:
             elif isinstance(nodo, ast.ImportFrom) and nodo.level == 0 and nodo.module:
                 nombres = [nodo.module.split(".")[0]]
             for nombre in nombres:
-                if nombre in locales and nombre not in vistos:
+                if (nombre in locales or nombre in paquetes) and nombre not in vistos:
                     cola.append(nombre)
+    return vistos
 
-    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
-    copiados = {nombre.removesuffix(".py") for nombre in re.findall(r"([a-z_]+\.py)", dockerfile)}
+
+def _lo_que_copia_el_dockerfile(dockerfile: str, raiz: Path) -> set[str]:
+    """Los módulos y paquetes que el Dockerfile lleva a la imagen.
+
+    Un ``COPY mail /app/mail`` lleva el paquete entero; un
+    ``COPY scope.py /app/`` lleva un módulo suelto.
+    """
+    copiados: set[str] = set()
+    for linea in dockerfile.splitlines():
+        if not linea.startswith("COPY"):
+            continue
+        partes = [p for p in linea.split()[1:] if not p.startswith("--")]
+        for origen in partes[:-1]:
+            if (raiz / origen).is_dir():
+                copiados.add(Path(origen.rstrip("/")).name)
+            elif origen.endswith(".py"):
+                copiados.add(Path(origen).stem)
+    return copiados
+
+
+def test_la_imagen_lleva_todos_los_modulos_que_necesita() -> None:
+    """Todo módulo del que depende la app tiene que estar en la imagen.
+
+    Los tests corren desde el repositorio, donde todos los ficheros están.
+    La imagen solo lleva los que copia el Dockerfile, así que un módulo que
+    se quede fuera funciona en local y revienta en el contenedor.
+    """
+    raiz = ROOT
+    vistos = _modulos_que_necesita_la_app(raiz)
+    dockerfile = (raiz / "Dockerfile").read_text(encoding="utf-8")
+    copiados = _lo_que_copia_el_dockerfile(dockerfile, raiz)
     faltan = sorted(vistos - copiados)
     assert not faltan, f"Módulos que la app necesita y el Dockerfile no copia: {faltan}"
 
 
-def test_la_app_arranca_con_lo_que_cop_el_dockerfile(tmp_path: Path) -> None:
-    """Simula /app con lo que copia el Dockerfile e importa el servidor.
+def test_la_imagen_lleva_los_estaticos_del_panel() -> None:
+    """Los ficheros estáticos del panel también tienen que ir en la imagen.
 
-    Los tests corren desde el repositorio, donde están todos los ficheros.
-    Esta prueba arma un directorio con exactamente lo que va en la imagen,
-    y arranca el servidor desde ahí. Si un módulo se queda fuera del
-    Dockerfile, aquí se ve.
+    Una interfaz que no se sirve no se ve: el panel arrancaría y daría
+    error al pedir la página.
     """
+    estaticos = ROOT / "dashboard" / "static"
+    if not estaticos.is_dir():
+        return
+    assert any(estaticos.iterdir()), "El panel no tiene ficheros estáticos."
+    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+    copiados = _lo_que_copia_el_dockerfile(dockerfile, ROOT)
+    assert "dashboard" in copiados, "La imagen no lleva el panel."
+
+
+def _simular_app(tmp_path: Path) -> Path:
+    """Arma un directorio con exactamente lo que va en la imagen."""
     import shutil
-    import subprocess
-    import sys
 
     app = tmp_path / "app"
-    app.mkdir()
+    app.mkdir(exist_ok=True)
     dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
     for linea in dockerfile.splitlines():
         if not linea.startswith("COPY --chown="):
@@ -221,7 +260,21 @@ def test_la_app_arranca_con_lo_que_cop_el_dockerfile(tmp_path: Path) -> None:
             else:
                 destino_final.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(fuente, destino_final)
+    return app
 
+
+def test_la_app_arranca_con_lo_que_cop_el_dockerfile(tmp_path: Path) -> None:
+    """Simula /app con lo que copia el Dockerfile e importa el servidor.
+
+    Los tests corren desde el repositorio, donde están todos los ficheros.
+    Esta prueba arma un directorio con exactamente lo que va en la imagen,
+    y arranca el servidor desde ahí. Si un módulo se queda fuera del
+    Dockerfile, aquí se ve.
+    """
+    import subprocess
+    import sys
+
+    app = _simular_app(tmp_path)
     env = os.environ.copy()
     env["MCP_BEARER_TOKEN"] = "token-de-prueba-0123456789abcdef"
     env["MCP_AUDIT_LOG"] = str(tmp_path / "audit.jsonl")
@@ -237,6 +290,53 @@ def test_la_app_arranca_con_lo_que_cop_el_dockerfile(tmp_path: Path) -> None:
     )
     assert completado.returncode == 0, completado.stdout + completado.stderr
     assert "Servidor listo" in completado.stdout + completado.stderr
+
+
+def test_el_panel_arranca_con_lo_que_cop_el_dockerfile(tmp_path: Path) -> None:
+    """El panel también tiene que estar en la imagen, con sus estáticos.
+
+    Si el paquete del panel se queda fuera, el servidor arranca y el
+    panel no: el error sale en el primer arranque con MCP_DASHBOARD_DB, en
+    el contenedor, y no en los tests.
+    """
+    import subprocess
+    import sys
+
+    app = _simular_app(tmp_path)
+    env = os.environ.copy()
+    env["MCP_BEARER_TOKEN"] = "token-de-prueba-0123456789abcdef"
+    env["MCP_DASHBOARD_DB"] = str(tmp_path / "cuentas.db")
+    env["MCP_DASHBOARD_KEY"] = "clave-de-prueba-0123456789abcdef"
+    env["MCP_DASHBOARD_TOKEN"] = "token-del-panel-0123456789abcdef"
+    env["MCP_AUDIT_LOG"] = str(tmp_path / "audit.jsonl")
+    env["MCP_CONFIG"] = str(app / "accounts.example.toml")
+    env["PYTHONPATH"] = str(app)
+    completado = subprocess.run(
+        # Se duerme un poco: el panel arranca en su hilo, y su log sale
+        # desde ahí.
+        [sys.executable, "-c", "import server, time; time.sleep(1)"],
+        cwd=app,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    salida = completado.stdout + completado.stderr
+    assert completado.returncode == 0, salida
+    assert "Panel en marcha" in salida, salida
+    # Y los estáticos están: una interfaz que no se sirve no se ve.
+    assert (app / "dashboard" / "static" / "panel.html").is_file()
+    assert (app / "dashboard" / "static" / "panel.js").is_file()
+
+
+def test_la_sonda_de_salud_comprueba_los_dos_puertos() -> None:
+    """La sonda mira el MCP y, si está, el panel."""
+    fuente = (ROOT / "docker" / "healthcheck.py").read_text(encoding="utf-8")
+    assert "MCP_BIND_PORT" in fuente
+    assert "MCP_DASHBOARD_BIND_PORT" in fuente
+    assert "MCP_DASHBOARD_DB" in fuente
+    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+    assert "docker/healthcheck.py" in dockerfile
 
 
 def test_solo_el_servidor_hereda_el_healthcheck() -> None:
@@ -372,6 +472,29 @@ def test_el_ejemplo_de_env_documenta_todas_las_variables() -> None:
     missing_fields = sorted(base for base in _ACCOUNT_ENV_BASES if base not in text)
     assert not missing_fields, f"El ejemplo no documenta: {', '.join(missing_fields)}"
     assert "MCP_ACCOUNT_USERNAME_1=" in text
+
+
+def test_el_ejemplo_de_env_documenta_las_variables_del_panel() -> None:
+    """Las variables del panel también se documentan, y se leen."""
+    from config import DASHBOARD_ENV
+
+    text = (ROOT / ".env.example").read_text(encoding="utf-8")
+    missing = sorted(name for name in DASHBOARD_ENV if name not in text)
+    assert not missing, f"El ejemplo no documenta: {', '.join(missing)}"
+    fuente = (ROOT / "config.py").read_text(encoding="utf-8")
+    huerfanas = sorted(name for name in DASHBOARD_ENV if f'"{name}"' not in fuente)
+    assert not huerfanas, f"Variables del panel que el código no lee: {huerfanas}"
+
+
+def test_el_compose_declara_las_variables_del_panel() -> None:
+    """El compose pasa las variables del panel al contenedor."""
+    from config import DASHBOARD_ENV
+
+    text = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+    missing = sorted(name for name in DASHBOARD_ENV if f"{name}:" not in text)
+    assert not missing, f"El compose no declara: {', '.join(missing)}"
+    # Y el panel necesita un volumen donde escribir la base.
+    assert "/var/lib/mcp-correo" in text
 
 
 def test_el_overlay_del_tunel_no_lleva_el_token_dentro() -> None:

@@ -18,7 +18,7 @@ import hmac
 import json
 import logging
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -32,9 +32,11 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from audit import AuditError, AuditLog
 from config import (
     Account,
+    DashboardSettings,
     ServerSettings,
     ensure_local_bind,
     load_config,
+    load_dashboard_settings,
     require_bearer_token,
     write_capabilities,
     write_capabilities_detail,
@@ -44,7 +46,19 @@ from mail.errors import MailError
 from mail.imap import ClientFactory, MailService
 from mail.mutate import MailboxWriter
 from mail.smtp_out import SmtpFactory
+from scope import Scope as RouteScope
 from scope import reset_scope, set_scope
+from store.accounts import (
+    AccountSnapshot,
+    AccountSource,
+    DatabaseAccounts,
+    DomainInfo,
+    account_secrets,
+    como_fuente,
+)
+from store.crypto import Cipher
+from store.db import Database
+from store.store import Store, importar_cuentas
 from version import __version__
 
 logger = logging.getLogger("mcp_correo.server")
@@ -159,6 +173,12 @@ class Runtime:
     service: MailService
     audit: AuditLog
     mcp: MCPServer
+    #: La fuente de cuentas. Con el panel, la de la base de datos.
+    source: AccountSource | None = None
+    #: El almacén, si el panel está activo.
+    store: Store | None = None
+    #: Los ajustes del panel, si está activo.
+    dashboard: DashboardSettings | None = None
 
 
 #: Pista que sustituye al "Invalid Host header" del SDK, que no dice nada
@@ -230,27 +250,27 @@ class _Pista421:
 class BearerAuth:
     """Comprueba Authorization: Bearer con hmac.compare_digest antes de la app.
 
-    También enruta: `/mcp` ve todas las cuentas y `/mcp/<cuenta>` solo una.
-    La ruta fija el ámbito y el Bearer fija la credencial: el global vale
-    para cualquier ruta, el de una cuenta solo para la suya.
+    También enruta. La ruta fija el ámbito y el Bearer fija la credencial.
+    La credencial tiene que **cubrir** el ámbito: la de una cuenta no
+    abre la ruta de un dominio, y la de un dominio no abre la de otro.
     """
 
     def __init__(
         self,
         app: ASGIApp,
         token: str,
-        accounts: dict[str, Account],
+        accounts: Mapping[str, Account] | AccountSource,
         allowed_hosts: tuple[str, ...] = (),
     ) -> None:
         self.app = app
         self._expected = hashlib.sha256(token.encode()).digest()
-        self._accounts = accounts
+        self._source = como_fuente(accounts)
         self._allowed_hosts = allowed_hosts
-        self._digests = {
-            key: hashlib.sha256(account.bearer.encode()).digest()
-            for key, account in accounts.items()
-            if account.bearer
-        }
+        self._version: int | None = None
+        self._accounts: Mapping[str, Account] = {}
+        self._domains: Mapping[str, DomainInfo] = {}
+        self._account_digests: dict[str, bytes] = {}
+        self._domain_digests: dict[str, bytes] = {}
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
@@ -268,27 +288,26 @@ class BearerAuth:
         if presented is None:
             await _unauthorized(send)
             return
-        kind, account_key = self._match(hashlib.sha256(presented.encode()).digest())
+        snapshot = self._refresh()
+        kind, key = self._match(hashlib.sha256(presented.encode()).digest())
         if kind == "none":
             await _unauthorized(send)
             return
-        if kind == "account":
-            # El bearer de una cuenta solo vale en su propia ruta.
-            resolved = self._resolve(ident) if ident is not None else None
-            if resolved != account_key:
-                await _error(send, 403, "forbidden")
-                return
-            allowed = frozenset({account_key})
-        else:
-            if ident is None:
-                allowed = frozenset(self._accounts)
-            else:
-                resolved = self._resolve(ident)
-                if resolved is None:
-                    await _error(send, 404, "not found")
-                    return
-                allowed = frozenset({resolved})
-        scope_token = set_scope(allowed)
+        route_kind, allowed, resolved = self._route(snapshot, ident)
+        if route_kind == "":
+            # La ruta no existe. A quien no tiene la credencial general no
+            # se le dice si existe: 403, como con cualquier otra cosa que
+            # no puede tocar.
+            await _error(send, 404 if kind == "global" else 403, "not found")
+            return
+        reach = self._reach(snapshot, kind, key)
+        if not self._permite(kind, key, route_kind, resolved):
+            await _error(send, 403, "forbidden")
+            return
+        route = f"/mcp/{resolved}" if route_kind != "root" else MCP_ROOT
+        scope_token = set_scope(
+            RouteScope(keys=allowed, route=route, kind=route_kind, ident=resolved, reach=reach)
+        )
         try:
             # El transporte MCP registra una sola ruta, /mcp. La cuenta va en
             # el ámbito, no en el path.
@@ -299,39 +318,121 @@ class BearerAuth:
         finally:
             reset_scope(scope_token)
 
+    def _refresh(self) -> AccountSnapshot:
+        """Las cuentas de ahora, y los digest, si han cambiado.
+
+        La fuente estática no cambia nunca, así que sus digest se calculan
+        una vez. La de la base de datos cambia cuando el panel toca algo, y
+        entonces hay que rehacerlos.
+        """
+        snapshot = self._source.snapshot()
+        if snapshot.version == self._version:
+            return snapshot
+        self._version = snapshot.version
+        self._accounts = snapshot.accounts
+        self._domains = snapshot.domains
+        self._account_digests = {
+            key: hashlib.sha256(account.bearer.encode()).digest()
+            for key, account in snapshot.accounts.items()
+            if account.bearer
+        }
+        self._domain_digests = {
+            name: hashlib.sha256(domain.bearer.encode()).digest()
+            for name, domain in snapshot.domains.items()
+            if domain.bearer
+        }
+        return snapshot
+
     def _match(self, digest: bytes) -> tuple[str, str | None]:
-        """Qué credencial es la presentada: global, de una cuenta o ninguna."""
-        is_global = hmac.compare_digest(digest, self._expected)
-        matched: str | None = None
+        """Qué credencial es la presentada: de cuenta, de dominio o general."""
+        matched_account: str | None = None
         # Se comparan todos los digest para que el tiempo de respuesta no
         # dependa de cuál coincide.
-        for key, expected in self._digests.items():
+        for key, expected in self._account_digests.items():
             if hmac.compare_digest(digest, expected):
-                matched = key
-        if is_global:
+                matched_account = key
+        matched_domain: str | None = None
+        for name, expected in self._domain_digests.items():
+            if hmac.compare_digest(digest, expected):
+                matched_domain = name
+        # La más específica gana: la de cuenta, luego la de dominio, y la
+        # general está en el último sitio.
+        if matched_account is not None:
+            return ("account", matched_account)
+        if matched_domain is not None:
+            return ("domain", matched_domain)
+        if hmac.compare_digest(digest, self._expected):
             return ("global", None)
-        if matched is not None:
-            return ("account", matched)
         return ("none", None)
 
-    def _resolve(self, ident: str) -> str | None:
-        """La clave de cuenta que corresponde a un identificador de la ruta."""
+    def _route(
+        self, snapshot: AccountSnapshot, ident: str | None
+    ) -> tuple[str, frozenset[str], str]:
+        """La ruta, el ámbito que expone y el identificador canónico.
+
+        ("root", las cuentas del dominio por defecto, "")
+        ("domain", las cuentas del dominio, nombre)
+        ("account", esa cuenta, clave)
+        ("", vacío, "") si no existe
+        """
+        if ident is None:
+            return ("root", frozenset(snapshot.default_scope), "")
         text = ident.strip()
         if not text:
-            return None
+            return ("root", frozenset(snapshot.default_scope), "")
         low = text.lower()
         for key, account in self._accounts.items():
             if key.lower() == low or account.username.lower() == low:
-                return key
+                return ("account", frozenset({key}), key)
         if low.isdigit():
             wanted = int(low)
             # El 0 es el valor centinela de las cuentas que vienen del TOML:
-            # no sonrutables por número, porque no tienen.
+            # no son rutables por número, porque no tienen.
             if wanted > 0:
                 for key, account in self._accounts.items():
                     if account.index == wanted:
-                        return key
-        return None
+                        return ("account", frozenset({key}), key)
+        domain = self._domains.get(low)
+        if domain is not None:
+            return ("domain", frozenset(domain.accounts), domain.name)
+        return ("", frozenset(), "")
+
+    def _permite(self, kind: str, key: str | None, route_kind: str, resolved: str) -> bool:
+        """Si la credencial abre esta ruta.
+
+        - La general abre todas.
+        - La de un dominio abre la ruta de su dominio y las de sus cuentas.
+        - La de una cuenta abre solo la ruta de esa cuenta.
+
+        La regla va sobre el tipo de ruta, no sobre los datos: aunque un
+        dominio tuviera una sola cuenta, la credencial de esa cuenta no
+        abre la ruta del dominio. Las rutas son las que acotan.
+        """
+        if kind == "global":
+            return True
+        if route_kind == "root":
+            # La ruta general es la puerta de la credencial general. Las
+            # credenciales acotadas tienen su propia ruta, y usan esa.
+            return False
+        if kind == "domain":
+            if route_kind == "domain":
+                return resolved == key
+            cuenta = self._accounts.get(resolved)
+            return cuenta is not None and cuenta.domain == key
+        if kind == "account":
+            return route_kind == "account" and resolved == key
+        return False
+
+    def _reach(
+        self, snapshot: AccountSnapshot, kind: str, key: str | None
+    ) -> frozenset[str] | None:
+        """Las cuentas que alcanza la credencial. None = todas."""
+        if kind == "global":
+            return None
+        if kind == "account":
+            return frozenset({key}) if key else frozenset()
+        domain = snapshot.domains.get(key or "")
+        return frozenset(domain.accounts) if domain is not None else frozenset()
 
 
 def build_mcp(
@@ -355,23 +456,26 @@ def build_mcp(
 
 def create_app(
     settings: ServerSettings,
-    accounts: dict[str, Account],
+    accounts: Mapping[str, Account] | AccountSource,
     token: str,
     client_factory: ClientFactory | None = None,
     audit: AuditLog | None = None,
     smtp_factory: SmtpFactory | None = None,
     clock: Any | None = None,
+    store: Store | None = None,
+    dashboard: DashboardSettings | None = None,
 ) -> tuple[BearerAuth, Runtime]:
-    service = MailService(settings, accounts, client_factory=client_factory)
+    source = como_fuente(accounts)
+    service = MailService(settings, source, client_factory=client_factory)
     audit_log = audit or AuditLog(
         settings.audit_log,
-        secrets=[
-            token,
-            *[account.bearer for account in accounts.values() if account.bearer],
-            *[account.password for account in accounts.values()],
-        ],
+        secrets=[token],
     )
     audit_log.ensure()
+    # Las contraseñas y los tokens de las cuentas no se escriben nunca en
+    # el log: la auditoría los tapa. Con cuentas dinámicas, la fuente los
+    # añade cada vez que recarga.
+    audit_log.add_secrets(account_secrets(source.snapshot()))
     writer = MailboxWriter(
         service,
         ConfirmationStore(settings.confirm_ttl_seconds, clock=clock),
@@ -394,10 +498,13 @@ def create_app(
     app = BearerAuth(inner, token, accounts, settings.allowed_hosts)
     runtime = Runtime(
         settings=settings,
-        accounts=accounts,
+        accounts=dict(source.snapshot().accounts),
         service=service,
         audit=audit_log,
         mcp=mcp,
+        source=source,
+        store=store,
+        dashboard=dashboard,
     )
     return app, runtime
 
@@ -848,22 +955,72 @@ async def _unauthorized(send: Send) -> None:
     await _error(send, 401, "unauthorized")
 
 
+def _preparar_la_base(
+    dashboard: DashboardSettings,
+    settings: ServerSettings,
+    cuentas: Mapping[str, Account],
+    audit: AuditLog,
+) -> tuple[Store, AccountSource]:
+    """Prepara la base de datos y devuelve el almacén y la fuente.
+
+    Con el panel activo, la base de datos es la fuente de las cuentas. Las
+    del entorno se importan **una vez**, y solo si la base está vacía: en
+    cuanto la base tiene una cuenta, la base manda. Dos fuentes a la vez
+    son dos verdades, y de dos verdades sale una que nadie sabe cuál es.
+    """
+    database = Database(dashboard.db_path)
+    database.prepare()
+    cipher = Cipher(dashboard.key)
+    store = Store(database, cipher, settings)
+    store.comprobar_clave()
+    importadas = importar_cuentas(store, cuentas)
+    if importadas:
+        logger.info(
+            "Cuentas importadas del entorno: %d. A partir de aquí la base de datos manda.",
+            importadas,
+        )
+    elif cuentas:
+        logger.info(
+            "La base de datos ya tiene cuentas: las %d del entorno se ignoran.",
+            len(cuentas),
+        )
+    else:
+        logger.info("No hay cuentas todavía. Se dan de alta desde el panel.")
+    source = DatabaseAccounts(
+        store,
+        settings,
+        on_reload=lambda snapshot: audit.add_secrets(account_secrets(snapshot)),
+    )
+    return store, source
+
+
 def _bootstrap() -> BearerAuth:
     token = require_bearer_token()
-    settings, accounts = load_config()
+    dashboard = load_dashboard_settings()
+    settings, cuentas = load_config(allow_empty=dashboard.enabled)
     ensure_local_bind(settings.bind_host)
-    application, runtime = create_app(settings, accounts, token)
+    audit = AuditLog(settings.audit_log, secrets=[token])
+    store: Store | None = None
+    if dashboard.enabled:
+        store, source = _preparar_la_base(dashboard, settings, cuentas, audit)
+    else:
+        source = como_fuente(cuentas)
+    application, runtime = create_app(
+        settings, source, token, audit=audit, store=store, dashboard=dashboard
+    )
     global RUNTIME
     RUNTIME = runtime
-    caps = write_capabilities(settings, accounts)
+    if dashboard.enabled and store is not None:
+        _levantar_el_panel(dashboard, store, settings, audit)
+    caps = write_capabilities(settings, runtime.accounts, dynamic=dashboard.enabled)
     logger.info(
         "Servidor listo: %d cuentas, escucha %s:%s, escritura=%s",
-        len(accounts),
+        len(runtime.accounts),
         settings.bind_host,
         settings.bind_port,
         ", ".join(name for name, enabled in caps.items() if enabled) or "ninguna",
     )
-    _, motivos = write_capabilities_detail(settings, accounts)
+    _, motivos = write_capabilities_detail(settings, runtime.accounts)
     if motivos:
         # Encender el interruptor global no basta: la cuenta también tiene
         # que permitirlo. Sin esta línea, el síntoma es que la tool no
@@ -873,7 +1030,7 @@ def _bootstrap() -> BearerAuth:
         "mcp-correo %s | Configuración: %s. Cuentas: %s",
         __version__,
         "variables de entorno" if settings.config_source == "env" else "accounts.toml",
-        ", ".join(sorted(accounts)),
+        ", ".join(sorted(runtime.accounts)),
     )
     logger.info(
         "Hosts permitidos: %s. Orígenes: %s",
@@ -881,6 +1038,18 @@ def _bootstrap() -> BearerAuth:
         ", ".join(settings.allowed_origins) or "(ninguno)",
     )
     return application
+
+
+def _levantar_el_panel(
+    dashboard: DashboardSettings,
+    store: Store,
+    settings: ServerSettings,
+    audit: AuditLog,
+) -> None:
+    """Levanta el panel en su puerto, en un hilo aparte."""
+    from dashboard.runner import lanzar
+
+    lanzar(dashboard, store, settings, audit)
 
 
 RUNTIME: Runtime | None = None

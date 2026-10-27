@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import imaplib
 import logging
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from contextlib import contextmanager
 from datetime import date, datetime
 from typing import Any, NoReturn
@@ -28,6 +28,7 @@ from mail.mime import (
 from mail.readonly import ReadOnlyIMAP, WritableIMAP
 from mail.threads import group_threads, normalize_message_id, replied_ids_from_header_block
 from scope import current_scope
+from store.accounts import AccountSource, como_fuente
 
 logger = logging.getLogger("mcp_correo.imap")
 
@@ -47,35 +48,142 @@ def default_client_factory(account: Account, settings: ServerSettings) -> IMAPCl
     )
 
 
+def probar_imap(
+    account: Account, settings: ServerSettings, factory: ClientFactory | None = None
+) -> dict:
+    """Comprueba que las credenciales del IMAP sirven. No toca el buzón.
+
+    Es lo que usa el botón de "probar" del panel: conectar, entrar, mirar
+    las carpetas y cerrar. Si algo está mal en el host, el puerto, el SSL
+    o la contraseña, se ve aquí y no cuando el agente intenta leer.
+    """
+    abrir = factory or default_client_factory
+    try:
+        raw = abrir(account, settings)
+    except (IMAPClientError, imaplib.IMAP4.error, TimeoutError, OSError) as exc:
+        _fallo_de_conexion(account, exc)
+    try:
+        try:
+            raw.login(account.username, account.password)
+        except (IMAPClientError, imaplib.IMAP4.error, TimeoutError, OSError) as exc:
+            _fallo_de_conexion(account, exc)
+        carpetas = 0
+        try:
+            carpetas = len(raw.list_folders())
+        except (IMAPClientError, imaplib.IMAP4.error, TimeoutError, OSError):
+            # El login ya ha funcionado. Que no se listen las carpetas no
+            # invalida la prueba.
+            logger.info("No se pudieron listar las carpetas de %s", account.key)
+    finally:
+        try:
+            raw.logout()
+        except (IMAPClientError, imaplib.IMAP4.error, OSError):
+            logger.info("Cierre de sesión IMAP incompleto en %s", account.key)
+    return {
+        "ok": True,
+        "folders": carpetas,
+        "detail": f"Conectado a {account.imap_host}:{account.imap_port} y el login ha funcionado.",
+    }
+
+
+def _fallo_de_conexion(account: Account, exc: BaseException) -> NoReturn:
+    """El error de una conexión fallida, sin el secreto dentro."""
+    safe = str(exc).replace(account.password, "***")[:400] if account.password else str(exc)[:400]
+    logger.warning("IMAP %s (%s): %s", account.key, type(exc).__name__, safe)
+    if isinstance(exc, TimeoutError):
+        raise MailError(
+            f"Tiempo de espera IMAP agotado ({account.imap_port}) en la cuenta {account.key}."
+        ) from None
+    if isinstance(exc, OSError) and not isinstance(exc, imaplib.IMAP4.error):
+        raise MailError(
+            f"No se pudo conectar por IMAP con la cuenta {account.key} "
+            f"({account.imap_host}:{account.imap_port})."
+        ) from None
+    raise MailError(f"El servidor IMAP rechazó la operación en la cuenta {account.key}.") from None
+
+
 class MailService:
     def __init__(
         self,
         settings: ServerSettings,
-        accounts: dict[str, Account],
+        accounts: Mapping[str, Account] | AccountSource,
         client_factory: ClientFactory | None = None,
     ) -> None:
         self.settings = settings
-        self.accounts = accounts
+        self._source = como_fuente(accounts)
         self._factory = client_factory or default_client_factory
 
+    @property
+    def accounts(self) -> Mapping[str, Account]:
+        """Las cuentas de ahora.
+
+        La fuente decide cuándo cambian: la del entorno no cambia nunca, y
+        la de la base de datos se recarga cuando el panel toca algo.
+        """
+        return self._source.snapshot().accounts
+
+    @accounts.setter
+    def accounts(self, accounts: Mapping[str, Account]) -> None:
+        """Sustituye las cuentas por un conjunto fijo."""
+        self._source = como_fuente(accounts)
+
     def list_accounts(self) -> dict:
+        """La guía: el catálogo de rutas y las cuentas del ámbito.
+
+        En la ruta general (la que no nombra ni una cuenta ni un dominio)
+        esto es lo que ve el agente: qué hay, dónde está y con qué ruta se
+        entra. En una ruta de cuenta o de dominio, el catálogo se reduce a
+        lo que esa ruta expone.
+        """
+        snapshot = self._source.snapshot()
         scope = current_scope()
-        accounts = [
-            account for account in self.accounts.values() if scope is None or account.key in scope
+        alcance = None if scope is None else scope.reach
+        permitidas = None if scope is None else scope.keys
+        visibles = [
+            account
+            for account in snapshot.accounts.values()
+            if alcance is None or account.key in alcance
         ]
+        en_ambito = [
+            account for account in visibles if permitidas is None or account.key in permitidas
+        ]
+        dominios = []
+        for nombre, dominio in sorted(snapshot.domains.items()):
+            cuentas = [clave for clave in dominio.accounts if alcance is None or clave in alcance]
+            if not cuentas:
+                continue
+            dominios.append(
+                {
+                    "domain": nombre,
+                    "label": dominio.label,
+                    "route": f"/mcp/{nombre}",
+                    "default": dominio.is_default,
+                    "accounts": cuentas,
+                }
+            )
         return {
+            "route": scope.route if scope is not None else "",
+            "scope": [account.key for account in en_ambito],
+            "default_domain": next(
+                (nombre for nombre, dominio in snapshot.domains.items() if dominio.is_default),
+                None,
+            ),
+            "domains": dominios,
             "accounts": [
                 {
                     "account": account.key,
                     "label": account.label,
                     "user": account.username,
+                    "route": f"/mcp/{account.key}",
+                    "domain": account.domain,
+                    "own_credential": bool(account.bearer),
                     "can_send": account_allows(account, "send", self.settings),
                     "can_mark": account_allows(account, "mark", self.settings),
                     "can_delete": account_allows(account, "delete", self.settings),
                     "can_draft": account_allows(account, "drafts", self.settings),
                 }
-                for account in accounts
-            ]
+                for account in en_ambito
+            ],
         }
 
     def list_folders(self, account: str) -> dict:
@@ -353,13 +461,16 @@ class MailService:
         candidatos = {
             nombre: cuenta
             for nombre, cuenta in self.accounts.items()
-            if scope is None or nombre in scope
+            if scope is None or scope.allows(nombre)
         }
         if not key:
             if len(candidatos) == 1:
                 return next(iter(candidatos.values()))
             if not candidatos:
-                raise MailError("No hay cuentas disponibles en esta ruta.")
+                raise MailError(
+                    "Esta ruta no expone ningún buzón. Entra por /mcp/<cuenta> "
+                    "o por /mcp/<dominio>."
+                )
             raise MailError(
                 "Indica la cuenta. En esta ruta hay: " + ", ".join(sorted(candidatos)) + "."
             )

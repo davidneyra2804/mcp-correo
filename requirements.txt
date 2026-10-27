@@ -2,3 +2,9 @@
 mcp>=2.3,<3
 imapclient>=4.1,<5
 uvicorn>=0.30,<1
+# Cifra las contraseñas de las cuentas en la base de datos del panel.
+# Venía con imapclient, pero se declara: el panel depende de ella.
+cryptography>=42,<51
+pytest>=8.3,<9
+ruff>=0.8,<1
+pyyaml>=6,<7
