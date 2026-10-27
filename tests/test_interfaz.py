@@ -54,14 +54,14 @@ def test_la_api_da_todo_lo_que_la_interfaz_lee(cliente: TestClient) -> None:
     """Las claves que el JavaScript usa tienen que estar en la respuesta."""
     _entrar(cliente)
     dominio = cliente.post(
-        "/api/domains", json={"name": "ejemplo.com", "label": "Prueba"}, headers=CSRF
+        "/api/domains", json={"name": "ejemplo.example.com", "label": "Prueba"}, headers=CSRF
     ).json()
     cliente.post(
         "/api/accounts",
         json={
             "domain_id": dominio["id"],
-            "name": "yo@ejemplo.com",
-            "username": "yo@ejemplo.com",
+            "name": "yo@ejemplo.example.com",
+            "username": "yo@ejemplo.example.com",
             "password": "clave-ficticia",
         },
         headers=CSRF,
@@ -76,13 +76,15 @@ def test_la_api_da_todo_lo_que_la_interfaz_lee(cliente: TestClient) -> None:
 def test_al_crear_una_cuenta_se_devuelve_el_token(cliente: TestClient) -> None:
     """La interfaz lo muestra una sola vez, al crearla."""
     _entrar(cliente)
-    dominio = cliente.post("/api/domains", json={"name": "ejemplo.com"}, headers=CSRF).json()
+    dominio = cliente.post(
+        "/api/domains", json={"name": "ejemplo.example.com"}, headers=CSRF
+    ).json()
     respuesta = cliente.post(
         "/api/accounts",
         json={
             "domain_id": dominio["id"],
-            "name": "yo@ejemplo.com",
-            "username": "yo@ejemplo.com",
+            "name": "yo@ejemplo.example.com",
+            "username": "yo@ejemplo.example.com",
             "password": "clave-ficticia",
         },
         headers=CSRF,
@@ -94,13 +96,15 @@ def test_al_crear_una_cuenta_se_devuelve_el_token(cliente: TestClient) -> None:
 def test_los_botones_de_la_interfaz_tienen_su_endpoint(cliente: TestClient) -> None:
     """Cada botón de la página llama a algo que existe."""
     _entrar(cliente)
-    dominio = cliente.post("/api/domains", json={"name": "ejemplo.com"}, headers=CSRF).json()
+    dominio = cliente.post(
+        "/api/domains", json={"name": "ejemplo.example.com"}, headers=CSRF
+    ).json()
     cuenta = cliente.post(
         "/api/accounts",
         json={
             "domain_id": dominio["id"],
-            "name": "yo@ejemplo.com",
-            "username": "yo@ejemplo.com",
+            "name": "yo@ejemplo.example.com",
+            "username": "yo@ejemplo.example.com",
             "password": "clave-ficticia",
         },
         headers=CSRF,
