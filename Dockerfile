@@ -21,6 +21,7 @@ COPY --from=build /opt/venv /opt/venv
 WORKDIR /app
 COPY --chown=mcp:mcp server.py config.py audit.py scope.py version.py /app/
 COPY --chown=mcp:mcp mail /app/mail
+COPY --chown=mcp:mcp store /app/store
 COPY --chown=mcp:mcp docker/entrypoint.py docker/rotate_audit.py /app/docker/
 COPY --chown=mcp:mcp accounts.example.toml /app/accounts.example.toml
 

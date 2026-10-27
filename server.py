@@ -18,7 +18,7 @@ import hmac
 import json
 import logging
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -44,7 +44,15 @@ from mail.errors import MailError
 from mail.imap import ClientFactory, MailService
 from mail.mutate import MailboxWriter
 from mail.smtp_out import SmtpFactory
+from scope import Scope as RouteScope
 from scope import reset_scope, set_scope
+from store.accounts import (
+    AccountSnapshot,
+    AccountSource,
+    DomainInfo,
+    account_secrets,
+    como_fuente,
+)
 from version import __version__
 
 logger = logging.getLogger("mcp_correo.server")
@@ -230,27 +238,27 @@ class _Pista421:
 class BearerAuth:
     """Comprueba Authorization: Bearer con hmac.compare_digest antes de la app.
 
-    También enruta: `/mcp` ve todas las cuentas y `/mcp/<cuenta>` solo una.
-    La ruta fija el ámbito y el Bearer fija la credencial: el global vale
-    para cualquier ruta, el de una cuenta solo para la suya.
+    También enruta. La ruta fija el ámbito y el Bearer fija la credencial.
+    La credencial tiene que **cubrir** el ámbito: la de una cuenta no
+    abre la ruta de un dominio, y la de un dominio no abre la de otro.
     """
 
     def __init__(
         self,
         app: ASGIApp,
         token: str,
-        accounts: dict[str, Account],
+        accounts: Mapping[str, Account] | AccountSource,
         allowed_hosts: tuple[str, ...] = (),
     ) -> None:
         self.app = app
         self._expected = hashlib.sha256(token.encode()).digest()
-        self._accounts = accounts
+        self._source = como_fuente(accounts)
         self._allowed_hosts = allowed_hosts
-        self._digests = {
-            key: hashlib.sha256(account.bearer.encode()).digest()
-            for key, account in accounts.items()
-            if account.bearer
-        }
+        self._version: int | None = None
+        self._accounts: Mapping[str, Account] = {}
+        self._domains: Mapping[str, DomainInfo] = {}
+        self._account_digests: dict[str, bytes] = {}
+        self._domain_digests: dict[str, bytes] = {}
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
@@ -268,27 +276,26 @@ class BearerAuth:
         if presented is None:
             await _unauthorized(send)
             return
-        kind, account_key = self._match(hashlib.sha256(presented.encode()).digest())
+        snapshot = self._refresh()
+        kind, key = self._match(hashlib.sha256(presented.encode()).digest())
         if kind == "none":
             await _unauthorized(send)
             return
-        if kind == "account":
-            # El bearer de una cuenta solo vale en su propia ruta.
-            resolved = self._resolve(ident) if ident is not None else None
-            if resolved != account_key:
-                await _error(send, 403, "forbidden")
-                return
-            allowed = frozenset({account_key})
-        else:
-            if ident is None:
-                allowed = frozenset(self._accounts)
-            else:
-                resolved = self._resolve(ident)
-                if resolved is None:
-                    await _error(send, 404, "not found")
-                    return
-                allowed = frozenset({resolved})
-        scope_token = set_scope(allowed)
+        route_kind, allowed, resolved = self._route(snapshot, ident)
+        if route_kind == "":
+            # La ruta no existe. A quien no tiene la credencial general no
+            # se le dice si existe: 403, como con cualquier otra cosa que
+            # no puede tocar.
+            await _error(send, 404 if kind == "global" else 403, "not found")
+            return
+        reach = self._reach(snapshot, kind, key)
+        if not _covers(reach, allowed):
+            await _error(send, 403, "forbidden")
+            return
+        route = f"/mcp/{resolved}" if route_kind != "root" else MCP_ROOT
+        scope_token = set_scope(
+            RouteScope(keys=allowed, route=route, kind=route_kind, ident=resolved, reach=reach)
+        )
         try:
             # El transporte MCP registra una sola ruta, /mcp. La cuenta va en
             # el ámbito, no en el path.
@@ -299,39 +306,95 @@ class BearerAuth:
         finally:
             reset_scope(scope_token)
 
+    def _refresh(self) -> AccountSnapshot:
+        """Las cuentas de ahora, y los digest, si han cambiado.
+
+        La fuente estática no cambia nunca, así que sus digest se calculan
+        una vez. La de la base de datos cambia cuando el panel toca algo, y
+        entonces hay que rehacerlos.
+        """
+        snapshot = self._source.snapshot()
+        if snapshot.version == self._version:
+            return snapshot
+        self._version = snapshot.version
+        self._accounts = snapshot.accounts
+        self._domains = snapshot.domains
+        self._account_digests = {
+            key: hashlib.sha256(account.bearer.encode()).digest()
+            for key, account in snapshot.accounts.items()
+            if account.bearer
+        }
+        self._domain_digests = {
+            name: hashlib.sha256(domain.bearer.encode()).digest()
+            for name, domain in snapshot.domains.items()
+            if domain.bearer
+        }
+        return snapshot
+
     def _match(self, digest: bytes) -> tuple[str, str | None]:
-        """Qué credencial es la presentada: global, de una cuenta o ninguna."""
-        is_global = hmac.compare_digest(digest, self._expected)
-        matched: str | None = None
+        """Qué credencial es la presentada: de cuenta, de dominio o general."""
+        matched_account: str | None = None
         # Se comparan todos los digest para que el tiempo de respuesta no
         # dependa de cuál coincide.
-        for key, expected in self._digests.items():
+        for key, expected in self._account_digests.items():
             if hmac.compare_digest(digest, expected):
-                matched = key
-        if is_global:
+                matched_account = key
+        matched_domain: str | None = None
+        for name, expected in self._domain_digests.items():
+            if hmac.compare_digest(digest, expected):
+                matched_domain = name
+        # La más específica gana: la de cuenta, luego la de dominio, y la
+        # general está en el último sitio.
+        if matched_account is not None:
+            return ("account", matched_account)
+        if matched_domain is not None:
+            return ("domain", matched_domain)
+        if hmac.compare_digest(digest, self._expected):
             return ("global", None)
-        if matched is not None:
-            return ("account", matched)
         return ("none", None)
 
-    def _resolve(self, ident: str) -> str | None:
-        """La clave de cuenta que corresponde a un identificador de la ruta."""
+    def _route(
+        self, snapshot: AccountSnapshot, ident: str | None
+    ) -> tuple[str, frozenset[str], str]:
+        """La ruta, el ámbito que expone y el identificador canónico.
+
+        ("root", las cuentas del dominio por defecto, "")
+        ("domain", las cuentas del dominio, nombre)
+        ("account", esa cuenta, clave)
+        ("", vacío, "") si no existe
+        """
+        if ident is None:
+            return ("root", frozenset(snapshot.default_scope), "")
         text = ident.strip()
         if not text:
-            return None
+            return ("root", frozenset(snapshot.default_scope), "")
         low = text.lower()
         for key, account in self._accounts.items():
             if key.lower() == low or account.username.lower() == low:
-                return key
+                return ("account", frozenset({key}), key)
         if low.isdigit():
             wanted = int(low)
             # El 0 es el valor centinela de las cuentas que vienen del TOML:
-            # no sonrutables por número, porque no tienen.
+            # no son rutables por número, porque no tienen.
             if wanted > 0:
                 for key, account in self._accounts.items():
                     if account.index == wanted:
-                        return key
-        return None
+                        return ("account", frozenset({key}), key)
+        domain = self._domains.get(low)
+        if domain is not None:
+            return ("domain", frozenset(domain.accounts), domain.name)
+        return ("", frozenset(), "")
+
+    def _reach(
+        self, snapshot: AccountSnapshot, kind: str, key: str | None
+    ) -> frozenset[str] | None:
+        """Las cuentas que alcanza la credencial. None = todas."""
+        if kind == "global":
+            return None
+        if kind == "account":
+            return frozenset({key}) if key else frozenset()
+        domain = snapshot.domains.get(key or "")
+        return frozenset(domain.accounts) if domain is not None else frozenset()
 
 
 def build_mcp(
@@ -355,23 +418,24 @@ def build_mcp(
 
 def create_app(
     settings: ServerSettings,
-    accounts: dict[str, Account],
+    accounts: Mapping[str, Account] | AccountSource,
     token: str,
     client_factory: ClientFactory | None = None,
     audit: AuditLog | None = None,
     smtp_factory: SmtpFactory | None = None,
     clock: Any | None = None,
 ) -> tuple[BearerAuth, Runtime]:
-    service = MailService(settings, accounts, client_factory=client_factory)
+    source = como_fuente(accounts)
+    service = MailService(settings, source, client_factory=client_factory)
     audit_log = audit or AuditLog(
         settings.audit_log,
-        secrets=[
-            token,
-            *[account.bearer for account in accounts.values() if account.bearer],
-            *[account.password for account in accounts.values()],
-        ],
+        secrets=[token],
     )
     audit_log.ensure()
+    # Las contraseñas y los tokens de las cuentas no se escriben nunca en
+    # el log: la auditoría los tapa. Con cuentas dinámicas, la fuente los
+    # añade cada vez que recarga.
+    audit_log.add_secrets(account_secrets(source.snapshot()))
     writer = MailboxWriter(
         service,
         ConfirmationStore(settings.confirm_ttl_seconds, clock=clock),
@@ -813,6 +877,17 @@ def _presented_bearer(scope: Scope) -> str | None:
     if not separator or scheme.lower() != b"bearer" or not received or b" " in received:
         return None
     return received.decode("utf-8", errors="ignore")
+
+
+def _covers(reach: frozenset[str] | None, scope: frozenset[str]) -> bool:
+    """Si la credencial cubre el ámbito de la ruta.
+
+    ``reach`` es None cuando la credencial es la general: alcanza todo.
+    Si no, el ámbito de la ruta tiene que estar dentro de lo que alcanza.
+    """
+    if reach is None:
+        return True
+    return scope <= reach
 
 
 def _split_mcp_path(path: str) -> tuple[bool, str | None]:

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import imaplib
 import logging
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from contextlib import contextmanager
 from datetime import date, datetime
 from typing import Any, NoReturn
@@ -28,6 +28,7 @@ from mail.mime import (
 from mail.readonly import ReadOnlyIMAP, WritableIMAP
 from mail.threads import group_threads, normalize_message_id, replied_ids_from_header_block
 from scope import current_scope
+from store.accounts import AccountSource, como_fuente
 
 logger = logging.getLogger("mcp_correo.imap")
 
@@ -51,31 +52,84 @@ class MailService:
     def __init__(
         self,
         settings: ServerSettings,
-        accounts: dict[str, Account],
+        accounts: Mapping[str, Account] | AccountSource,
         client_factory: ClientFactory | None = None,
     ) -> None:
         self.settings = settings
-        self.accounts = accounts
+        self._source = como_fuente(accounts)
         self._factory = client_factory or default_client_factory
 
+    @property
+    def accounts(self) -> Mapping[str, Account]:
+        """Las cuentas de ahora.
+
+        La fuente decide cuándo cambian: la del entorno no cambia nunca, y
+        la de la base de datos se recarga cuando el panel toca algo.
+        """
+        return self._source.snapshot().accounts
+
+    @accounts.setter
+    def accounts(self, accounts: Mapping[str, Account]) -> None:
+        """Sustituye las cuentas por un conjunto fijo."""
+        self._source = como_fuente(accounts)
+
     def list_accounts(self) -> dict:
+        """La guía: el catálogo de rutas y las cuentas del ámbito.
+
+        En la ruta general (la que no nombra ni una cuenta ni un dominio)
+        esto es lo que ve el agente: qué hay, dónde está y con qué ruta se
+        entra. En una ruta de cuenta o de dominio, el catálogo se reduce a
+        lo que esa ruta expone.
+        """
+        snapshot = self._source.snapshot()
         scope = current_scope()
-        accounts = [
-            account for account in self.accounts.values() if scope is None or account.key in scope
+        alcance = None if scope is None else scope.reach
+        permitidas = None if scope is None else scope.keys
+        visibles = [
+            account
+            for account in snapshot.accounts.values()
+            if alcance is None or account.key in alcance
         ]
+        en_ambito = [
+            account for account in visibles if permitidas is None or account.key in permitidas
+        ]
+        dominios = []
+        for nombre, dominio in sorted(snapshot.domains.items()):
+            cuentas = [clave for clave in dominio.accounts if alcance is None or clave in alcance]
+            if not cuentas:
+                continue
+            dominios.append(
+                {
+                    "domain": nombre,
+                    "label": dominio.label,
+                    "route": f"/mcp/{nombre}",
+                    "default": dominio.is_default,
+                    "accounts": cuentas,
+                }
+            )
         return {
+            "route": scope.route if scope is not None else "",
+            "scope": [account.key for account in en_ambito],
+            "default_domain": next(
+                (nombre for nombre, dominio in snapshot.domains.items() if dominio.is_default),
+                None,
+            ),
+            "domains": dominios,
             "accounts": [
                 {
                     "account": account.key,
                     "label": account.label,
                     "user": account.username,
+                    "route": f"/mcp/{account.key}",
+                    "domain": account.domain,
+                    "own_credential": bool(account.bearer),
                     "can_send": account_allows(account, "send", self.settings),
                     "can_mark": account_allows(account, "mark", self.settings),
                     "can_delete": account_allows(account, "delete", self.settings),
                     "can_draft": account_allows(account, "drafts", self.settings),
                 }
-                for account in accounts
-            ]
+                for account in en_ambito
+            ],
         }
 
     def list_folders(self, account: str) -> dict:
@@ -353,13 +407,16 @@ class MailService:
         candidatos = {
             nombre: cuenta
             for nombre, cuenta in self.accounts.items()
-            if scope is None or nombre in scope
+            if scope is None or scope.allows(nombre)
         }
         if not key:
             if len(candidatos) == 1:
                 return next(iter(candidatos.values()))
             if not candidatos:
-                raise MailError("No hay cuentas disponibles en esta ruta.")
+                raise MailError(
+                    "Esta ruta no expone ningún buzón. Entra por /mcp/<cuenta> "
+                    "o por /mcp/<dominio>."
+                )
             raise MailError(
                 "Indica la cuenta. En esta ruta hay: " + ", ".join(sorted(candidatos)) + "."
             )

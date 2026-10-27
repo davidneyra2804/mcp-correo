@@ -5,7 +5,6 @@ from __future__ import annotations
 import base64
 import importlib.util
 import os
-import re
 from pathlib import Path
 
 import pytest
@@ -149,17 +148,17 @@ def test_el_rotador_acepta_el_default(monkeypatch: pytest.MonkeyPatch) -> None:
     assert rotate._entero("MCP_AUDIT_KEEP", 12) == 12
 
 
-def test_la_imagen_lleva_todos_los_modulos_que_necesita() -> None:
-    """Todo módulo del que depende la app tiene que estar en la imagen.
+def _modulos_que_necesita_la_app(raiz: Path) -> set[str]:
+    """Los módulos y paquetes de los que depende la app.
 
-    Los tests corren desde el repositorio, donde todos los ficheros están.
+    Los tests corren desde el repositorio, donde están todos los ficheros.
     La imagen solo lleva los que copia el Dockerfile, así que un módulo que
     se quede fuera funciona en local y revienta en el contenedor.
     """
     import ast
 
-    raiz = ROOT
     locales = {p.stem for p in raiz.glob("*.py")}
+    paquetes = {p.name for p in raiz.iterdir() if p.is_dir() and (p / "__init__.py").exists()}
     vistos: set[str] = set()
     cola = ["server"]
     while cola:
@@ -167,7 +166,10 @@ def test_la_imagen_lleva_todos_los_modulos_que_necesita() -> None:
         if modulo in vistos:
             continue
         vistos.add(modulo)
-        ruta = raiz / f"{modulo}.py"
+        if modulo in paquetes:
+            ruta = raiz / modulo / "__init__.py"
+        else:
+            ruta = raiz / f"{modulo}.py"
         if not ruta.exists():
             continue
         arbol = ast.parse(ruta.read_text(encoding="utf-8"))
@@ -178,13 +180,59 @@ def test_la_imagen_lleva_todos_los_modulos_que_necesita() -> None:
             elif isinstance(nodo, ast.ImportFrom) and nodo.level == 0 and nodo.module:
                 nombres = [nodo.module.split(".")[0]]
             for nombre in nombres:
-                if nombre in locales and nombre not in vistos:
+                if (nombre in locales or nombre in paquetes) and nombre not in vistos:
                     cola.append(nombre)
+    return vistos
 
-    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
-    copiados = {nombre.removesuffix(".py") for nombre in re.findall(r"([a-z_]+\.py)", dockerfile)}
+
+def _lo_que_copia_el_dockerfile(dockerfile: str, raiz: Path) -> set[str]:
+    """Los módulos y paquetes que el Dockerfile lleva a la imagen.
+
+    Un ``COPY mail /app/mail`` lleva el paquete entero; un
+    ``COPY scope.py /app/`` lleva un módulo suelto.
+    """
+    copiados: set[str] = set()
+    for linea in dockerfile.splitlines():
+        if not linea.startswith("COPY"):
+            continue
+        partes = [p for p in linea.split()[1:] if not p.startswith("--")]
+        for origen in partes[:-1]:
+            if (raiz / origen).is_dir():
+                copiados.add(Path(origen.rstrip("/")).name)
+            elif origen.endswith(".py"):
+                copiados.add(Path(origen).stem)
+    return copiados
+
+
+def test_la_imagen_lleva_todos_los_modulos_que_necesita() -> None:
+    """Todo módulo del que depende la app tiene que estar en la imagen.
+
+    Los tests corren desde el repositorio, donde todos los ficheros están.
+    La imagen solo lleva los que copia el Dockerfile, así que un módulo que
+    se quede fuera funciona en local y revienta en el contenedor.
+    """
+    raiz = ROOT
+    vistos = _modulos_que_necesita_la_app(raiz)
+    dockerfile = (raiz / "Dockerfile").read_text(encoding="utf-8")
+    copiados = _lo_que_copia_el_dockerfile(dockerfile, raiz)
     faltan = sorted(vistos - copiados)
     assert not faltan, f"Módulos que la app necesita y el Dockerfile no copia: {faltan}"
+
+
+def test_la_imagen_lleva_los_estaticos_del_panel() -> None:
+    """Los ficheros estáticos del panel también tienen que ir en la imagen.
+
+    Una interfaz que no se sirve no se ve: el panel arrancaría y daría
+    error al pedir la página.
+    """
+    estaticos = ROOT / "dashboard" / "static"
+    if not estaticos.is_dir():
+        return
+    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+    assert "dashboard" in dockerfile
+    for fichero in sorted(estaticos.iterdir()):
+        if fichero.is_file():
+            assert fichero.name in dockerfile, f"El estático {fichero.name} no está en la imagen"
 
 
 def test_la_app_arranca_con_lo_que_cop_el_dockerfile(tmp_path: Path) -> None:

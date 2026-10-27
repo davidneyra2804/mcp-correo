@@ -238,6 +238,8 @@ class Account:
     allow_drafts: bool | None = None
     #: Número de cuenta en las variables de entorno. 0 si viene del TOML.
     index: int = 0
+    #: Dominio al que pertenece. Vacío si no hay (modo estático).
+    domain: str = ""
 
 
 def require_bearer_token() -> str:
