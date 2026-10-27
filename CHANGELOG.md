@@ -299,10 +299,10 @@ Correcciones de una auditoría completa del proyecto.
   nombre de la cuenta sin el dominio. Con esta variable:
 
   ```bash
-  MCP_ACCOUNT_SENDER_1=David Neyra
+  MCP_ACCOUNT_SENDER_1=Ada Lovelace
   ```
 
-  el `From` pasa a ser `David Neyra <david.neyra@vyrts.com>`, y en el
+  el `From` pasa a ser `Ada Lovelace <ada@corp.example.com>`, y en el
   `accounts.toml` se llama `sender`.
 
   El nombre se escapa con las reglas de la RFC 5322: si lleva coma o comillas,

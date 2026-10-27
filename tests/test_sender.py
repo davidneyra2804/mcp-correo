@@ -44,7 +44,7 @@ def test_un_salto_de_linea_no_se_cuela(monkeypatch: pytest.MonkeyPatch) -> None:
     from config import _display_name
 
     with pytest.raises(SystemExit, match="saltos de línea"):
-        _display_name("Jefe\r\nBcc: victima@ejemplo.com", "MCP_ACCOUNT_SENDER_1")
+        _display_name("Jefe\r\nBcc: victima@example.com", "MCP_ACCOUNT_SENDER_1")
 
 
 def test_un_nombre_con_nulo_no_se_cuela() -> None:
