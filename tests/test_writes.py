@@ -248,6 +248,44 @@ def test_envio_exige_token_de_un_solo_uso(tmp_path: Path) -> None:
     assert b"\\Seen" not in rig.fake.folders["INBOX"].messages[10].flags
 
 
+def test_los_destinatarios_ocultos_no_quedan_en_enviados(tmp_path: Path) -> None:
+    """El Bcc sale por SMTP, pero no se guarda en la copia de Enviados.
+
+    Si se guardara, los destinatarios ocultos quedarían a la vista en el
+    buzón de enviados, que es justo lo que se ocultaron.
+    """
+    rig = Rig(tmp_path)
+
+    async def run() -> None:
+        preview = _json(
+            await rig.mcp.call_tool(
+                "prepare_send",
+                {
+                    "account": "principal",
+                    "to": ["ana@example.com"],
+                    "bcc": ["oculto@example.com"],
+                    "subject": "Hola",
+                    "body": "Cuerpo",
+                },
+            )
+        )
+        token = preview["confirm_token"]
+        await rig.mcp.call_tool(
+            "send_message",
+            {"account": "principal", "confirm_token": token},
+        )
+
+    asyncio.run(run())
+    # Lo que sale por SMTP lleva el Bcc: los destinatarios lo reciben.
+    wire = message_from_bytes(rig.smtp.sent[0])
+    assert wire["Bcc"] == "oculto@example.com"
+    # Lo que se guarda en Enviados, no.
+    stored = rig.fake.folders["Sent"].messages[2]
+    copied = message_from_bytes(stored.raw)
+    assert copied["Bcc"] is None
+    assert b"oculto@example.com" not in stored.raw
+
+
 def test_el_token_caduca_y_no_cruza_cuenta_ni_operacion(tmp_path: Path) -> None:
     rig = Rig(tmp_path)
     rig.service.accounts["archivo"] = replace(

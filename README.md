@@ -109,7 +109,7 @@ Los compose disponibles:
 
 | Fichero | Para qué |
 | --- | --- |
-| `docker-compose.yml` | **Base.** El MCP y la rotación de la auditoría. No expone nada por sí mismo. |
+| `docker-compose.yml` | **Base.** El MCP y la rotación de la auditoría. No publica nada fuera de loopback: el puerto queda en `127.0.0.1:8765`. |
 | `docker-compose.tunnel.yml` | Exposición por Cloudflare Tunnel. Añade `cloudflared`. No hace falta abrir puertos ni Caddy. |
 | `docker-compose.proxy.yml` | TLS propio con Caddy y Let's Encrypt. Solo si no usas túnel. |
 | `docker-compose.local.yml` | Desarrollo local con datos ficticios. |

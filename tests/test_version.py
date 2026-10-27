@@ -81,6 +81,37 @@ def test_health_no_revela_la_version(tmp_path: Path) -> None:
     assert __version__ not in response.text
 
 
+def test_el_banner_de_arranque_se_ve(tmp_path: Path) -> None:
+    """Los logs del arranque tienen que salir de verdad.
+
+    Antes salían porque el SDK configuraba el logger raíz de rebote al
+    construir el MCPServer, con su formato. Si el SDK cambiaba, el banner
+    cambiaba con él, o desaparecía.
+    """
+    import os
+    import subprocess
+    import sys
+
+    env = os.environ.copy()
+    env["MCP_BEARER_TOKEN"] = "token-de-prueba-0123456789abcdef"
+    env["MCP_AUDIT_LOG"] = str(tmp_path / "audit.jsonl")
+    env["MCP_CONFIG"] = str(ROOT / "accounts.example.toml")
+    completed = subprocess.run(
+        [sys.executable, "-c", "import server"],
+        cwd=ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    salida = completed.stdout + completed.stderr
+    assert "Servidor listo:" in salida, salida
+    assert "Configuración: " in salida, salida
+    assert f"mcp-correo {__version__}" in salida, salida
+    # Con el prefijo de nivel, como los de uvicorn.
+    assert "INFO     Servidor listo:" in salida, salida
+
+
 @pytest.mark.parametrize("fichero", ["README.md", "docs/configuracion.md"])
 def test_la_documentacion_no_contradice_la_version(fichero: str) -> None:
     """Si el README habla de una versión concreta, tiene que ser la buena."""

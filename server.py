@@ -17,6 +17,7 @@ import hashlib
 import hmac
 import json
 import logging
+import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
@@ -49,6 +50,22 @@ logger = logging.getLogger("mcp_correo.server")
 
 #: Raíz del transporte MCP. /mcp/<cuenta> se resuelve al mismo handler.
 MCP_ROOT = "/mcp"
+
+
+def _configure_logging() -> None:
+    """Configura el logging antes de nada.
+
+    Sin esto, los mensajes salen porque el SDK configura el logger raíz de
+    rebote al construir el MCPServer, con su formato. Si el SDK cambia, el
+    banner de arranque cambia con él. El formato es el mismo que usa
+    uvicorn, para que el log sea homogéneo.
+    """
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(levelname)-8s %(message)s",
+        stream=sys.stderr,
+    )
+
 
 INSTRUCTIONS = """
 Servidor MCP de correo sobre IMAP y SMTP.
@@ -230,9 +247,12 @@ class BearerAuth:
                 return key
         if low.isdigit():
             wanted = int(low)
-            for key, account in self._accounts.items():
-                if account.index == wanted:
-                    return key
+            # El 0 es el valor centinela de las cuentas que vienen del TOML:
+            # no sonrutables por número, porque no tienen.
+            if wanted > 0:
+                for key, account in self._accounts.items():
+                    if account.index == wanted:
+                        return key
         return None
 
 
@@ -661,12 +681,24 @@ def _register_write_tools(
                 names = [
                     item.get("filename") for item in attachments or [] if isinstance(item, dict)
                 ]
+                try:
+                    result = writer.create_draft(account, to, subject, body, cc, attachments)
+                except MailError:
+                    # Como las demás tools de escritura, se audita el
+                    # rechazo: si no, un borrador fallido y uno bueno se
+                    # parecerían en el log.
+                    audit.record(
+                        "create_draft",
+                        account,
+                        {"to": to, "cc": cc, "subject": subject, "rejected": True},
+                    )
+                    raise
                 audit.record(
                     "create_draft",
                     account,
                     {"to": to, "cc": cc, "subject": subject, "filenames": names},
                 )
-                return writer.create_draft(account, to, subject, body, cc, attachments)
+                return result
 
             return run(action)
 
@@ -756,6 +788,7 @@ def _bootstrap() -> BearerAuth:
 
 
 RUNTIME: Runtime | None = None
+_configure_logging()
 app = _bootstrap()
 
 

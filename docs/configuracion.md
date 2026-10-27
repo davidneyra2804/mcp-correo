@@ -48,10 +48,12 @@ entorno gana y el arranque avisa por log.
 | `MCP_MAX_DELETE_PER_CALL` | entero | `20` | Mensajes por llamada de borrado. |
 | `MCP_MAX_MARK_PER_CALL` | entero | `50` | Mensajes por llamada de marcado. |
 | `MCP_SMTP_TIMEOUT` | float | `30` | Segundos de espera SMTP. |
-| `MCP_SMTP_SECURITY` | `ssl` \| `starttls` | `ssl` | Cómo se abre el SMTP. `ssl` es el 465, `starttls` el 587. |
-| `MCP_ALLOWED_RECIPIENT_DOMAINS` | CSV de dominios | vacío | Destinatarios permitidos. **Vacío significa cualquier dominio**: conviene rellenarlo. |
+| `MCP_SMTP_SECURITY` | `ssl` \| `starttls` | `ssl` | Cómo se abre el SMTP de las cuentas que **no** fijan `SMTP_USE_SSL`. `ssl` es el 465, `starttls` el 587. |
+| `MCP_ALLOWED_RECIPIENT_DOMAINS` | CSV de dominios | vacío | Destinatarios permitidos al **enviar**. **Vacío significa cualquier dominio**: conviene rellenarlo. No aplica a los borradores, que no se envían. |
 | `MCP_ALLOWED_ATTACHMENT_TYPES` | CSV de tipos MIME | lista por defecto | Adjuntos permitidos. |
 | `MCP_AUDIT_LOG` | ruta | `audit.jsonl` | Dónde se escribe el JSONL de auditoría. |
+| `MCP_CONFIG` | ruta | — | Dónde está el `accounts.toml`. Si se define y el fichero no existe, se avisa y se sigue con la configuración por entorno. |
+| `MCP_ALLOW_NONLOCAL_BIND` | `1` | sin definir | Permite escuchar fuera de loopback. **El compose lo pone**: en el contenedor hace falta, porque el proxy o el túnel llegan por la red de Docker. |
 
 ### Variables de solo Docker
 
@@ -69,6 +71,16 @@ No las lee el proceso, pero el compose las usa:
 | `MCP_AUDIT_ROTATE_SECONDS` | `3600` | Cada cuánto mira el rotador. |
 | `CLOUDFLARE_TUNNEL_TOKEN` | — | Token del túnel, solo con `docker-compose.tunnel.yml`. |
 | `CLOUDFLARE_TUNNEL_PROTOCOL` | `quic` | `quic` o `http2`, para redes que bloquean UDP. |
+| `CLOUDFLARED_VERSION` | `latest` | Versión de la imagen `cloudflared`. |
+| `CADDY_HTTP_BIND` / `CADDY_HTTPS_BIND` | `0.0.0.0` | Dónde publica Caddy los puertos 80 y 443. Solo con `docker-compose.proxy.yml`. |
+
+Y dos que solo tienen sentido en el contenedor:
+
+| Variable | Default | Para qué |
+| --- | --- | --- |
+| `MCP_ACCOUNTS_TOML_B64` | — | El `accounts.toml` en base64, para quien no pueda usar `stack.env`. Sin contraseñas: solo `password_env`. |
+| `MCP_ACCOUNTS_TOML` | — | Lo mismo, pero en texto plano en vez de base64. |
+| `MCP_GENERATED_CONFIG` | `/tmp/accounts.toml` | Dónde se genera el TOML a partir de lo anterior. Vive en tmpfs, modo `0600`. |
 
 ## Variables de cuenta
 
@@ -88,7 +100,9 @@ MCP_ACCOUNT_PASSWORD_2=otra-clave
 Para añadir una cuenta se copia el bloque y se cambia el número. No hay que
 declararla en ninguna lista: el servidor las descubre todas. `MCP_ACCOUNTS` es
 **opcional** y sirve como comprobación cruzada: si la defines, tiene que
-coincidir con las cuentas que existen, y el arranque avisa si no.
+coincidir con las cuentas que existen. Si no cuadra, **el arranque falla**
+(ver [Errores de arranque](#errores-de-arranque)), no avisa y sigue: un
+descuadre de cuentas es un error de configuración, no un aviso.
 
 | Campo | Tipo | Default | Qué es |
 | --- | --- | --- | --- |
@@ -167,7 +181,8 @@ El `BEARER` de una cuenta:
 | Bearer que no es ninguno de los conocidos | 401 |
 | Bearer de una cuenta en `/mcp` o en la ruta de otra | 403 |
 | Bearer global en `/mcp/<cuenta>` de otra | 404 |
-| Ruta que no es `/mcp` ni `/mcp/<algo>` | 404 |
+| `/health` | 200, sin token |
+| Ruta que no es `/mcp`, `/mcp/<algo>` ni `/health` | 404 |
 
 
 ## Cómo se interpretan los valores
@@ -216,19 +231,24 @@ El proceso no avisa y sigue: para. Cada mensaje dice qué corregir.
 En el arranque, el proceso dice de dónde salió la configuración:
 
 ```
+INFO     Escritura activa: ninguna
 INFO     Servidor listo: 2 cuentas, escucha 0.0.0.0:8765, escritura=apagada
-INFO     Configuración: variables de entorno. Cuentas: archivo, principal
+INFO     mcp-correo 1.0.0 | Configuración: variables de entorno. Cuentas: archivo, principal
 ```
 
-Y qué capacidades están encendidas, con la lista de cuentas:
+La línea de capacidades (`Escritura activa: ...`) dice qué tools de escritura
+están registradas. Es la forma rápida de comprobar que los interruptores
+globales están donde deben.
+
+Y la auditoría, que deja una línea por llamada:
 
 ```bash
 docker compose exec mcp python -c "print(open('/var/log/mcp-correo/audit.jsonl').read())"
 ```
 
 `list_accounts` devuelve, por cuenta, lo que puede hacer (`can_send`, `can_mark`,
-`can_delete`, `can_draft`). Es la forma rápida de comprobar que los
-interruptores y los permisos están donde deben.
+`can_delete`, `can_draft`). Es la otra forma de comprobar que los permisos por
+cuenta están donde deben.
 
 ## `accounts.toml`, el camino antiguo
 

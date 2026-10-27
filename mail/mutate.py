@@ -13,8 +13,8 @@ from typing import Any
 
 from imapclient.exceptions import CapabilityError, IMAPClientError
 
-from config import Account
-from mail.compose import build_outgoing
+from config import WRITE_GATES, Account
+from mail.compose import build_outgoing, without_bcc
 from mail.confirm import ConfirmationStore, SendQuota
 from mail.errors import MailError
 from mail.imap import MailService, _folder
@@ -24,13 +24,6 @@ from mail.smtp_out import SmtpFactory, open_smtp, transmit
 logger = logging.getLogger("mcp_correo.mutate")
 
 _TRASH_NAMES = ("Trash", "Papelera", "Deleted Items", "Deleted", "INBOX.Trash", "INBOX/Trash")
-
-_GATES = {
-    "send": ("enable_send", "allow_send", "El envío"),
-    "mark": ("enable_mark", "allow_mark", "Marcar mensajes"),
-    "delete": ("enable_delete", "allow_delete", "La eliminación"),
-    "drafts": ("enable_drafts", "allow_drafts", "Los borradores"),
-}
 
 NOTICE_SEND = (
     "Vista previa. No llames a send_message hasta una orden explícita "
@@ -272,7 +265,8 @@ class MailboxWriter:
 
     def _copy_to_sent(self, account: Account, folder: str, raw: bytes) -> bool:
         try:
-            self._append(account, folder, raw, ["\\Seen"])
+            # Sin Bcc: los destinatarios ocultos no se guardan en Enviados.
+            self._append(account, folder, without_bcc(raw), ["\\Seen"])
         except MailError as exc:
             logger.warning("Copia en Enviados no realizada (%s): %s", account.key, exc)
             return False
@@ -366,7 +360,7 @@ class MailboxWriter:
 
     def _gated(self, account_key: str, kind: str) -> Account:
         account = self.service._account(account_key)
-        global_name, account_name, label = _GATES[kind]
+        global_name, account_name, label = WRITE_GATES[kind]
         if not getattr(self.service.settings, global_name) or not getattr(account, account_name):
             raise MailError(f"{label} está desactivado para la cuenta {account.key}.")
         return account

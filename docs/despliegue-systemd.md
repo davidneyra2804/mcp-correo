@@ -44,6 +44,28 @@ nginx no vaya a publicar ese puerto.
 
 `deploy/nginx-mcp.conf` ofrece TLS 1.2+, limita a 60 peticiones por minuto por IP y solo hace proxy de `/mcp` hacia `127.0.0.1:8765`. El `server_name` de ejemplo es `mcp.example.com`. La IP comentada `203.0.113.10` es de documentación (TEST-NET, RFC 5737), no una dirección de nadie.
 
+Ojo: `location = /mcp` es una coincidencia **exacta**, así que con este nginx
+**no funcionan las rutas por cuenta** (`/mcp/<cuenta>` darían 404). Si las
+necesitas, cambia esa línea por `location /mcp {` y ajusta el `proxy_pass`
+para que no reescriba la ruta:
+
+```nginx
+location /mcp {
+    limit_req zone=mcp burst=20 nodelay;
+    limit_req_status 429;
+
+    proxy_pass http://127.0.0.1:8765;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_buffering off;
+    proxy_read_timeout 120s;
+}
+```
+
+Con `proxy_pass` sin parte de ruta, nginx pasa la ruta tal cual.
+
 `deploy/logrotate.conf` rota `/var/log/mcp-correo/audit.jsonl` cada semana, conserva 12 copias y usa `copytruncate` porque el proceso de systemd mantiene el descriptor abierto.
 
 El firewall puede dejar 22 restringido a la IP de administración, más 80 y 443. El puerto 8765 no se publica.

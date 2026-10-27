@@ -3,14 +3,18 @@
 Dos fuentes, con precedencia clara:
 
 1. **Variables de entorno** (fuente primaria). Cada clave de ``[server]``
-   tiene su variable ``MCP_*``. Las cuentas se declaran con ``MCP_ACCOUNTS``
-   y una variable por campo: ``MCP_ACCOUNT_<CLAVE>_<CAMPO>``.
+   tiene su variable ``MCP_*``. Las cuentas se declaran con una variable por
+   campo: ``MCP_ACCOUNT_<CAMPO>_<N>``, con el índice al final.
 2. **``accounts.toml``** (fuente alternativa, para lo que ya lo use, como el
    despliegue con systemd).
 
 La precedencia es entorno > TOML > default. Las cuentas vienen de una sola
-fuente: si ``MCP_ACCOUNTS`` existe, del entorno; si no, del TOML. Nunca se
-mezclan, porque una cuenta a medio configurar es peor que no tenerla.
+fuente: si hay variables ``MCP_ACCOUNT_<CAMPO>_<N>`` en el entorno, de ahí;
+si no, del TOML. Nunca se mezclan, porque una cuenta a medio configurar es
+peor que no tenerla.
+
+``MCP_ACCOUNTS`` es opcional: solo sirve como comprobación cruzada de que
+la lista cuadra con las cuentas que existen.
 
 Todo valor mal escrito aborta el arranque. Un interruptor de escritura que
 no se puede interpretar no puede quedarse en "apagado" sin que nadie se
@@ -23,7 +27,7 @@ import logging
 import os
 import re
 import tomllib
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 logger = logging.getLogger("mcp_correo.config")
@@ -31,10 +35,15 @@ logger = logging.getLogger("mcp_correo.config")
 ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 MIN_TOKEN_LENGTH = 16
 
-#: Variable que enumera las cuentas configuradas por entorno.
+#: Variable que enumera las cuentas configuradas por entorno. Opcional:
+#: solo sirve como comprobación cruzada.
 ACCOUNTS_LIST = "MCP_ACCOUNTS"
-#: Prefijo de las variables de una cuenta: MCP_ACCOUNT_<CLAVE>_<CAMPO>
+#: Prefijo de las variables de una cuenta: MCP_ACCOUNT_<CAMPO>_<N>
 ACCOUNT_PREFIX = "MCP_ACCOUNT_"
+
+#: Dónde se busca el accounts.toml, por orden. El entrypoint del contenedor
+#: usa las dos primeras; la última es la del despliegue con systemd.
+_TOML_PATHS = ("accounts.toml", "/etc/mcp-correo/accounts.toml", "/config/accounts.toml")
 
 DEFAULT_ATTACHMENT_TYPES: tuple[str, ...] = (
     "text/plain",
@@ -246,18 +255,19 @@ def resolve_config_path() -> Path | None:
         path = Path(env_path)
         if path.is_file():
             return path
-        if _env_text(ACCOUNTS_LIST) is not None:
+        if _env_account_indexes():
             logger.warning(
                 "MCP_CONFIG apunta a %s, que no existe. La configuración va por entorno.", path
             )
             return None
-        raise SystemExit(f"No se encuentra la configuración: {path}")
-    local = Path("accounts.toml")
-    if local.is_file():
-        return local
-    system = Path("/etc/mcp-correo/accounts.toml")
-    if system.is_file():
-        return system
+        raise SystemExit(
+            f"No se encuentra la configuración: {path}. "
+            "Si las cuentas van por entorno, no hace falta ese fichero."
+        )
+    for candidate in _TOML_PATHS:
+        path = Path(candidate)
+        if path.is_file():
+            return path
     return None
 
 
@@ -265,15 +275,18 @@ def load_config(path: Path | None = None) -> tuple[ServerSettings, dict[str, Acc
     """Carga servidor y cuentas. Entorno primero, TOML como alternativa."""
     config_path = path if path is not None else resolve_config_path()
     server_raw, accounts_raw = _read_toml(config_path)
-    env_accounts = _accounts_from_env()
-    source = "env" if env_accounts else "toml"
-    settings = _server_settings(server_raw, source)
+    settings = _server_settings(server_raw)
+    env_accounts = _accounts_from_env(settings)
     if env_accounts:
         accounts = env_accounts
+        settings = replace(settings, config_source="env")
         if accounts_raw:
-            logger.warning("Hay cuentas en el TOML y en %s. Mandan las del entorno.", ACCOUNTS_LIST)
+            logger.warning(
+                "Hay cuentas en el accounts.toml y en el entorno. Mandan las del entorno."
+            )
     else:
         accounts = {key: _account(str(key), value) for key, value in accounts_raw.items()}
+        settings = replace(settings, config_source="toml")
     if not accounts:
         raise SystemExit(
             "No hay cuentas. Define las variables de cada cuenta "
@@ -397,7 +410,7 @@ def _pick(env_value, toml_value, default):  # type: ignore[no-untyped-def]
 # --- Servidor ----------------------------------------------------------------
 
 
-def _server_settings(raw: dict, source: str) -> ServerSettings:
+def _server_settings(raw: dict) -> ServerSettings:
     env_public = _env_text("MCP_PUBLIC_HOST") or ""
     public_host = env_public or str(raw.get("public_host") or "127.0.0.1")
     bind_host = str(_pick(_env_text("MCP_BIND_HOST"), raw.get("bind_host"), "127.0.0.1"))
@@ -482,7 +495,6 @@ def _server_settings(raw: dict, source: str) -> ServerSettings:
         smtp_timeout=smtp_timeout,
         smtp_security=smtp_security,
         allowed_recipient_domains=domains,
-        config_source=source,
     )
 
 
@@ -539,14 +551,14 @@ def _default_origins(public_host: str) -> tuple[str, ...]:
 # campos sea el mismo en todas las cuentas y una variable por campo.
 
 
-def _accounts_from_env() -> dict[str, Account]:
+def _accounts_from_env(settings: ServerSettings) -> dict[str, Account]:
     """Cuentas declaradas con MCP_ACCOUNT_<CAMPO>_<N>."""
     indexes = _account_indexes()
     if not indexes:
         return {}
     accounts: dict[str, Account] = {}
     for index in indexes:
-        account = _account_from_env(index)
+        account = _account_from_env(index, settings)
         if account.key in accounts:
             raise SystemExit(
                 f"Dos cuentas comparten el nombre {account.key!r}. "
@@ -555,6 +567,22 @@ def _accounts_from_env() -> dict[str, Account]:
         accounts[account.key] = account
     _check_bearers(accounts)
     return accounts
+
+
+def _env_account_indexes() -> list[int]:
+    """Índices de cuenta hallados en el entorno, sin validarlos.
+
+    Sirve para saber si hay configuración por entorno sin abortar: es
+    la pregunta que hace `resolve_config_path` antes de load_config.
+    """
+    found: set[int] = set()
+    for name in os.environ:
+        if not name.startswith(ACCOUNT_PREFIX):
+            continue
+        match = _ACCOUNT_VAR.match(name)
+        if match is not None:
+            found.add(int(match.group("index")))
+    return sorted(found)
 
 
 def _account_indexes() -> list[int]:
@@ -621,7 +649,7 @@ def _listed_account_indexes() -> list[int] | None:
     return indexes
 
 
-def _account_from_env(index: int) -> Account:
+def _account_from_env(index: int, settings: ServerSettings) -> Account:
     def var(field: str) -> str:
         return f"{ACCOUNT_PREFIX}{_ACCOUNT_ENV_FIELDS[field]}_{index}"
 
@@ -657,6 +685,15 @@ def _account_from_env(index: int) -> Account:
     if not inbox_host:
         raise SystemExit(f"La cuenta {index} necesita {var('inbox_host')}.")
 
+    # El modo SMTP de la cuenta solo se fija si la cuenta lo dice. Si no, manda
+    # el global MCP_SMTP_SECURITY, y el puerto por defecto acompaña al modo.
+    if text("smtp_use_ssl") is None:
+        smtp_security = ""
+    else:
+        smtp_security = "ssl" if flag("smtp_use_ssl", True) else "starttls"
+    effective_smtp = smtp_security or settings.smtp_security
+    default_smtp_port = 465 if effective_smtp == "ssl" else 587
+
     key = text("name") or username
     bearer = text("bearer") or ""
     if bearer and len(bearer) < MIN_TOKEN_LENGTH:
@@ -672,14 +709,14 @@ def _account_from_env(index: int) -> Account:
         imap_port=_port(number("inbox_port", 993), f"{var('inbox_port')}"),
         imap_ssl=flag("inbox_use_ssl", True),
         smtp_host=text("smtp_host") or inbox_host,
-        smtp_port=_port(number("smtp_port", 465), f"{var('smtp_port')}"),
+        smtp_port=_port(number("smtp_port", default_smtp_port), f"{var('smtp_port')}"),
         username=username,
         password=_account_password(index),
         bearer=bearer,
         drafts_folder=text("drafts_folder") or "Drafts",
         sent_folder=text("sent_folder") or "Sent",
         trash_folder=_optional_folder(text("trash_folder"), f"{var('trash_folder')}"),
-        smtp_security="ssl" if flag("smtp_use_ssl", True) else "starttls",
+        smtp_security=smtp_security,
         allow_send=flag("allow_send", False),
         allow_mark=flag("allow_mark", False),
         allow_delete=flag("allow_delete", False),
@@ -689,8 +726,10 @@ def _account_from_env(index: int) -> Account:
 
 
 def _account_password(index: int) -> str:
-    direct = os.environ.get(f"{ACCOUNT_PREFIX}PASSWORD_{index}")
-    indirect_name = f"{ACCOUNT_PREFIX}PASSWORD_ENV_{index}"
+    """La contraseña de una cuenta: directa, o el nombre de otra variable."""
+    direct_name = f"{ACCOUNT_PREFIX}{_ACCOUNT_ENV_FIELDS['password']}_{index}"
+    indirect_name = f"{ACCOUNT_PREFIX}{_ACCOUNT_ENV_FIELDS['password_env']}_{index}"
+    direct = os.environ.get(direct_name)
     indirect = os.environ.get(indirect_name)
     if indirect is not None:
         indirect = indirect.strip() or None
@@ -698,8 +737,7 @@ def _account_password(index: int) -> str:
         direct = None
     if direct and indirect:
         raise SystemExit(
-            f"La cuenta {index} define {ACCOUNT_PREFIX}PASSWORD_{index} "
-            f"y {indirect_name}. Usa solo una de las dos."
+            f"La cuenta {index} define {direct_name} y {indirect_name}. Usa solo una de las dos."
         )
     if indirect:
         if not ENV_NAME.fullmatch(indirect):
@@ -719,7 +757,7 @@ def _account_password(index: int) -> str:
     if direct:
         return direct
     raise SystemExit(
-        f"La cuenta {index} no tiene contraseña. Define {ACCOUNT_PREFIX}PASSWORD_{index} "
+        f"La cuenta {index} no tiene contraseña. Define {direct_name} "
         f"o {indirect_name} con el nombre de otra variable."
     )
 
@@ -794,15 +832,27 @@ def _account(key: str, raw: object) -> Account:
     )
 
 
+#: Capacidad de escritura -> (interruptor global, permiso de cuenta, etiqueta).
+#: La usa `write_capabilities` para saber qué tools registrar, y `mail.mutate`
+#: para comprobar cada operación. Vive aquí para que no puedan discrepar.
+WRITE_GATES: dict[str, tuple[str, str, str]] = {
+    "send": ("enable_send", "allow_send", "El envío"),
+    "mark": ("enable_mark", "allow_mark", "Marcar mensajes"),
+    "delete": ("enable_delete", "allow_delete", "La eliminación"),
+    "drafts": ("enable_drafts", "allow_drafts", "Los borradores"),
+}
+
+#: Longitud máxima de un nombre de carpeta. La comparten la validación del
+#: TOML y la del IMAP.
+MAX_FOLDER_LENGTH = 200
+
+
 def write_capabilities(settings: ServerSettings, accounts: dict[str, Account]) -> dict[str, bool]:
     """Una tool de escritura existe solo si el interruptor global y alguna cuenta lo permiten."""
     return {
-        "send": settings.enable_send and any(account.allow_send for account in accounts.values()),
-        "mark": settings.enable_mark and any(account.allow_mark for account in accounts.values()),
-        "delete": settings.enable_delete
-        and any(account.allow_delete for account in accounts.values()),
-        "drafts": settings.enable_drafts
-        and any(account.allow_drafts for account in accounts.values()),
+        name: getattr(settings, global_name)
+        and any(getattr(account, account_name) for account in accounts.values())
+        for name, (global_name, account_name, _label) in WRITE_GATES.items()
     }
 
 
@@ -849,7 +899,11 @@ def _optional_security(value: object, field_name: str) -> str:
 def _optional_folder(value: object, field_name: str) -> str:
     if value is None or value == "":
         return ""
-    if not isinstance(value, str) or len(value) > 200 or any(char in value for char in "\r\n\x00"):
+    if (
+        not isinstance(value, str)
+        or len(value) > MAX_FOLDER_LENGTH
+        or any(char in value for char in "\r\n\x00")
+    ):
         raise SystemExit(f"{field_name} no es un nombre de carpeta válido")
     return value
 

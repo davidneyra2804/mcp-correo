@@ -112,12 +112,50 @@ def test_los_valores_por_defecto_de_una_cuenta(monkeypatch: pytest.MonkeyPatch) 
     assert account.imap_ssl is True
     assert account.smtp_host == "imap.corp.example.com"
     assert account.smtp_port == 465
-    assert account.smtp_security == "ssl"
+    # La cuenta no fija el modo SMTP si no lo dice: manda el global.
+    assert account.smtp_security == ""
     assert account.drafts_folder == "Drafts"
     assert account.sent_folder == "Sent"
     assert account.trash_folder == ""
     assert account.allow_send is False
     assert account.bearer == ""
+
+
+def test_el_modo_smtp_global_aplica_si_la_cuenta_no_lo_fija(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """MCP_SMTP_SECURITY tiene que mandar cuando la cuenta no dice nada."""
+    _cuenta(monkeypatch, MCP_SMTP_SECURITY="starttls")
+    settings, accounts = load_config()
+    account = accounts["ada@corp.example.com"]
+    assert settings.smtp_security == "starttls"
+    assert account.smtp_security == ""
+    # El puerto por defecto acompaña al modo: 587 es STARTTLS, no 465.
+    assert account.smtp_port == 587
+    from mail.smtp_out import open_smtp  # noqa: F401
+
+    effective = account.smtp_security or settings.smtp_security
+    assert effective == "starttls"
+
+
+def test_la_cuenta_puede_fijar_su_propio_modo_smtp(monkeypatch: pytest.MonkeyPatch) -> None:
+    _cuenta(monkeypatch, MCP_SMTP_SECURITY="starttls", MCP_ACCOUNT_SMTP_USE_SSL_1="true")
+    _settings, accounts = load_config()
+    assert accounts["ada@corp.example.com"].smtp_security == "ssl"
+
+
+def test_la_cuenta_puede_pedir_starttls(monkeypatch: pytest.MonkeyPatch) -> None:
+    _cuenta(monkeypatch, MCP_ACCOUNT_SMTP_USE_SSL_1="false")
+    _settings, accounts = load_config()
+    assert accounts["ada@corp.example.com"].smtp_security == "starttls"
+    # El puerto por defecto acompaña al modo: STARTTLS es el 587.
+    assert accounts["ada@corp.example.com"].smtp_port == 587
+
+
+def test_el_puerto_explicito_manda_sobre_el_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    _cuenta(monkeypatch, MCP_ACCOUNT_SMTP_USE_SSL_1="false", MCP_ACCOUNT_SMTP_PORT_1="2525")
+    _settings, accounts = load_config()
+    assert accounts["ada@corp.example.com"].smtp_port == 2525
 
 
 def test_varias_cuentas_por_indice(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -58,26 +58,27 @@ def test_rechaza_una_contraseña_en_el_texto(
         entry.resolve_accounts_file()
 
 
-def test_sin_config_no_arranca(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_sin_toml_el_entrypoint_no_aborta(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """El entrypoint solo prepara el fichero. Si no hay, sigue.
+
+    Si no hay cuentas, avisa config.py, que es quien sabe qué es una
+    cuenta. Aquí no se decide eso, para que las dos piezas no discrepen.
+    """
     entry = _load("entrypoint", "docker/entrypoint.py")
     monkeypatch.delenv("MCP_CONFIG", raising=False)
     monkeypatch.setenv("MCP_ACCOUNTS_TOML_B64", "")
     monkeypatch.setenv("MCP_ACCOUNTS_TOML", "   ")
-    monkeypatch.delenv("MCP_ACCOUNTS", raising=False)
-    with pytest.raises(SystemExit, match="Falta la configuración"):
-        entry.resolve_accounts_file()
+    assert entry.resolve_accounts_file() is None
 
 
-def test_mcp_config_inexistente_sin_cuentas_no_arranca(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_mcp_config_inexistente_no_aborta(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Un MCP_CONFIG que no existe se avisa y se sigue."""
     entry = _load("entrypoint", "docker/entrypoint.py")
     monkeypatch.setenv("MCP_CONFIG", str(tmp_path / "no-existe.toml"))
     monkeypatch.setenv("MCP_ACCOUNTS_TOML_B64", "")
     monkeypatch.setenv("MCP_ACCOUNTS_TOML", "   ")
-    monkeypatch.delenv("MCP_ACCOUNTS", raising=False)
-    with pytest.raises(SystemExit, match="No se encuentra la configuración"):
-        entry.resolve_accounts_file()
+    assert entry.resolve_accounts_file() is None
+    assert "MCP_CONFIG" not in os.environ
 
 
 def test_las_cuentas_por_entorno_no_necesitan_toml(
@@ -85,7 +86,6 @@ def test_las_cuentas_por_entorno_no_necesitan_toml(
 ) -> None:
     entry = _load("entrypoint", "docker/entrypoint.py")
     monkeypatch.setenv("MCP_CONFIG", str(tmp_path / "no-existe.toml"))
-    monkeypatch.setenv("MCP_ACCOUNTS", "principal")
     monkeypatch.setenv("MCP_ACCOUNTS_TOML_B64", "")
     monkeypatch.setenv("MCP_ACCOUNTS_TOML", "   ")
     assert entry.resolve_accounts_file() is None
@@ -99,8 +99,22 @@ def test_el_toml_montado_gana_a_las_cuentas_por_entorno(
     mounted = tmp_path / "accounts.toml"
     mounted.write_text("[server]\npublic_host='x'\n", encoding="utf-8")
     monkeypatch.setenv("MCP_CONFIG", str(mounted))
-    monkeypatch.setenv("MCP_ACCOUNTS", "principal")
     assert entry.resolve_accounts_file() == str(mounted)
+
+
+def test_una_contraseña_entrecomillada_tampoco_pasa(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """La clave puede venir entrecomillada: el filtro tiene que verla."""
+    entry = _load("entrypoint", "docker/entrypoint.py")
+    monkeypatch.setenv("MCP_CONFIG", str(tmp_path / "no-existe.toml"))
+    monkeypatch.setenv("MCP_ACCOUNTS_TOML_B64", "")
+    monkeypatch.setenv(
+        "MCP_ACCOUNTS_TOML",
+        '[accounts.principal]\n"password" = "no-va-aqui"\npassword_env = "MAIL_X"\n',
+    )
+    with pytest.raises(SystemExit, match="contraseña"):
+        entry.resolve_accounts_file()
 
 
 def test_la_rotacion_conserva_el_numero_pedido(tmp_path: Path) -> None:
@@ -118,6 +132,20 @@ def test_la_rotacion_conserva_el_numero_pedido(tmp_path: Path) -> None:
     assert (tmp_path / "audit.jsonl.2").read_text(encoding="utf-8") == "dos\n"
     assert not (tmp_path / "audit.jsonl.3").exists()
     assert rotate.rotate_once(path, max_bytes=10_000, keep=2) is False
+
+
+def test_el_rotador_avisa_de_un_numero_malo(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Un valor no numérico no puede tumbar el contenedor en bucle."""
+    rotate = _load("rotate_audit", "docker/rotate_audit.py")
+    monkeypatch.setenv("MCP_AUDIT_MAX_BYTES", "muchos")
+    with pytest.raises(SystemExit, match="entero"):
+        rotate._entero("MCP_AUDIT_MAX_BYTES", 10485760)
+
+
+def test_el_rotador_acepta_el_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    rotate = _load("rotate_audit", "docker/rotate_audit.py")
+    monkeypatch.delenv("MCP_AUDIT_KEEP", raising=False)
+    assert rotate._entero("MCP_AUDIT_KEEP", 12) == 12
 
 
 def test_el_compose_publica_solo_loopback_y_no_lleva_secretos() -> None:
@@ -194,6 +222,30 @@ def test_el_compose_declara_todas_las_variables_fijas_del_servidor() -> None:
     assert not missing, f"El compose no declara: {', '.join(missing)}"
 
 
+def test_la_tabla_de_variables_coincide_con_el_codigo() -> None:
+    """`_SERVER_ENV` dice qué variables existen. Tiene que ser verdad.
+
+    La tabla no la usa el runtime (las lecturas son literales), así que sin
+    este test podría quedar desfasada: el compose y el .env.example pasarían
+    los tests de nombres, pero la variable ya no se leería.
+    """
+    from config import _SERVER_ENV
+
+    fuente = (ROOT / "config.py").read_text(encoding="utf-8")
+    huerfanas = sorted(name for name in _SERVER_ENV.values() if f'"{name}"' not in fuente)
+    assert not huerfanas, f"Variables en la tabla que el código no lee: {', '.join(huerfanas)}"
+
+
+def test_las_variables_de_cuenta_coinciden_con_el_codigo() -> None:
+    """Los campos de cuenta de la tabla tienen que estar en el código."""
+    from config import _ACCOUNT_ENV_BASES, _ACCOUNT_ENV_FIELDS
+
+    fuente = (ROOT / "config.py").read_text(encoding="utf-8")
+    huerfanas = sorted(base for base in _ACCOUNT_ENV_BASES if f'"{base}"' not in fuente)
+    assert not huerfanas, f"Campos en la tabla que el código no usa: {', '.join(huerfanas)}"
+    assert set(_ACCOUNT_ENV_FIELDS.values()) == set(_ACCOUNT_ENV_BASES)
+
+
 def test_el_ejemplo_de_env_documenta_todas_las_variables() -> None:
     from config import _ACCOUNT_ENV_BASES, _SERVER_ENV
 
@@ -224,30 +276,20 @@ def test_el_compose_local_no_necesita_el_toml() -> None:
     assert "accounts.toml" not in text
 
 
-def test_el_entrypoint_acepta_cuentas_por_indice_sin_lista() -> None:
-    """Las cuentas se descubren por MCP_ACCOUNT_<CAMPO>_<N>.
+def test_el_entrypoint_no_decide_si_hay_cuentas(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """El entrypoint no sabe qué es una cuenta: solo prepara el fichero.
 
-    MCP_ACCOUNTS es opcional. El entrypoint tiene que verlo así, o se
-    negaría a arrancar cuando las cuentas están perfectlyamente definidas.
+    Que haya cuentas y sean válidas es cosa de config.py. Si el entrypoint
+    tambien lo decidiera, las dos piezas podrian discrepar, que es como
+    aparecio el bug del esquema de cuentas.
     """
     entry = _load("entrypoint", "docker/entrypoint.py")
-    assert entry._accounts_from_env() is False
-
-    os.environ["MCP_ACCOUNT_USERNAME_1"] = "ada@corp.example.com"
-    try:
-        assert entry._accounts_from_env() is True
-    finally:
-        del os.environ["MCP_ACCOUNT_USERNAME_1"]
-
-
-def test_el_entrypoint_no_confunde_una_variable_suelta() -> None:
-    """Una variable de cuenta sin índice no cuenta como configuración."""
-    entry = _load("entrypoint", "docker/entrypoint.py")
-    os.environ["MCP_ACCOUNT_USERNAME"] = "ada@corp.example.com"
-    try:
-        assert entry._accounts_from_env() is False
-    finally:
-        del os.environ["MCP_ACCOUNT_USERNAME"]
+    monkeypatch.setenv("MCP_CONFIG", str(tmp_path / "no-existe.toml"))
+    monkeypatch.setenv("MCP_ACCOUNTS_TOML_B64", "")
+    monkeypatch.setenv("MCP_ACCOUNTS_TOML", "   ")
+    assert not hasattr(entry, "_accounts_from_env")
 
 
 def test_el_compose_pasa_el_env_al_contenedor() -> None:

@@ -28,6 +28,8 @@ _HEADER_NAMES = (
     "In-Reply-To",
     "References",
 )
+#: Las mismas, en minúsculas: es la clave con la que salen del parser.
+_HEADER_KEYS = tuple(name.lower() for name in _HEADER_NAMES)
 _TAG_RE = re.compile(r"<[^>]+>")
 _HIDDEN_RE = re.compile(r"(?is)<(script|style).*?>.*?</\1>")
 _SPACE_RE = re.compile(r"\s+")
@@ -71,18 +73,8 @@ def parse_header_block(raw: bytes) -> dict[str, str]:
     if not blob.endswith(b"\r\n\r\n") and not blob.endswith(b"\n\n"):
         blob += b"\r\n"
     message = message_from_bytes(blob, policy=default_policy)
-    names = (
-        "from",
-        "to",
-        "cc",
-        "date",
-        "subject",
-        "message-id",
-        "in-reply-to",
-        "references",
-    )
     parsed: dict[str, str] = {}
-    for name in names:
+    for name in _HEADER_KEYS:
         values = message.get_all(name, [])
         parsed[name] = decode_header_value(" ".join(str(value) for value in values))
     return parsed

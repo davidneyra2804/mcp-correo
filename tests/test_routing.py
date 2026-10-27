@@ -187,3 +187,9 @@ def test_tools_list_no_cambia_por_la_ruta(client: TestClient) -> None:
     )
     assert todo.status_code == uno.status_code == 200
     assert todo.json()["result"]["tools"] == uno.json()["result"]["tools"]
+
+
+def test_el_indice_cero_no_es_una_ruta(client: TestClient) -> None:
+    """El 0 es el centinela de las cuentas del TOML: no enruta a ninguna."""
+    response = _call(client, "/mcp/0", TOKEN)
+    assert response.status_code == 404

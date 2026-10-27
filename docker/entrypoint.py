@@ -1,11 +1,17 @@
 """Prepara accounts.toml y ejecuta el proceso. No guarda secretos en la imagen.
 
-Tres orígenes, en este orden:
+Tres orígenes para el fichero, en este orden:
 
 1. Un `accounts.toml` montado (volumen, bind o config de Docker).
 2. El texto de `MCP_ACCOUNTS_TOML_B64` o `MCP_ACCOUNTS_TOML`.
-3. Nada: la configuración va por variables de entorno (`MCP_ACCOUNTS` y
-   `MCP_ACCOUNT_<CLAVE>_<CAMPO>`). En ese caso no se genera ningún fichero.
+
+Si no hay ninguno, no se genera nada y el proceso sigue: la configuración
+puede venir entera por variables de entorno (`MCP_ACCOUNT_<CAMPO>_<N>`).
+
+Esta función solo prepara el fichero. Si no hay cuentas, o no son válidas, es
+cosa de `config.py`, que es quien sabe qué es una cuenta y puede dar el
+mensaje que toca. Aquí no se decide eso, para que las dos piezas no puedan
+discrepar.
 
 El fichero generado vive en tmpfs con modo 0600 y no queda en la imagen.
 """
@@ -15,30 +21,26 @@ from __future__ import annotations
 import base64
 import binascii
 import os
-import re
 import sys
 import tomllib
 from pathlib import Path
 
-ACCOUNTS_LIST = "MCP_ACCOUNTS"
 DEFAULT_CONFIG_PATHS = ("/config/accounts.toml", "accounts.toml")
-
-#: MCP_ACCOUNT_<CAMPO>_<N>. El índice va al final.
-_ACCOUNT_VAR = re.compile(r"^MCP_ACCOUNT_[A-Z_]+_\d+$")
 
 
 def resolve_accounts_file() -> str | None:
-    """Ruta del TOML a usar, o None si la configuración va solo por entorno."""
+    """Ruta del accounts.toml a usar, o None si la configuración va por entorno."""
     configured = os.environ.get("MCP_CONFIG", "").strip()
-    explicit = Path(configured) if configured else None
 
     # 1. Fichero montado o ruta explícita.
-    if explicit is not None and explicit.is_file():
-        os.environ["MCP_CONFIG"] = str(explicit)
-        print(f"Usando accounts.toml en {explicit}", file=sys.stderr)
-        return str(explicit)
+    if configured:
+        path = Path(configured)
+        if path.is_file():
+            os.environ["MCP_CONFIG"] = str(path)
+            print(f"Usando accounts.toml en {path}", file=sys.stderr)
+            return str(path)
 
-    # 2. Fichero en la ruta por defecto del contenedor.
+    # 2. Fichero en una ruta por defecto.
     for candidate in DEFAULT_CONFIG_PATHS:
         path = Path(candidate)
         if path.is_file():
@@ -59,30 +61,12 @@ def resolve_accounts_file() -> str | None:
         print(f"accounts.toml generado en {target} (no queda en la imagen)", file=sys.stderr)
         return str(target)
 
-    # 4. Cuentas por variables de entorno: no hace falta TOML.
-    if _accounts_from_env():
-        if explicit is not None:
-            print(
-                f"{explicit} no existe. La configuración va por variables de entorno.",
-                file=sys.stderr,
-            )
+    # 4. No hay TOML. Si la configuración va por entorno, sigue; si no,
+    # config.py avisará de que faltan las cuentas.
+    if configured:
+        print(f"{configured} no existe.", file=sys.stderr)
         os.environ.pop("MCP_CONFIG", None)
-        print(
-            "Configuración por variables de entorno (MCP_ACCOUNT_<CAMPO>_<N>). "
-            "No hace falta accounts.toml.",
-            file=sys.stderr,
-        )
-        return None
-
-    if explicit is not None:
-        raise SystemExit(f"No se encuentra la configuración: {explicit}")
-    raise SystemExit(
-        "Falta la configuración. Define las cuentas por entorno con "
-        "MCP_ACCOUNT_<CAMPO>_<N> (por ejemplo MCP_ACCOUNT_USERNAME_1, "
-        "MCP_ACCOUNT_INBOX_HOST_1 y MCP_ACCOUNT_PASSWORD_1), o monta un "
-        "accounts.toml en /config/accounts.toml, o define MCP_ACCOUNTS_TOML_B64 "
-        "o MCP_ACCOUNTS_TOML. La contraseña no va en ese texto: solo password_env."
-    )
+    return None
 
 
 def main() -> None:
@@ -90,19 +74,6 @@ def main() -> None:
     if len(sys.argv) < 2:
         raise SystemExit("Falta el comando a ejecutar")
     os.execvp(sys.argv[1], sys.argv[1:])
-
-
-def _accounts_from_env() -> bool:
-    """¿Hay cuentas declaradas por entorno?
-
-    Las cuentas se declaran con MCP_ACCOUNT_<CAMPO>_<N>: el nombre de la
-    variable no cambia de una cuenta a otra, solo el índice final.
-    MCP_ACCOUNTS es opcional: solo sirve como comprobación cruzada de que
-    la lista cuadra con las cuentas que existen.
-    """
-    if os.environ.get(ACCOUNTS_LIST, "").strip():
-        return True
-    return any(_ACCOUNT_VAR.match(name) for name in os.environ)
 
 
 def _inline_toml() -> str | None:
@@ -122,10 +93,14 @@ def _inline_toml() -> str | None:
 
 
 def _reject_inline_password(text: str) -> None:
+    """Ninguna clave de contraseña, ni entrecomillada ni con espacios alrededor."""
     for line in text.splitlines():
         code = line.split("#", 1)[0].strip()
         key = code.split("=", 1)[0].strip()
-        if key == "password":
+        # La clave puede venir entrecomillada: "password" = "secreto"
+        if len(key) >= 2 and key[0] == key[-1] and key[0] in "\"'":
+            key = key[1:-1].strip()
+        if key.lower() == "password":
             raise SystemExit(
                 "La configuración trae una contraseña. Usa solo password_env "
                 "y pasa el secreto como variable de entorno."

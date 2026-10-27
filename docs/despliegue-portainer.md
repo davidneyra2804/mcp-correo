@@ -73,7 +73,7 @@ Las que no puedes dejar de definir:
 | `MCP_BEARER_TOKEN` | sí | Secreto del cliente MCP. Mínimo 16 caracteres. `openssl rand -base64 48`. |
 | `MCP_ACCOUNT_USERNAME_<N>` | sí | Usuario de la cuenta N. |
 | `MCP_ACCOUNT_INBOX_HOST_<N>` | sí | Servidor IMAP de la cuenta N. |
-| `MCP_ACCOUNT_PASSWORD_<N>` | sí, o `PASSWORD_ENV_<N>` | Contraseña de la cuenta N. |
+| `MCP_ACCOUNT_PASSWORD_<N>` | sí, o `MCP_ACCOUNT_PASSWORD_ENV_<N>` | Contraseña de la cuenta N. |
 | `MCP_ACCOUNT_BEARER_<N>` | no | Credencial que da acceso solo a esa cuenta. Ver abajo. |
 | `MCP_PUBLIC_HOST` | para el dominio público | Nombre del MCP, el que irá en el certificado. Arma `allowed_hosts` y `allowed_origins`. |
 | `MCP_ALLOWED_HOSTS` | no | Lista separada por comas, si la generada no basta. |
@@ -104,7 +104,9 @@ El compose las pasa por dos vías:
   `MCP_ACCOUNT_<CAMPO>_<N>` sin enumerarlas una a una en el YAML.
 
 `env_file` con `required: false` necesita **Compose 2.24 o superior**. Si el
-fichero no está, se sigue: el proceso arranca y avisa de que no hay cuentas.
+fichero no está, se sigue: si tampoco hay cuentas por entorno, el contenedor
+**no arranca** y el log dice `No hay cuentas. Define las variables de cada
+cuenta (MCP_ACCOUNT_<CAMPO>_<N>)`.
 
 Si tu Portainer usa un Compose más antiguo y se queja del `env_file`, hay dos
 salidas: subir el Compose, o definición alternativa de la configuración con

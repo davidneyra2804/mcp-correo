@@ -5,7 +5,9 @@ from __future__ import annotations
 import base64
 import re
 from datetime import UTC, datetime
+from email import message_from_bytes
 from email.message import EmailMessage
+from email.policy import default as default_policy
 from email.utils import format_datetime, make_msgid
 from typing import Any
 
@@ -88,6 +90,20 @@ def build_outgoing(
     }
     preview = body[:_PREVIEW_CHARS]
     return raw, public, preview
+
+
+def without_bcc(raw: bytes) -> bytes:
+    """El mismo mensaje sin la cabecera Bcc.
+
+    Lo que sale por SMTP, los destinatarios ocultos ya no aparecen en el
+    cuerpo. La copia que se guarda en Enviados tiene que quitarlos también:
+    si no, quedan a la vista en el buzón de enviados.
+    """
+    parsed = message_from_bytes(raw, policy=default_policy)
+    if not isinstance(parsed, EmailMessage) or "Bcc" not in parsed:
+        return raw
+    del parsed["Bcc"]
+    return parsed.as_bytes()
 
 
 def _addresses(value: list[str] | None, field_name: str) -> list[str]:

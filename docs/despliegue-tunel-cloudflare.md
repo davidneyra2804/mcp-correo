@@ -13,8 +13,10 @@ Cliente MCP ──HTTPS──▶ Cloudflare (TLS, WAF, Access) ──▶ cloudfl
                                                         mcp (8765)
 ```
 
-El contenedor no publica nada en el host. `cloudflared` lo alcanza por el
-nombre de servicio: `http://mcp:8765`.
+El contenedor no publica nada accesible desde Internet. `cloudflared` lo
+alcanza por el nombre de servicio, dentro de la red de Compose
+(`http://mcp:8765`). El puerto que publica el compose base se queda en
+`127.0.0.1`, que es loopback del host.
 
 ## 1. Crear el túnel
 

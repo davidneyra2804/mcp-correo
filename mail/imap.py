@@ -16,7 +16,7 @@ from typing import Any, NoReturn
 from imapclient import IMAPClient
 from imapclient.exceptions import IMAPClientError
 
-from config import Account, ServerSettings
+from config import MAX_FOLDER_LENGTH, Account, ServerSettings
 from mail.errors import MailError
 from mail.mime import (
     decode_header_value,
@@ -214,13 +214,23 @@ class MailService:
                 pending.append(summary)
                 if len(pending) >= bounded:
                     break
+            if crosscheck:
+                criterion = (
+                    "sin flag \\Answered y sin In-Reply-To ni References en la carpeta de enviados"
+                )
+            else:
+                # No se pudo abrir la carpeta de enviados: no se puede afirmar
+                # el criterio completo. Decirlo, en vez de fingir.
+                criterion = (
+                    "sin flag \\Answered. La carpeta de enviados no se pudo abrir, "
+                    "así que no se ha comprobado si hay respuesta: puede haber mensajes "
+                    "que sí tienen respuesta."
+                )
             return {
                 "messages": pending,
                 "sent_folder": account_obj.sent_folder,
                 "sent_crosscheck": crosscheck,
-                "criterion": (
-                    "sin flag \\Answered y sin In-Reply-To ni References en la carpeta de enviados"
-                ),
+                "criterion": criterion,
             }
 
         return self._with_account(account, run)
@@ -536,7 +546,7 @@ def _clean_text(value: str | None, field_name: str) -> str | None:
 
 
 def _folder(folder: str) -> str:
-    if not isinstance(folder, str) or not folder.strip() or len(folder) > 200:
+    if not isinstance(folder, str) or not folder.strip() or len(folder) > MAX_FOLDER_LENGTH:
         raise MailError("Nombre de carpeta inválido")
     if any(char in folder for char in "\r\n\x00"):
         raise MailError("Nombre de carpeta inválido")
