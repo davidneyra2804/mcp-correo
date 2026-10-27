@@ -118,6 +118,7 @@ con valores ficticios.
 | `dashboard/ui.py` | La interfaz y el login |
 | `docker/rotate_audit.py` | Rota el JSONL de auditoría |
 | `docker/healthcheck.py` | La sonda: el MCP y, si está, el panel |
+| `tests/ayuda.py` | Ajustes del servidor y cuentas de mentira para las pruebas |
 
 ## El modelo de rutas y permisos
 
@@ -173,6 +174,12 @@ python3 -m venv .venv
 .venv/bin/pytest
 PYTHONSAFEPATH=1 .venv/bin/pytest    # el entorno de Actions
 ```
+
+**El clon tiene que ser un clon de verdad, con su `.git`.** Una copia con
+`rsync` o `cp` no sirve: el detector de datos ficticios usa `git ls-files`,
+y sin repositorio falla con `returned non-zero exit status 128` en vez de
+comprobar nada. Si hay cambios sin commitear, hay que commitearlos antes:
+el clon sale del último commit, no del directorio de trabajo.
 
 Tres cosas que el clon limpio pilla y el directorio de trabajo no:
 
@@ -248,7 +255,10 @@ Cada una de estas costó una release rota.
   entrada: la guía, y el dominio por defecto si hay uno.
 - **Dos fuentes de las cuentas a la vez.** La base de datos manda y las
   variables de entorno se ignoran. Mezclarlas es la forma segura de tener
-  dos verdades, y de dos verdades sale una que nadie sabe cuál es.
+  dos verdades, y de dos verdades sale una que nadie sabe cuál es. **En la
+  v2 esto se resolvió quitando la segunda fuente**, no decidiendo cuál
+  gana: la base es la única. Si algún día vuelve a haber dos, el síntoma
+  es una tool que no aparece o una cuenta que cambia sola.
 - **Una base de datos que no persiste.** Sin volumen, el contenedor es de
   solo lectura: o la base no se puede escribir, o se pierde en cada
   reinicio. La ruta tiene que caer en el volumen, y hay un test que lo
@@ -265,6 +275,12 @@ Cada una de estas costó una release rota.
 - **Editar no puede romper lo que ya funciona.** El alias de la ruta es el
   identificador en `/mcp`. Si al editar se sobrescribe con el correo, la
   ruta que ya tiene un cliente deja de existir, sin avisar.
+- **Un `0` explícito no es "sin definir".** Al leer una variable de entorno
+  con el patrón `int(valor) or 100`, un `0` se tomaba por "no definida" y
+  caía al valor por defecto en silencio: un límite de `0` pasaba sin
+  rechistar. Por eso existen `_env_int_or()` y `_env_float_or()`: distinguen
+  "no definida" de un valor explícito, y el `0` llega al validador y se
+  rechaza. **Un valor escrito a mano tiene que poder ser un error.**
 - **`example.com`, nunca `ejemplo.com`.** Los dominios reservados son
   `example.com`, `example.org`, `example.net`, `*.test`, `*.invalid` y
   `*.localhost`. Esta confusión se coló dos veces.
@@ -292,10 +308,46 @@ publica la imagen en GHCR y crea el Release. **Si los tests fallan, la imagen
 no se publica.** Así se detectó una fuga de correo real en el CHANGELOG: la
 1.1.0 rota nunca llegó al registro.
 
+La v2.0.0 se publicó así (2026-10-27): commit `d7ebf0c`, etiqueta `v2.0.0`,
+imagen en `ghcr.io/davidneyra2804/mcp-correo:2.0.0` y `latest`. **La
+imagen sale solo para `linux/amd64`**: el workflow no lleva `setup-qemu` ni
+`platforms`, así que en un host arm64 hay que construirse en local o añadir
+multi-arch al workflow.
+
+### Comprobar que la publicación salió bien
+
+El workflow puede terminar en verde y la imagen no estar. Sin `gh` instalado,
+se mira por la API:
+
+```bash
+# Los workflows de la etiqueta
+curl -s "https://api.github.com/repos/<repo>/actions/runs?per_page=5" \
+  | python3 -c "import json,sys; [print(r['name'], r['status'], r['conclusion']) for r in json.load(sys.stdin)['workflow_runs'][:5]]"
+
+# El Release
+curl -s "https://api.github.com/repos/<repo>/releases/tags/v2.0.0"
+
+# Las etiquetas de imagen, con un token anónimo de solo lectura
+TOKEN=$(curl -s "https://ghcr.io/token?scope=repository:<repo>:pull&service=ghcr.io" \
+  | python3 -c "import json,sys; print(json.load(sys.stdin)['token'])")
+curl -s -H "Authorization: Bearer $TOKEN" \
+  "https://ghcr.io/v2/<repo>/tags/list"
+
+# La etiqueta OCI de versión, leyendo el manifiesto publicado
+curl -s -H "Authorization: Bearer $TOKEN" \
+  -H "Accept: application/vnd.oci.image.index.v1+json" \
+  "https://ghcr.io/v2/<repo>/manifests/2.0.0"
+```
+
+Esto último es lo que garantiza que la imagen publicada lleva la versión
+correcta: `org.opencontainers.image.version` tiene que coincidir con
+`version.py`, y el `entrypoint` tiene que ser el actual.
+
 ## Antes de fusionar a `main`
 
 - [ ] Los tests pasan en local **y** en un clon limpio.
 - [ ] La imagen arranca: `docker compose -f docker-compose.yml -f docker-compose.local.yml up --build`.
+- [ ] La prueba de humo pasa: `python herramientas/humo.py`.
 - [ ] La documentación coincide con el código.
 - [ ] Ningún dato real en el árbol.
 - [ ] Si cambia el contrato de configuración, `.env.example`, el compose y
@@ -305,3 +357,10 @@ no se publica.** Así se detectó una fuga de correo real en el CHANGELOG: la
       dominio dan 404.
 - [ ] Si el panel cambia, `docs/dashboard.md` y el README cuentan el flujo
       nuevo.
+
+**Si no hay Docker en la máquina, dilo en el commit y en el Release.** La
+prueba que simula el `COPY` del Dockerfile y arranca el servidor desde esa
+copia (`tests/test_docker.py`) detecta los módulos que no llegan a la
+imagen, pero **no** que la imagen construya, ni que los permisos del
+contenador sean los correctos, ni que el volumen de datos funcione. Es una
+red de seguridad, no una prueba de la imagen.
