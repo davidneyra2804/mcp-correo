@@ -205,6 +205,8 @@ def test_un_host_no_permitido_dice_donde_mirar(client: TestClient) -> None:
     assert response.status_code == 421
     assert "MCP_PUBLIC_HOST" in response.text
     assert "MCP_ALLOWED_HOSTS" in response.text
+    # Dice qué Host llegó: el llamante ya conoce el suyo, y es la pista clave.
+    assert "otro.example.com" in response.text
     # No se filtra la lista de hosts permitidos.
     assert "127.0.0.1" not in response.text
 

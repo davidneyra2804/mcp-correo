@@ -174,6 +174,12 @@ _PISTA_421 = (
 )
 
 
+def _pista_421(host: str | None) -> str:
+    """La pista, con el Host que llegó. El llamante ya conoce el suyo."""
+    recibido = f"Host recibido: {host!r}\n\n" if host else ""
+    return _PISTA_421.replace("Invalid Host header\n\n", f"Invalid Host header\n\n{recibido}")
+
+
 class _Pista421:
     """Sustituye el cuerpo del 421 del SDK por una pista accionable.
 
@@ -182,15 +188,24 @@ class _Pista421:
     hosts. La lista no se filtra: solo se dice dónde mirar.
     """
 
-    def __init__(self, send: Send) -> None:
+    def __init__(self, send: Send, host: str | None, allowed_hosts: tuple[str, ...] = ()) -> None:
         self._send = send
+        self._host = host
+        self._allowed_hosts = allowed_hosts
         self._sustituir = False
 
     async def __call__(self, message: dict[str, Any]) -> None:
         if message["type"] == "http.response.start":
             self._sustituir = message.get("status") == 421
             if self._sustituir:
-                cuerpo = _PISTA_421.encode()
+                # El SDK avisa, pero con su formato y sin la lista. Aquí
+                # queda todo junto: qué Host llegó y qué se acepta.
+                logger.warning(
+                    "Petición con Host %r, que no está entre los hosts permitidos (%s).",
+                    self._host,
+                    ", ".join(self._allowed_hosts) or "(ninguno)",
+                )
+                cuerpo = _pista_421(self._host).encode()
                 message = {
                     **message,
                     "headers": [
@@ -204,7 +219,7 @@ class _Pista421:
                     ],
                 }
         elif message["type"] == "http.response.body" and self._sustituir:
-            cuerpo = _PISTA_421.encode()
+            cuerpo = _pista_421(self._host).encode()
             message = {**message, "body": cuerpo, "more_body": False}
         await self._send(message)
 
@@ -217,10 +232,17 @@ class BearerAuth:
     para cualquier ruta, el de una cuenta solo para la suya.
     """
 
-    def __init__(self, app: ASGIApp, token: str, accounts: dict[str, Account]) -> None:
+    def __init__(
+        self,
+        app: ASGIApp,
+        token: str,
+        accounts: dict[str, Account],
+        allowed_hosts: tuple[str, ...] = (),
+    ) -> None:
         self.app = app
         self._expected = hashlib.sha256(token.encode()).digest()
         self._accounts = accounts
+        self._allowed_hosts = allowed_hosts
         self._digests = {
             key: hashlib.sha256(account.bearer.encode()).digest()
             for key, account in accounts.items()
@@ -268,7 +290,9 @@ class BearerAuth:
             # El transporte MCP registra una sola ruta, /mcp. La cuenta va en
             # el ámbito, no en el path.
             scope["path"] = MCP_ROOT
-            await self.app(scope, receive, _Pista421(send))
+            await self.app(
+                scope, receive, _Pista421(send, _request_host(scope), self._allowed_hosts)
+            )
         finally:
             reset_scope(scope_token)
 
@@ -369,7 +393,7 @@ def create_app(
         transport_security=security,
         host=settings.bind_host,
     )
-    app = BearerAuth(inner, token, accounts)
+    app = BearerAuth(inner, token, accounts, settings.allowed_hosts)
     runtime = Runtime(
         settings=settings,
         accounts=accounts,
@@ -768,6 +792,14 @@ async def _health(send: Send) -> None:
         }
     )
     await send({"type": "http.response.body", "body": body, "more_body": False})
+
+
+def _request_host(scope: Scope) -> str | None:
+    """La cabecera Host de la petición, si la hay."""
+    for name, value in scope.get("headers", []):
+        if name == b"host":
+            return value.decode("utf-8", errors="ignore")
+    return None
 
 
 def _presented_bearer(scope: Scope) -> str | None:

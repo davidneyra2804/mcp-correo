@@ -155,4 +155,21 @@ Correcciones de una auditoría completa del proyecto.
 [1.0.3]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.3
 [1.0.2]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.2
 [1.0.1]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.1
+## [1.0.5] — 2026-10-26
+
+### Diagnóstico
+
+- **El log dice qué `Host` llegó y cuáles se aceptan.** Con un túnel, el
+  culpable puede ser que el `Host` que reenvía Cloudflare no sea el hostname
+  público (por ejemplo, si la ruta tiene un *HTTP Host Header* distinto), o que
+  la lista de hosts no lo incluya. Con una línea de log, se sabe cuál de los
+  dos es.
+- **La respuesta del 421 incluye el `Host` recibido.** El llamante ya conoce
+  el suyo, y es la pista que faltaba.
+
+[1.0.5]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.5
+[1.0.4]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.4
+[1.0.3]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.3
+[1.0.2]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.2
+[1.0.1]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.1
 [1.0.0]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.0
