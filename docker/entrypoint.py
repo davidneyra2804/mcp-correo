@@ -15,12 +15,16 @@ from __future__ import annotations
 import base64
 import binascii
 import os
+import re
 import sys
 import tomllib
 from pathlib import Path
 
 ACCOUNTS_LIST = "MCP_ACCOUNTS"
 DEFAULT_CONFIG_PATHS = ("/config/accounts.toml", "accounts.toml")
+
+#: MCP_ACCOUNT_<CAMPO>_<N>. El índice va al final.
+_ACCOUNT_VAR = re.compile(r"^MCP_ACCOUNT_[A-Z_]+_\d+$")
 
 
 def resolve_accounts_file() -> str | None:
@@ -64,7 +68,7 @@ def resolve_accounts_file() -> str | None:
             )
         os.environ.pop("MCP_CONFIG", None)
         print(
-            f"Configuración por variables de entorno ({ACCOUNTS_LIST}). "
+            "Configuración por variables de entorno (MCP_ACCOUNT_<CAMPO>_<N>). "
             "No hace falta accounts.toml.",
             file=sys.stderr,
         )
@@ -73,11 +77,11 @@ def resolve_accounts_file() -> str | None:
     if explicit is not None:
         raise SystemExit(f"No se encuentra la configuración: {explicit}")
     raise SystemExit(
-        "Falta la configuración. Define "
-        f"{ACCOUNTS_LIST} con la lista de cuentas y una variable por campo "
-        "(MCP_ACCOUNT_<CLAVE>_<CAMPO>), o monta un accounts.toml en "
-        "/config/accounts.toml, o define MCP_ACCOUNTS_TOML_B64 o MCP_ACCOUNTS_TOML. "
-        "La contraseña no va en ese texto: solo password_env."
+        "Falta la configuración. Define las cuentas por entorno con "
+        "MCP_ACCOUNT_<CAMPO>_<N> (por ejemplo MCP_ACCOUNT_USERNAME_1, "
+        "MCP_ACCOUNT_INBOX_HOST_1 y MCP_ACCOUNT_PASSWORD_1), o monta un "
+        "accounts.toml en /config/accounts.toml, o define MCP_ACCOUNTS_TOML_B64 "
+        "o MCP_ACCOUNTS_TOML. La contraseña no va en ese texto: solo password_env."
     )
 
 
@@ -89,8 +93,16 @@ def main() -> None:
 
 
 def _accounts_from_env() -> bool:
-    raw = os.environ.get(ACCOUNTS_LIST, "").strip()
-    return bool(raw)
+    """¿Hay cuentas declaradas por entorno?
+
+    Las cuentas se declaran con MCP_ACCOUNT_<CAMPO>_<N>: el nombre de la
+    variable no cambia de una cuenta a otra, solo el índice final.
+    MCP_ACCOUNTS es opcional: solo sirve como comprobación cruzada de que
+    la lista cuadra con las cuentas que existen.
+    """
+    if os.environ.get(ACCOUNTS_LIST, "").strip():
+        return True
+    return any(_ACCOUNT_VAR.match(name) for name in os.environ)
 
 
 def _inline_toml() -> str | None:

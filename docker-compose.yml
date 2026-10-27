@@ -43,12 +43,24 @@ services:
     pids_limit: 128
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=64m
-    # Portainer escribe aquí las variables del stack: las que defines a mano
-    # y las del .env que subes. Es lo que hace llegar las variables
-    # MCP_ACCOUNT_<CAMPO>_<N> sin enumerarlas una a una.
-    # Compose 2.24 o superior. Si el fichero no está, se sigue.
+    # De dónde salen las variables del contenedor.
+    #
+    # stack.env: lo escribe Portainer con todas las variables del stack (las
+    # que defines a mano y las del .env que subes). Es lo que hace llegar
+    # las variables MCP_ACCOUNT_<CAMPO>_<N> sin enumerarlas una a una.
+    #
+    # .env: el fichero del directorio del compose. Lo lee compose para
+    # interpolar y, además, lo metemos aquí para que las variables también
+    # lleguen al contenedor cuando se despliega en local, donde no hay
+    # stack.env.
+    #
+    # Los dos son opcionales: si el que exista se usa, y si faltan los dos,
+    # el proceso avisa de que no hay configuración.
+    # Compose 2.24 o superior.
     env_file:
       - path: ${MCP_STACK_ENV_FILE:-stack.env}
+        required: false
+      - path: .env
         required: false
     environment:
       MCP_BEARER_TOKEN: ${MCP_BEARER_TOKEN:?Define MCP_BEARER_TOKEN en las variables del stack}

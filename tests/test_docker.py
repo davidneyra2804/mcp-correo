@@ -224,6 +224,42 @@ def test_el_compose_local_no_necesita_el_toml() -> None:
     assert "accounts.toml" not in text
 
 
+def test_el_entrypoint_acepta_cuentas_por_indice_sin_lista() -> None:
+    """Las cuentas se descubren por MCP_ACCOUNT_<CAMPO>_<N>.
+
+    MCP_ACCOUNTS es opcional. El entrypoint tiene que verlo así, o se
+    negaría a arrancar cuando las cuentas están perfectlyamente definidas.
+    """
+    entry = _load("entrypoint", "docker/entrypoint.py")
+    assert entry._accounts_from_env() is False
+
+    os.environ["MCP_ACCOUNT_USERNAME_1"] = "ada@corp.example.com"
+    try:
+        assert entry._accounts_from_env() is True
+    finally:
+        del os.environ["MCP_ACCOUNT_USERNAME_1"]
+
+
+def test_el_entrypoint_no_confunde_una_variable_suelta() -> None:
+    """Una variable de cuenta sin índice no cuenta como configuración."""
+    entry = _load("entrypoint", "docker/entrypoint.py")
+    os.environ["MCP_ACCOUNT_USERNAME"] = "ada@corp.example.com"
+    try:
+        assert entry._accounts_from_env() is False
+    finally:
+        del os.environ["MCP_ACCOUNT_USERNAME"]
+
+
+def test_el_compose_pasa_el_env_al_contenedor() -> None:
+    """En local no hay stack.env: el .env tiene que llegar igualmente."""
+    compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
+    rutas = {item["path"] for item in compose["services"]["mcp"]["env_file"]}
+    # stack.env con possibility de cambiarlo, y el .env del directorio.
+    assert any("stack.env" in ruta for ruta in rutas), rutas
+    assert ".env" in rutas, rutas
+    assert all(item["required"] is False for item in compose["services"]["mcp"]["env_file"])
+
+
 def test_ningun_compose_declara_una_contrasena_como_clave_de_cuenta() -> None:
     for name in (
         "docker-compose.yml",
