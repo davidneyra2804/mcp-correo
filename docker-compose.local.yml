@@ -1,24 +1,6 @@
-# Desarrollo local. Datos ficticios: mail.example.com no existe, así que
-# tools/list funciona pero las llamadas de IMAP fallan. No lo uses con un
-# buzón real.
-#
-#   docker compose -f docker-compose.yml -f docker-compose.local.yml up --build
-#
-# Todo se define por variables de entorno, igual que en Portainer. Los
-# secretos ficticios están aquí a propósito.
-
+# Desarrollo local. Las cuentas se crean desde el panel.
+# docker compose -f docker-compose.yml -f docker-compose.local.yml up --build
 services:
   mcp:
     environment:
       MCP_BEARER_TOKEN: ${MCP_BEARER_TOKEN:-token-ficticio-local-0123456789abcdef}
-      MCP_ACCOUNT_USERNAME_1: ada@example.com
-      MCP_ACCOUNT_INBOX_HOST_1: mail.example.com
-      MCP_ACCOUNT_SMTP_HOST_1: mail.example.com
-      MCP_ACCOUNT_PASSWORD_1: contraseña-ficticia-principal
-      MCP_ACCOUNT_USERNAME_2: ada.archivo@example.com
-      MCP_ACCOUNT_INBOX_HOST_2: mail.archivo.example.com
-      MCP_ACCOUNT_SMTP_HOST_2: mail.archivo.example.com
-      MCP_ACCOUNT_PASSWORD_2: contraseña-ficticia-archivo
-      # El panel no se activa aquí: en local, las cuentas vienen del
-      # entorno. Para probarlo, pon MCP_DASHBOARD_DB y las otras dos
-      # variables en tu .env: el compose base las pasa tal cual.

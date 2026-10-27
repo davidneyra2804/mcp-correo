@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import base64
 import importlib.util
-import os
 from pathlib import Path
 
 import pytest
@@ -19,102 +17,6 @@ def _load(name: str, relative: str):
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
-
-
-def test_el_fichero_montado_tiene_prioridad(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    entry = _load("entrypoint", "docker/entrypoint.py")
-    mounted = tmp_path / "accounts.toml"
-    mounted.write_text("[server]\npublic_host='x'\n", encoding="utf-8")
-    monkeypatch.setenv("MCP_CONFIG", str(mounted))
-    monkeypatch.setenv("MCP_ACCOUNTS_TOML", "[server]\npublic_host='no'\n")
-    assert entry.resolve_accounts_file() == str(mounted)
-
-
-def test_genera_toml_desde_base64(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    entry = _load("entrypoint", "docker/entrypoint.py")
-    text = '[server]\npublic_host = "mcp.example.com"\n'
-    monkeypatch.setenv("MCP_CONFIG", str(tmp_path / "no-existe.toml"))
-    monkeypatch.setenv("MCP_ACCOUNTS_TOML_B64", base64.b64encode(text.encode()).decode())
-    monkeypatch.setenv("MCP_GENERATED_CONFIG", str(tmp_path / "generado.toml"))
-    monkeypatch.delenv("MCP_ACCOUNTS_TOML", raising=False)
-    path = entry.resolve_accounts_file()
-    assert Path(path).read_text(encoding="utf-8") == text
-    assert oct(Path(path).stat().st_mode & 0o777) == "0o600"
-
-
-def test_rechaza_una_contraseña_en_el_texto(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    entry = _load("entrypoint", "docker/entrypoint.py")
-    monkeypatch.setenv("MCP_CONFIG", str(tmp_path / "no-existe.toml"))
-    monkeypatch.setenv("MCP_ACCOUNTS_TOML_B64", "")
-    monkeypatch.setenv(
-        "MCP_ACCOUNTS_TOML",
-        '[accounts.principal]\npassword = "no-va-aqui"\npassword_env = "MAIL_PRINCIPAL_PASSWORD"\n',
-    )
-    with pytest.raises(SystemExit, match="contraseña"):
-        entry.resolve_accounts_file()
-
-
-def test_sin_toml_el_entrypoint_no_aborta(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """El entrypoint solo prepara el fichero. Si no hay, sigue.
-
-    Si no hay cuentas, avisa config.py, que es quien sabe qué es una
-    cuenta. Aquí no se decide eso, para que las dos piezas no discrepen.
-    """
-    entry = _load("entrypoint", "docker/entrypoint.py")
-    monkeypatch.delenv("MCP_CONFIG", raising=False)
-    monkeypatch.setenv("MCP_ACCOUNTS_TOML_B64", "")
-    monkeypatch.setenv("MCP_ACCOUNTS_TOML", "   ")
-    assert entry.resolve_accounts_file() is None
-
-
-def test_mcp_config_inexistente_no_aborta(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Un MCP_CONFIG que no existe se avisa y se sigue."""
-    entry = _load("entrypoint", "docker/entrypoint.py")
-    monkeypatch.setenv("MCP_CONFIG", str(tmp_path / "no-existe.toml"))
-    monkeypatch.setenv("MCP_ACCOUNTS_TOML_B64", "")
-    monkeypatch.setenv("MCP_ACCOUNTS_TOML", "   ")
-    assert entry.resolve_accounts_file() is None
-    assert "MCP_CONFIG" not in os.environ
-
-
-def test_las_cuentas_por_entorno_no_necesitan_toml(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    entry = _load("entrypoint", "docker/entrypoint.py")
-    monkeypatch.setenv("MCP_CONFIG", str(tmp_path / "no-existe.toml"))
-    monkeypatch.setenv("MCP_ACCOUNTS_TOML_B64", "")
-    monkeypatch.setenv("MCP_ACCOUNTS_TOML", "   ")
-    assert entry.resolve_accounts_file() is None
-    assert "MCP_CONFIG" not in os.environ
-
-
-def test_el_toml_montado_gana_a_las_cuentas_por_entorno(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    entry = _load("entrypoint", "docker/entrypoint.py")
-    mounted = tmp_path / "accounts.toml"
-    mounted.write_text("[server]\npublic_host='x'\n", encoding="utf-8")
-    monkeypatch.setenv("MCP_CONFIG", str(mounted))
-    assert entry.resolve_accounts_file() == str(mounted)
-
-
-def test_una_contraseña_entrecomillada_tampoco_pasa(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """La clave puede venir entrecomillada: el filtro tiene que verla."""
-    entry = _load("entrypoint", "docker/entrypoint.py")
-    monkeypatch.setenv("MCP_CONFIG", str(tmp_path / "no-existe.toml"))
-    monkeypatch.setenv("MCP_ACCOUNTS_TOML_B64", "")
-    monkeypatch.setenv(
-        "MCP_ACCOUNTS_TOML",
-        '[accounts.principal]\n"password" = "no-va-aqui"\npassword_env = "MAIL_X"\n',
-    )
-    with pytest.raises(SystemExit, match="contraseña"):
-        entry.resolve_accounts_file()
 
 
 def test_la_rotacion_conserva_el_numero_pedido(tmp_path: Path) -> None:
@@ -292,7 +194,6 @@ def test_la_app_arranca_con_lo_que_cop_el_dockerfile(tmp_path: Path) -> None:
         app,
         MCP_BEARER_TOKEN="token-de-prueba-0123456789abcdef",
         MCP_AUDIT_LOG=str(tmp_path / "audit.jsonl"),
-        MCP_CONFIG=str(app / "accounts.example.toml"),
     )
     completado = subprocess.run(
         [sys.executable, "-c", "import server"],
@@ -326,7 +227,6 @@ def test_el_panel_arranca_con_lo_que_cop_el_dockerfile(tmp_path: Path) -> None:
         MCP_DASHBOARD_KEY="clave-de-prueba-0123456789abcdef",
         MCP_DASHBOARD_TOKEN="token-del-panel-0123456789abcdef",
         MCP_AUDIT_LOG=str(tmp_path / "audit.jsonl"),
-        MCP_CONFIG=str(app / "accounts.example.toml"),
     )
     completado = subprocess.run(
         # Se duerme un poco: el panel arranca en su hilo, y su log sale
@@ -372,7 +272,6 @@ def test_el_panel_para_si_no_puede_escuchar(tmp_path: Path) -> None:
         MCP_DASHBOARD_KEY="clave-de-prueba-0123456789abcdef",
         MCP_DASHBOARD_TOKEN="token-del-panel-0123456789abcdef",
         MCP_AUDIT_LOG=str(tmp_path / "audit.jsonl"),
-        MCP_CONFIG=str(app / "accounts.example.toml"),
         MCP_DASHBOARD_BIND_PORT=str(puerto),
     )
     try:
@@ -487,7 +386,7 @@ def test_el_compose_base_no_necesita_ningun_fichero_de_configuracion() -> None:
     assert "MCP_CONFIG" not in text
     assert "MCP_ACCOUNTS_TOML" not in text
     assert "accounts.toml" not in text
-    # Portainer deja aquí las variables del stack, incluidas las de cuenta.
+    # Portainer deja aquí las variables del stack.
     assert "stack.env" in text
     assert "required: false" in text
 
@@ -514,25 +413,29 @@ def test_la_tabla_de_variables_coincide_con_el_codigo() -> None:
     assert not huerfanas, f"Variables en la tabla que el código no lee: {', '.join(huerfanas)}"
 
 
-def test_las_variables_de_cuenta_coinciden_con_el_codigo() -> None:
-    """Los campos de cuenta de la tabla tienen que estar en el código."""
-    from config import _ACCOUNT_ENV_BASES, _ACCOUNT_ENV_FIELDS
+def test_no_hay_variables_para_define_cuentas() -> None:
+    """Las cuentas se dan de alta en el panel: no hay variables para declararlas.
 
+    Si volviera una variable `MCP_ACCOUNT_*`, el compose o el .env.example la
+    documentarían y alguien creería que configura una cuenta.
+    """
     fuente = (ROOT / "config.py").read_text(encoding="utf-8")
-    huerfanas = sorted(base for base in _ACCOUNT_ENV_BASES if f'"{base}"' not in fuente)
-    assert not huerfanas, f"Campos en la tabla que el código no usa: {', '.join(huerfanas)}"
-    assert set(_ACCOUNT_ENV_FIELDS.values()) == set(_ACCOUNT_ENV_BASES)
+    assert "MCP_ACCOUNT_" not in fuente
+    compose = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+    assert "MCP_ACCOUNT_" not in compose
+    ejemplo = (ROOT / ".env.example").read_text(encoding="utf-8")
+    assert "MCP_ACCOUNT_" not in ejemplo
+    for nombre in ("docker-compose.local.yml", "docker-compose.tunnel.yml"):
+        texto = (ROOT / nombre).read_text(encoding="utf-8")
+        assert "MCP_ACCOUNT_" not in texto
 
 
 def test_el_ejemplo_de_env_documenta_todas_las_variables() -> None:
-    from config import _ACCOUNT_ENV_BASES, _SERVER_ENV
+    from config import _SERVER_ENV
 
     text = (ROOT / ".env.example").read_text(encoding="utf-8")
     missing = sorted(name for name in _SERVER_ENV.values() if name not in text)
     assert not missing, f"El ejemplo no documenta: {', '.join(missing)}"
-    missing_fields = sorted(base for base in _ACCOUNT_ENV_BASES if base not in text)
-    assert not missing_fields, f"El ejemplo no documenta: {', '.join(missing_fields)}"
-    assert "MCP_ACCOUNT_USERNAME_1=" in text
 
 
 def test_el_ejemplo_de_env_documenta_las_variables_del_panel() -> None:
@@ -622,28 +525,11 @@ def test_el_overlay_del_tunel_no_lleva_el_token_dentro() -> None:
     assert "eyJh" not in text
 
 
-def test_el_compose_local_no_necesita_el_toml() -> None:
+def test_el_compose_local_no_declara_cuentas() -> None:
+    """El compose local no declara cuentas: se dan de alta en el panel."""
     text = (ROOT / "docker-compose.local.yml").read_text(encoding="utf-8")
-    assert "MCP_ACCOUNT_USERNAME_1:" in text
-    assert "MCP_ACCOUNT_INBOX_HOST_1:" in text
-    assert "MCP_ACCOUNT_PASSWORD_2:" in text
+    assert "MCP_ACCOUNT_" not in text
     assert "accounts.toml" not in text
-
-
-def test_el_entrypoint_no_decide_si_hay_cuentas(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """El entrypoint no sabe qué es una cuenta: solo prepara el fichero.
-
-    Que haya cuentas y sean válidas es cosa de config.py. Si el entrypoint
-    tambien lo decidiera, las dos piezas podrian discrepar, que es como
-    aparecio el bug del esquema de cuentas.
-    """
-    entry = _load("entrypoint", "docker/entrypoint.py")
-    monkeypatch.setenv("MCP_CONFIG", str(tmp_path / "no-existe.toml"))
-    monkeypatch.setenv("MCP_ACCOUNTS_TOML_B64", "")
-    monkeypatch.setenv("MCP_ACCOUNTS_TOML", "   ")
-    assert not hasattr(entry, "_accounts_from_env")
 
 
 def test_el_compose_pasa_el_env_al_contenedor() -> None:
@@ -656,11 +542,12 @@ def test_el_compose_pasa_el_env_al_contenedor() -> None:
     assert all(item["required"] is False for item in compose["services"]["mcp"]["env_file"])
 
 
-def test_ningun_compose_declara_una_contrasena_como_clave_de_cuenta() -> None:
+def test_ningun_compose_declara_una_contrasena_de_cuenta() -> None:
+    """Las contraseñas de cuentas no van en el compose: las introduce el panel."""
     for name in (
         "docker-compose.yml",
         "docker-compose.tunnel.yml",
         "docker-compose.local.yml",
     ):
         text = (ROOT / name).read_text(encoding="utf-8")
-        assert "MCP_ACCOUNT_PRINCIPAL_PASSWORD:" not in text or "local" in name
+        assert "MCP_ACCOUNT_" not in text

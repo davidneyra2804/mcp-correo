@@ -4,9 +4,8 @@ Un panel web para dar de alta las cuentas de correo sin tocar el
 despliegue. Escucha en **su propio puerto**, separado del MCP, y tiene su
 propia credencial.
 
-Con el panel, las cuentas salen de una base de datos SQLite en vez
-de de variables de entorno. Y en cuanto existen, están expuestas en `/mcp`:
-**no hay que reiniciar nada**.
+Las cuentas salen de una base de datos SQLite. Y en cuanto existen, están
+expuestas en `/mcp`: **no hay que reiniciar nada**.
 
 ## Qué es y qué no es
 
@@ -21,7 +20,7 @@ El panel no registra tools del MCP, no habla con el SDK y no puede tocar
 un buzón. Esa frontera es a propósito: un panel abierto no debe poder
 enviar correo.
 
-## Activarlo
+## Arrancarlo
 
 El panel y la base de datos **siempre están**: son la forma de gestionar las
 cuentas. No hay un interruptor que los encienda.
@@ -73,24 +72,9 @@ credenciales: el token del MCP no abre el panel, y el del panel no abre
 
 ## Las cuentas: dónde están
 
-La base de datos es **la fuente de las cuentas**. Las variables
-`MCP_ACCOUNT_<CAMPO>_<N>` (o el `accounts.toml`) son la importación
-inicial: se importan **una vez**, y solo si la base está **vacía**. A partir
-de ahí, la base manda y el entorno se ignora. El arranque lo dice:
-
-```
-INFO     Cuentas importadas del entorno: 2. A partir de aquí la base de datos manda.
-```
-
-Si la base ya tenía cuentas y el entorno trae otras, se ignoran las del
-entorno:
-
-```
-INFO     La base de datos ya tiene cuentas: las 2 del entorno se ignoran.
-```
-
-Es a propósito: dos fuentes a la vez son dos verdades, y de dos verdades
-sale una que nadie sabe cuál es.
+La base de datos es **la única fuente de las cuentas**. Se crean, editan y
+eliminan desde el panel; no se importan de variables de entorno ni de ficheros.
+Una base recién creada está vacía hasta que se añadan cuentas en el panel.
 
 ## La interfaz
 

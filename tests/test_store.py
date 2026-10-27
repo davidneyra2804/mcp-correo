@@ -12,11 +12,11 @@ from pathlib import Path
 
 import pytest
 
-from config import load_config
 from store.accounts import DatabaseAccounts, account_secrets
 from store.crypto import Cipher, CipherError
 from store.db import Database
-from store.store import Store, StoreError, importar_cuentas
+from store.store import Store, StoreError
+from tests.ayuda import ajustes
 
 ROOT = Path(__file__).resolve().parents[1]
 CLAVE = "clave-de-prueba-0123456789abcdef"
@@ -32,7 +32,7 @@ def db(tmp_path: Path) -> Database:
 
 @pytest.fixture
 def store(db: Database) -> Store:
-    settings, _cuentas = load_config(ROOT / "accounts.example.toml")
+    settings = ajustes()
     return Store(db, Cipher(CLAVE), settings)
 
 
@@ -337,22 +337,3 @@ def test_los_secretos_de_las_cuentas_nuevas_se_avisan(store: Store) -> None:
     source = DatabaseAccounts(store, store.settings)
     secretos = account_secrets(source.snapshot())
     assert "clave-ficticia" in secretos
-
-
-# --- la importación ------------------------------------------------------------
-
-
-def test_las_cuentas_del_entorno_se_importan(store: Store) -> None:
-    _settings, cuentas = load_config(ROOT / "accounts.example.toml")
-    importadas = importar_cuentas(store, cuentas)
-    assert importadas == len(cuentas)
-    assert store.dominios()
-    assert len(store.cuentas()) == len(cuentas)
-
-
-def test_no_se_importa_si_ya_hay_cuentas(store: Store) -> None:
-    _settings, cuentas = load_config(ROOT / "accounts.example.toml")
-    dominio = _dominio(store)
-    _cuenta(store, dominio)
-    assert importar_cuentas(store, cuentas) == 0
-    assert len(store.cuentas()) == 1

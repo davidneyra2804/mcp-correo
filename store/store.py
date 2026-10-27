@@ -15,7 +15,7 @@ import sqlite3
 from collections.abc import Mapping
 from datetime import UTC, datetime
 
-from config import Account, ServerSettings
+from config import ServerSettings
 from store.crypto import Cipher, CipherError
 from store.db import META_KEY_CHECK, Database
 from store.models import AccountRecord, DomainRecord
@@ -519,68 +519,3 @@ class Store:
         asignaciones = ", ".join(f"{campo} = ?" for campo in campos)
         valores = list(campos.values()) + [identificador]
         con.execute(f"UPDATE {tabla} SET {asignaciones} WHERE id = ?", valores)
-
-
-def importar_cuentas(
-    store: Store,
-    cuentas: Mapping[str, Account],
-) -> int:
-    """mete las cuentas del entorno en la base, si la base está vacía.
-
-    Solo si la base no tiene ninguna: en cuanto tiene una, la base manda
-    y las cuentas del entorno se ignoran. Dos fuentes a la vez son dos
-    verdades, y de dos verdades sale una que no se sabe cuál es.
-    """
-    if store.hay_cuentas():
-        return 0
-    importadas = 0
-    with store.db.write() as con:
-        dominios: dict[str, int] = {}
-        for cuenta in cuentas.values():
-            dominio_nombre = cuenta.username.rpartition("@")[2] or cuenta.domain or "sin-dominio"
-            dominio_nombre = dominio_nombre.lower()
-            if dominio_nombre not in dominios:
-                cur = con.execute(
-                    "INSERT INTO domains(name, label, is_default, created_at) VALUES(?,?,0,?)",
-                    (dominio_nombre, "", ahora()),
-                )
-                dominios[dominio_nombre] = int(cur.lastrowid or 0)
-            dominio_id = dominios[dominio_nombre]
-            con.execute(
-                "INSERT INTO accounts(domain_id, name, label, sender, username, password, "
-                "imap_host, imap_port, imap_ssl, smtp_host, smtp_port, smtp_security, "
-                "drafts_folder, sent_folder, trash_folder, allow_send, allow_mark, "
-                "allow_delete, allow_drafts, bearer, enabled, created_at) "
-                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?)",
-                (
-                    dominio_id,
-                    cuenta.key,
-                    cuenta.label,
-                    cuenta.sender,
-                    cuenta.username,
-                    store.cipher.encrypt(cuenta.password),
-                    cuenta.imap_host,
-                    cuenta.imap_port,
-                    1 if cuenta.imap_ssl else 0,
-                    cuenta.smtp_host,
-                    cuenta.smtp_port,
-                    cuenta.smtp_security,
-                    cuenta.drafts_folder,
-                    cuenta.sent_folder,
-                    cuenta.trash_folder,
-                    _entero(cuenta.allow_send, "allow_send"),
-                    _entero(cuenta.allow_mark, "allow_mark"),
-                    _entero(cuenta.allow_delete, "allow_delete"),
-                    _entero(cuenta.allow_drafts, "allow_drafts"),
-                    cuenta.bearer or None,
-                    ahora(),
-                ),
-            )
-            importadas += 1
-        if dominios:
-            # El primer dominio importado es el que abre /mcp: es el que
-            # estaba en el entorno, y cambiarlo sería una decisión que
-            # el operador no ha tomado.
-            primero = sorted(dominios)[0]
-            con.execute("UPDATE domains SET is_default = 1 WHERE id = ?", (dominios[primero],))
-    return importadas

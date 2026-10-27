@@ -50,10 +50,11 @@ y el cliente solo presenta un Bearer.
   destinarios ocultos no se guardan en la copia.
 - Marcar leído o no leído, borrar a la Papelera (o de forma definitiva solo si
   se pidió al preparar) y guardar borradores.
-- Cada capacidad de escritura tiene un interruptor global y un override
-  opcional por cuenta y por dominio. El global es el maestro: apagado, nada
-  funciona. Encendido, los dominios lo heredan y las cuentas heredan del
-  dominio, salvo que digan lo contrario. Apagados, la tool no se registra.
+- Cada capacidad de escritura tiene un interruptor global y un permiso
+  opcional por dominio y por cuenta, que se gestionan en el panel. El global
+  es el maestro: apagado, nada funciona. Encendido, los dominios lo heredan y
+  las cuentas heredan del dominio, salvo que digan lo contrario. Apagado, la
+  tool no se registra.
 - Enviar y borrar piden confirmación en dos pasos. El token dura 10 minutos,
   es de un solo uso y queda ligado a la cuenta y a la operación.
 - Varias cuentas, en una base de datos, organizadas por dominios. La
@@ -114,7 +115,7 @@ hay y por dónde se entra. `list_accounts` devuelve el catálogo de rutas, con
 la ruta de cada cuenta y de cada dominio. Para abrir un buzón hay que
 nombrarlo.
 
-`<cuenta>` puede ser el correo, el `NAME` de la cuenta o su número.
+`<cuenta>` puede ser el correo, el nombre de la cuenta o su número.
 
 Hay tres credenciales, y la más específica manda cuando se presenta:
 
@@ -162,10 +163,11 @@ Ver [docs/dashboard.md](docs/dashboard.md).
 - **El panel no lee buzones.** Ni una tool. El panel gestiona la
   configuración; los buzones son del MCP.
 - **Solo lectura por defecto.** `MCP_ENABLE_SEND`, `MCP_ENABLE_MARK`,
-  `MCP_ENABLE_DELETE` y `MCP_ENABLE_DRAFTS` salen en `false`, y cada cuenta
-  repite `allow_*`. Un interruptor solo admite `true`, `false`, `1` y `0`:
-  cualquier otro texto aborta el arranque. Un texto `"false"` no enciende un
-  interruptor, y un `"yes"` tampoco lo apaga en silencio.
+  `MCP_ENABLE_DELETE` y `MCP_ENABLE_DRAFTS` salen en `false`. Los permisos de
+  dominio y de cuenta se gestionan en el panel. Un interruptor solo admite
+  `true`, `false`, `1` y `0`: cualquier otro texto aborta el arranque. Un texto
+  `"false"` no enciende un interruptor, y un `"yes"` tampoco lo apaga en
+  silencio.
 - **Confirmación en dos pasos.** Enviar y borrar no se ejecutan con la primera
   llamada. El token caduca, no se reutiliza y no sirve para otra cuenta ni para
   otra operación. El cupo diario solo cuenta un envío que el SMTP aceptó.
@@ -221,7 +223,8 @@ no registra tools ni puede tocar un buzón.
 
 ## Cómo se usa
 
-Hay dos caminos, y no se mezclan.
+El servidor se configura por entorno; los dominios y las cuentas se gestionan
+desde el panel.
 
 ### El arranque
 
@@ -258,10 +261,11 @@ El MCP queda en `http://127.0.0.1:8765/mcp` y el panel en
 1. **Entra al panel** en `http://127.0.0.1:8766` con `MCP_DASHBOARD_TOKEN`.
 2. **Crea un dominio** (por ejemplo `corp.example.com`). Es el grupo de
    cuentas, y le puedes poner el servidor IMAP y SMTP por defecto.
-3. **Crea una cuenta** dentro. La contraseña se cifra y se guarda sola. Se
-   genera su token, que se muestra **una sola vez**: cópialo.
-4. **Prueba la conexión** con el botón de probar, antes de guardar. Si el
-   host, el puerto o la contraseña están mal, lo ves ahí.
+3. **Introduce los datos de una cuenta** dentro del dominio y prueba la
+   conexión antes de guardar. Si el host, el puerto o la contraseña están
+   mal, lo ves ahí.
+4. **Guarda la cuenta.** La contraseña se cifra y se guarda. Se genera su
+   token, que se muestra **una sola vez**: cópialo.
 5. **Ya está.** La cuenta está en `/mcp/<cuenta>` en la siguiente
    petición, sin reiniciar nada. Y `list_accounts` la enseña en el
    catálogo.
@@ -275,17 +279,14 @@ El MCP queda en `http://127.0.0.1:8765/mcp` y el panel en
 7. **Marca un dominio como por defecto** si quieres que `/mcp` abra sus
    cuentas. Si no hay ninguno, `/mcp` es solo la guía.
 
-Las cuentas que tuvieras declaradas en `MCP_ACCOUNT_<CAMPO>_<N>` se
-importan **una sola vez**, y solo si la base está vacía. A partir de ahí la
-base manda: para cambiar una cuenta, desde el panel.
+Las cuentas se crean y modifican desde el panel; el servidor las lee de la
+base de datos.
 
 El panel **no puede leer ni escribir un buzón**. Solo gestiona la
 configuración y prueba conexiones. Ver
 [docs/dashboard.md](docs/dashboard.md).
 
 ### Docker
-
-Con el ejemplo ficticio:
 
 ```bash
 export MCP_BEARER_TOKEN="$(openssl rand -base64 48)"
@@ -294,9 +295,9 @@ export MCP_DASHBOARD_TOKEN="$(openssl rand -base64 48)"
 docker compose -f docker-compose.yml -f docker-compose.local.yml up --build
 ```
 
-`docker-compose.local.yml` define cuentas ficticias por variables de entorno. No
-lo uses con un buzón real. Sin `MCP_IMAGE`, la imagen construida se llama
-`mcp-correo:local` y no está en ningún registro.
+Las cuentas se dan de alta después, desde el panel: el compose no declara
+ninguna. Sin `MCP_IMAGE`, la imagen construida se llama `mcp-correo:local` y
+no está en ningún registro.
 
 La base de datos va en el volumen `data`, que el compose base declara y
 monta en `/var/lib/mcp-correo`. Sin ese volumen el contenedor es de solo
@@ -312,23 +313,17 @@ por defecto y los errores que puede dar cada una, está en
 # El secreto que presenta el cliente MCP. Obligatorio, mínimo 16 caracteres.
 export MCP_BEARER_TOKEN="$(openssl rand -base64 48)"
 
-# Las cuentas se numeran. El nombre de la variable no cambia: solo el número.
-export MCP_ACCOUNT_USERNAME_1=ada@example.com
-export MCP_ACCOUNT_INBOX_HOST_1=mail.example.com
-export MCP_ACCOUNT_SMTP_HOST_1=mail.example.com
-export MCP_ACCOUNT_SMTP_PORT_1=587
-export MCP_ACCOUNT_SMTP_USE_SSL_1=false
-export MCP_ACCOUNT_PASSWORD_1='contraseña-ficticia-principal'
+# Credenciales del panel: guárdalas, especialmente la clave de cifrado.
+export MCP_DASHBOARD_KEY="$(openssl rand -base64 48)"
+export MCP_DASHBOARD_TOKEN="$(openssl rand -base64 48)"
 ```
 
 | Variable | Uso |
 | --- | --- |
 | `MCP_BEARER_TOKEN` | Obligatoria. El bearer general: abre todas las rutas. En producción, `openssl rand -base64 48`. |
-| `MCP_ACCOUNT_<CAMPO>_<N>` | Una cuenta. Campos: `NAME`, `LABEL`, `SENDER`, `INBOX_TYPE`, `INBOX_HOST`, `INBOX_PORT`, `INBOX_USE_SSL`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USE_SSL`, `USERNAME`, `PASSWORD` o `PASSWORD_ENV`, `DRAFTS_FOLDER`, `SENT_FOLDER`, `TRASH_FOLDER`, `ALLOW_SEND`, `ALLOW_MARK`, `ALLOW_DELETE`, `ALLOW_DRAFTS`, `BEARER`. |
 | `MCP_PUBLIC_HOST` | El nombre público del servidor. Arma `allowed_hosts` y `allowed_origins`. Con túnel, es el hostname del túnel. |
 | `MCP_ALLOWED_HOSTS`, `MCP_ALLOWED_ORIGINS` | Listas separadas por comas. Sustituyen a las derivadas de `MCP_PUBLIC_HOST`. |
 | `MCP_ENABLE_SEND`, `MCP_ENABLE_MARK`, `MCP_ENABLE_DELETE`, `MCP_ENABLE_DRAFTS` | Interruptores **globales** de escritura. Son el maestro: apagados, la capacidad está apagada para todas las cuentas. Encendidos, los dominios los heredan, y las cuentas heredan del dominio. |
-| `MCP_ACCOUNT_ALLOW_SEND_<N>`, `MCP_ACCOUNT_ALLOW_MARK_<N>`, `MCP_ACCOUNT_ALLOW_DELETE_<N>`, `MCP_ACCOUNT_ALLOW_DRAFTS_<N>` | Overrides **por cuenta**. Opcionales: si no están, la cuenta hereda el dominio (o el global). Si están, mandan ellos. |
 | `MCP_BIND_HOST`, `MCP_BIND_PORT` | Por defecto `127.0.0.1` y `8765`. |
 | `MCP_AUDIT_LOG` | JSONL. Por defecto `./audit.jsonl`. |
 | `MCP_DASHBOARD_DB` | Ruta del fichero SQLite. Por defecto `cuentas.db`; en el contenedor, `/var/lib/mcp-correo/cuentas.db`, sobre el volumen de datos. |
@@ -336,9 +331,7 @@ export MCP_ACCOUNT_PASSWORD_1='contraseña-ficticia-principal'
 | `MCP_DASHBOARD_TOKEN` | Credencial de acceso al panel. **Obligatoria**, y distinta de `MCP_BEARER_TOKEN`. |
 | `MCP_DASHBOARD_BIND_HOST`, `MCP_DASHBOARD_BIND_PORT` | Por defecto `127.0.0.1` y `8766`. |
 
-Las cuentas se descubren solas por sus índices: no hay que declarar ninguna
-lista. Y las que se declaren en el entorno se importan a la base una sola
-vez, si la base está vacía; a partir de ahí las gestiona el panel.
+Los permisos específicos de cada dominio y cuenta se configuran en el panel.
 
 Los topes (`max_results`, `max_chars`, `max_attachment_bytes`, destinatarios,
 cupo diario, UID por llamada) tienen su variable `MCP_MAX_*`,
@@ -350,19 +343,14 @@ aborta el arranque: un interruptor mal escrito no puede quedarse en apagado
 sin que nadie se entere. La tabla de errores está en
 [docs/configuracion.md](docs/configuracion.md).
 
-También sigue funcionando `accounts.toml`, para quien prefiera un fichero: una
-tabla `[accounts.<clave>]` por cuenta, con las claves de siempre y la
-contraseña referenciada por `password_env`. Si existen las dos fuentes, mandan
-las cuentas del entorno.
-
 ## Despliegue
 
 | Fichero | Para qué |
 | --- | --- |
-| `docker-compose.yml` | **Base.** El MCP, el panel (si se activa) y la rotación de la auditoría. No publica nada fuera de loopback: los puertos quedan en `127.0.0.1:8765` y `127.0.0.1:8766`. |
+| `docker-compose.yml` | **Base.** El MCP, el panel y la rotación de la auditoría. No publica nada fuera de loopback: los puertos quedan en `127.0.0.1:8765` y `127.0.0.1:8766`. |
 | `docker-compose.tunnel.yml` | Exposición por Cloudflare Tunnel. Añade `cloudflared`. No hace falta abrir puertos ni Caddy. Solo lleva el MCP, no el panel. |
 | `docker-compose.proxy.yml` | TLS propio con Caddy y Let's Encrypt. Solo si no usas túnel. |
-| `docker-compose.local.yml` | Desarrollo local con datos ficticios. |
+| `docker-compose.local.yml` | Desarrollo local. No declara cuentas: se dan de alta en el panel. |
 
 Un overlay se añade con `-f`, y en Portainer con **Additional paths**:
 
@@ -386,7 +374,7 @@ Con `MCP_PULL_POLICY` vacío, el compose construye la imagen localmente y
 
 Las guías completas:
 
-- [Configuración por variables de entorno](docs/configuracion.md)
+- [Configuración](docs/configuracion.md)
 - [El panel de control](docs/dashboard.md)
 - [Portainer y Docker](docs/despliegue-portainer.md)
 - [Cloudflare Tunnel](docs/despliegue-tunel-cloudflare.md)
@@ -416,8 +404,8 @@ curl -i http://127.0.0.1:8765/mcp \
   -d '{}'
 ```
 
-Con token, `tools/list` (modo sin estado). Con el ejemplo, son las ocho tools
-de lectura:
+Con token, `tools/list` (modo sin estado). Sin cuentas dadas de alta, son las
+ocho tools de lectura:
 
 ```bash
 curl -sS http://127.0.0.1:8765/mcp \
@@ -488,13 +476,12 @@ mail/                     # IMAP, SMTP, MIME, confirmación y escritura
 store/                    # la base de datos: esquema, cifrado y cuentas
 dashboard/                # el panel: su API, su sesión y su interfaz
 .env.example              # todas las variables, con valores ficticios
-accounts.example.toml     # configuración alternativa en TOML
 Dockerfile                # imagen slim, usuario mcp, sin secretos
 docker-compose.yml        # base: el MCP, el panel y la rotación de la auditoría
 docker-compose.tunnel.yml # overlay de Cloudflare Tunnel
 docker-compose.proxy.yml  # overlay de Caddy con TLS propio
 docker-compose.local.yml  # overlay de desarrollo local
-docker/                   # entrada del contenedor, rotación del JSONL y sonda
+docker/                   # rotación del JSONL y sonda de salud
 herramientas/             # scripts de apoyo, como la prueba de humo
 deploy/                   # systemd, nginx, Caddy opcional y logrotate
 docs/                     # configuración, despliegue, panel y checklist
@@ -532,13 +519,13 @@ Release con las notas de los commits.
 
 ```bash
 # Publicar una versión
-sed -i 's/__version__ = ".*"/__version__ = "1.2.0"/' version.py
-sed -i 's/^version = ".*"/version = "1.2.0"/' pyproject.toml
-sed -i 's/ARG MCP_VERSION=.*/ARG MCP_VERSION=1.2.0/' Dockerfile
-sed -i 's/mcp-correo 1\.0\.2 |/mcp-correo 1.2.0 |/' docs/configuracion.md
-sed -i 's|mcp-correo:1\.0\.2|mcp-correo:1.2.0|' README.md
-git commit -am "version 1.2.0"
-git tag v1.2.0 && git push origin v1.2.0
+sed -i 's/__version__ = ".*"/__version__ = "2.0.1"/' version.py
+sed -i 's/^version = ".*"/version = "2.0.1"/' pyproject.toml
+sed -i 's/ARG MCP_VERSION=.*/ARG MCP_VERSION=2.0.1/' Dockerfile
+sed -i 's/mcp-correo 2\.0\.0 |/mcp-correo 2.0.1 |/' docs/configuracion.md README.md
+sed -i 's|mcp-correo:2\.0\.0|mcp-correo:2.0.1|' README.md
+git commit -am "version 2.0.1"
+git tag v2.0.1 && git push origin v2.0.1
 ```
 
 Los dos últimos `sed` no son opcionales: un test comprueba que la
@@ -555,9 +542,6 @@ documentación no habla de una versión vieja.
   Ahora hay una sola: `MCP_DASHBOARD_TOKEN`.
 - Historial de cambios en el panel. La auditoría dice qué se hizo, no el
   antes y el después.
-
-El diseño del panel y de las cuentas dinámicas está en
-[docs/plan-dashboard-y-cuentas-dinamicas.md](docs/plan-dashboard-y-cuentas-dinamicas.md).
 
 ## Licencia
 

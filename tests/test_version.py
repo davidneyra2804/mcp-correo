@@ -15,8 +15,8 @@ import pytest
 from starlette.testclient import TestClient
 
 from audit import AuditLog
-from config import load_config
 from server import create_app
+from tests.ayuda import ajustes
 from version import __version__
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -40,10 +40,10 @@ def test_la_etiqueta_de_la_imagen_dice_la_misma_version() -> None:
 
 def test_el_handshake_mcp_dice_la_version(tmp_path: Path) -> None:
     """El cliente ve la versión en el initialize, sin exponerla en /health."""
-    settings, accounts = load_config(ROOT / "accounts.example.toml")
+    settings = ajustes()
     audit = AuditLog(tmp_path / "audit.jsonl")
     application, _runtime = create_app(
-        settings, accounts, "token-de-prueba-0123456789abcdef", audit=audit
+        settings, {}, "token-de-prueba-0123456789abcdef", audit=audit
     )
     with TestClient(application, base_url="http://127.0.0.1:8765") as http:
         response = http.post(
@@ -70,10 +70,10 @@ def test_el_handshake_mcp_dice_la_version(tmp_path: Path) -> None:
 
 def test_health_no_revela_la_version(tmp_path: Path) -> None:
     """`/health` no pide token: no debe filtrar la versión a quien llame."""
-    settings, accounts = load_config(ROOT / "accounts.example.toml")
+    settings = ajustes()
     audit = AuditLog(tmp_path / "audit.jsonl")
     application, _runtime = create_app(
-        settings, accounts, "token-de-prueba-0123456789abcdef", audit=audit
+        settings, {}, "token-de-prueba-0123456789abcdef", audit=audit
     )
     with TestClient(application, base_url="http://127.0.0.1:8765") as http:
         response = http.get("/health")
@@ -97,7 +97,6 @@ def test_el_banner_de_arranque_se_ve(tmp_path: Path) -> None:
         ROOT,
         MCP_BEARER_TOKEN="token-de-prueba-0123456789abcdef",
         MCP_AUDIT_LOG=str(tmp_path / "audit.jsonl"),
-        MCP_CONFIG=str(ROOT / "accounts.example.toml"),
     )
     completed = subprocess.run(
         [sys.executable, "-c", "import server"],

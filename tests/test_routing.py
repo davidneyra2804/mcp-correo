@@ -14,8 +14,9 @@ import pytest
 from starlette.testclient import TestClient
 
 from audit import AuditLog
-from config import Account, load_config
+from config import Account
 from server import create_app
+from tests.ayuda import ajustes
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -69,7 +70,7 @@ def _cuentas() -> dict[str, Account]:
 @pytest.fixture
 def client(tmp_path: Path) -> Iterator[TestClient]:
     """Cada test necesita su propia app: el session manager del SDK solo arranca una vez."""
-    settings, _accounts = load_config(Path(__file__).resolve().parents[1] / "accounts.example.toml")
+    settings = ajustes()
     audit = AuditLog(tmp_path / "audit.jsonl", secrets=[TOKEN, BEARER_ADA, BEARER_LUIS])
     application, _runtime = create_app(settings, _cuentas(), TOKEN, audit=audit)
     with TestClient(application, base_url="http://127.0.0.1:8765") as http:
@@ -109,7 +110,7 @@ def test_la_ruta_de_una_cuenta_ve_solo_esa(client: TestClient) -> None:
 
 
 def test_la_ruta_acepta_el_nombre_de_la_cuenta(client: TestClient) -> None:
-    """Con MCP_ACCOUNT_NAME, el nombre es el identificador de la ruta."""
+    """Con un nombre propio, el nombre es el identificador de la ruta."""
     assert _cuentas_devueltas(client, "/mcp/principal", TOKEN) == ["principal"]
 
 
@@ -251,8 +252,8 @@ def test_sin_cuenta_en_una_ruta_con_varias_sale_el_error_que_dice_cuales(
     from mail.imap import MailService
     from scope import reset_scope, set_scope
 
-    settings, accounts = load_config(ROOT / "accounts.example.toml")
-    service = MailService(settings, accounts)
+    settings = ajustes()
+    service = MailService(settings, _cuentas())
     token = set_scope(None)
     try:
         with pytest.raises(MailError, match="Indica la cuenta"):
@@ -266,8 +267,8 @@ def test_sin_cuenta_en_una_ruta_de_una_se_resuelve(tmp_path: Path) -> None:
     from mail.imap import MailService
     from scope import reset_scope, set_scope
 
-    settings, accounts = load_config(ROOT / "accounts.example.toml")
-    service = MailService(settings, accounts)
+    settings = ajustes()
+    service = MailService(settings, {"principal": _cuentas()["principal"]})
     token = set_scope(frozenset({"principal"}))
     try:
         assert service._account("").key == "principal"

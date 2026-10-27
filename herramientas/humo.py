@@ -71,9 +71,6 @@ def main() -> int:
         "MCP_BIND_PORT": "18765",
         "MCP_DASHBOARD_BIND_PORT": "18766",
         "MCP_AUDIT_LOG": str(Path(temporal) / "audit.jsonl"),
-        "MCP_CONFIG": str(RAIZ / "accounts.example.toml"),
-        "MAIL_PRINCIPAL_PASSWORD": "clave-ficticia-principal",
-        "MAIL_ARCHIVO_PASSWORD": "clave-ficticia-archivo",
         "PYTHONPATH": str(RAIZ),
     }
     proceso = subprocess.Popen(

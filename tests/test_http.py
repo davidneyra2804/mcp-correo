@@ -8,8 +8,8 @@ import pytest
 from starlette.testclient import TestClient
 
 from audit import AuditLog
-from config import load_config
 from server import INSTRUCTIONS, create_app
+from tests.ayuda import ajustes
 
 TOKEN = os.environ["MCP_BEARER_TOKEN"]
 JSON_HEADERS = {
@@ -22,9 +22,9 @@ ROOT = Path(__file__).resolve().parents[1]
 @pytest.fixture
 def client(tmp_path: Path) -> Iterator[TestClient]:
     """Cada test necesita su propia app: el session manager del SDK solo arranca una vez."""
-    settings, accounts = load_config(ROOT / "accounts.example.toml")
+    settings = ajustes()
     audit = AuditLog(tmp_path / "audit.jsonl", secrets=[TOKEN])
-    application, _runtime = create_app(settings, accounts, TOKEN, audit=audit)
+    application, _runtime = create_app(settings, {}, TOKEN, audit=audit)
     with TestClient(application, base_url="http://127.0.0.1:8765") as http:
         yield http
 

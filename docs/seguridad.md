@@ -3,13 +3,13 @@
 Hecho en el código:
 
 - Bearer obligatorio, comparado con `hmac.compare_digest` sobre el SHA-256 del token. Sin token, el proceso no arranca. `/mcp` sin Bearer responde 401.
-- Credenciales por cuenta: `MCP_ACCOUNT_BEARER_<N>` da acceso a una sola cuenta y solo por su ruta. En `/mcp` o en la ruta de otra cuenta responde 403. No puede ser igual al bearer global ni repetirse entre cuentas.
+- Credenciales por cuenta, gestionadas en el panel: dan acceso a una sola cuenta y solo por su ruta. En `/mcp` o en la ruta de otra cuenta responden 403. No pueden coincidir con el bearer global ni repetirse.
 - El ámbito de la ruta se aplica en un único punto (`MailService._account`), de modo que una tool no puede tocar una cuenta fuera de su ruta.
-- Contraseñas solo en el entorno. El TOML guarda el nombre de la variable. `.gitignore` deja fuera `.env`, `accounts.toml` y `audit.jsonl`.
-- Configuración por variables de entorno: la contraseña de cada cuenta va en `MCP_ACCOUNT_PASSWORD_<N>` o se referencia con `MCP_ACCOUNT_PASSWORD_ENV_<N>`. Un interruptor mal escrito aborta el arranque en vez de quedarse apagado en silencio.
+- Las contraseñas de cuentas se guardan cifradas en la base; la clave de cifrado está fuera de ella. `.gitignore` excluye `.env` y `audit.jsonl`.
+- Un interruptor global mal escrito aborta el arranque en vez de quedarse apagado en silencio.
 - `Account.password` y `Account.bearer` con `repr=False`. Los errores que ve el modelo no incluyen la clave ni el texto crudo de IMAP o SMTP.
 - Lectura: `EXAMINE`, `BODY.PEEK[]`, lista blanca de tipos y topes de tamaño. El proxy de lectura rechaza comandos de escritura.
-- Escritura apagada por defecto, global y por cuenta. Con el interruptor apagado la tool no se registra.
+- Escritura apagada por defecto globalmente. Las cuentas heredan salvo que el panel establezca un permiso más restrictivo. Con el interruptor global apagado la tool no se registra.
 - Enviar y borrar exigen un token de un solo uso, de 10 minutos, ligado a la cuenta y a la operación. El borrado definitivo es un parámetro de la preparación y viaja dentro del token. Marcar es directo y queda auditado.
 - Cupo diario, máximo de destinatarios, dominios opcionales, tope de UID por borrado o marcado, y tamaño de adjuntos.
 - Auditoría JSONL de cada acción, sin cuerpos, sin `confirm_token` y sin credenciales. Si no se puede escribir, no hay efecto en el buzón.
@@ -38,14 +38,14 @@ Hecho en el código:
 
 Lo aplica quien despliega:
 
-- Token aleatorio (`openssl rand -base64 48`) y rotación. Archivo de entorno `0600`. TOML `0640`.
+- Tokens y clave aleatorios (`openssl rand -base64 48`) y archivo de entorno `0600`. Guarda una copia de la clave de cifrado separada de la base.
 - App password del buzón. La escritura sigue apagada hasta que se encienda a propósito.
 - Certificado TLS, rate limit y, si se conocen, las IP de salida del cliente en el proxy.
 - Usuario de servicio sin shell, systemd endurecido o el compose con los límites del repositorio, y rotación del JSONL.
 - No publicar el puerto 8765 en una interfaz que no sea loopback, y no exponerlo sin Bearer ni sin TLS.
-- Si activas el panel, tampoco publiques su puerto fuera de loopback. Si
+- No publiques el puerto del panel fuera de loopback. Si
   hace falta entrar desde fuera, mejor detrás de Cloudflare Access.
-- En Portainer, token y contraseñas solo en Environment variables. El TOML montado o en `MCP_ACCOUNTS_TOML_B64` no lleva la clave `password`.
+- En Portainer, los secretos del servidor van en Environment variables; las contraseñas de cuentas se introducen en el panel.
 - Comprobar en el cliente de correo que `get_message` no pone `\Seen`.
 
 ## Con Cloudflare Tunnel

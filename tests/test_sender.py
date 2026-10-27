@@ -1,4 +1,4 @@
-"""El nombre visible del remitente: MCP_ACCOUNT_SENDER_<N>.
+"""El nombre visible del remitente.
 
 Va en la cabecera From, así que además de ser bonito tiene que estar bien
 escapado y no poder inyectar cabeceras.
@@ -11,7 +11,6 @@ from email.utils import getaddresses, parseaddr
 
 import pytest
 
-from config import load_config
 from mail.compose import format_sender, without_bcc
 
 
@@ -39,41 +38,42 @@ def test_un_nombre_con_caracteres_especiales_se_entrecomilla(nombre: str, espera
     assert parseaddr(format_sender(nombre, "ada@corp.example.com"))[1] == ("ada@corp.example.com")
 
 
-def test_un_salto_de_linea_no_se_cuela(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_un_salto_de_linea_no_se_cuela() -> None:
     """Un nombre con CRLF podría inyectar un Bcc de verdad."""
     from config import _display_name
 
     with pytest.raises(SystemExit, match="saltos de línea"):
-        _display_name("Jefe\r\nBcc: victima@example.com", "MCP_ACCOUNT_SENDER_1")
+        _display_name("Jefe\r\nBcc: victima@example.com", "sender")
 
 
 def test_un_nombre_con_nulo_no_se_cuela() -> None:
     from config import _display_name
 
     with pytest.raises(SystemExit, match="saltos de línea"):
-        _display_name("Jefe\x00", "MCP_ACCOUNT_SENDER_1")
+        _display_name("Jefe\x00", "sender")
 
 
 def test_un_nombre_muy_largo_no_se_cuela() -> None:
     from config import _display_name
 
     with pytest.raises(SystemExit, match="demasiado largo"):
-        _display_name("a" * 101, "MCP_ACCOUNT_SENDER_1")
+        _display_name("a" * 101, "sender")
 
 
-def test_la_cuenta_toma_el_sender_del_entorno(monkeypatch: pytest.MonkeyPatch) -> None:
-    import os
+def test_la_cuenta_toma_el_sender_de_la_base() -> None:
+    """El nombre visible llega con la cuenta, desde el panel."""
+    from config import Account
 
-    monkeypatch.delenv("MCP_CONFIG", raising=False)
-    for name in list(os.environ):
-        if name.startswith("MCP_ACCOUNT_"):
-            monkeypatch.delenv(name, raising=False)
-    monkeypatch.setenv("MCP_ACCOUNT_USERNAME_1", "ada@corp.example.com")
-    monkeypatch.setenv("MCP_ACCOUNT_INBOX_HOST_1", "imap.corp.example.com")
-    monkeypatch.setenv("MCP_ACCOUNT_PASSWORD_1", "clave")
-    monkeypatch.setenv("MCP_ACCOUNT_SENDER_1", "Ada Lovelace")
-    _settings, accounts = load_config()
-    assert accounts["ada@corp.example.com"].sender == "Ada Lovelace"
+    cuenta = Account(
+        key="ada@corp.example.com",
+        label="Ada",
+        imap_host="imap.corp.example.com",
+        imap_port=993,
+        username="ada@corp.example.com",
+        password="clave",
+        sender="Ada Lovelace",
+    )
+    assert cuenta.sender == "Ada Lovelace"
 
 
 def test_el_from_del_mensaje_lleva_el_nombre() -> None:

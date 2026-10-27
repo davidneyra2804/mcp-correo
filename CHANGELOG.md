@@ -341,10 +341,10 @@ cambia**, y por eso es una versión mayor.
   tocar el despliegue. Tiene su propia credencial (`MCP_DASHBOARD_TOKEN`),
   su propia sesión firmada y su propia capa anti-CSRF. **No puede leer ni
   escribir un buzón**: solo gestiona la configuración y prueba conexiones.
-- **Las cuentas en una base de datos SQLite.** La base pasa a ser la fuente
-  de las cuentas. Las variables `MCP_ACCOUNT_<CAMPO>_<N>` se importan
-  **una vez**, y solo si la base está vacía; a partir de ahí la base
-  manda.
+- **Las cuentas en una base de datos SQLite.** La base es la **única** fuente
+  de las cuentas. No hay variables `MCP_ACCOUNT_<CAMPO>_<N>` ni fichero de
+  configuración: las cuentas se dan de alta en el panel, y una instalación
+  nueva empieza vacía.
 - **Cuentas por dominio.** Un dominio agrupa cuentas y les da un servidor
   IMAP y SMTP por defecto, unos permisos y una credencial propia. La
   cadena de permisos crece un nivel: global → dominio → cuenta.
@@ -390,6 +390,15 @@ cambia**, y por eso es una versión mayor.
   después. El permiso por cuenta se sigue comprobando en cada llamada, que
   es donde se comprueba de todos modos.
 - **Sin cuentas ya no es un error de arranque.** Las da de alta el panel.
+- **Se retira la configuración por fichero y por variables de cuenta.**
+  `accounts.toml`, `MCP_CONFIG`, `MCP_ACCOUNTS_TOML`, `MCP_ACCOUNTS_TOML_B64`
+  y `MCP_GENERATED_CONFIG` dejan de leerse, y con ellas todas las variables
+  `MCP_ACCOUNT_<CAMPO>_<N>`. La configuración del servidor sigue siendo
+  **entera** por variables `MCP_*`, una por campo. El `entrypoint` del
+  contenedor, que solo preparaba el TOML, desaparece: la imagen ejecuta el
+  servidor directamente.
+- **El texto de arranque dice de dónde viene la configuración.** Siempre son
+  variables de entorno, y el panel lo dice cuando la base está vacía.
 
 ### Corregido
 

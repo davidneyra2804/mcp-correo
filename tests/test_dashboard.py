@@ -13,11 +13,12 @@ from pathlib import Path
 import pytest
 from starlette.testclient import TestClient
 
-from config import DashboardSettings, load_config
+from config import DashboardSettings
 from dashboard.app import crear_app
 from store.crypto import Cipher
 from store.db import Database
 from store.store import Store
+from tests.ayuda import ajustes
 
 ROOT = Path(__file__).resolve().parents[1]
 TOKEN = "token-del-panel-0123456789abcdef"
@@ -29,7 +30,7 @@ CSRF = {"X-MCP-Dashboard": "1"}
 def app(tmp_path: Path):
     base = Database(tmp_path / "cuentas.db")
     base.prepare()
-    settings, _cuentas = load_config(ROOT / "accounts.example.toml")
+    settings = ajustes()
     store = Store(base, Cipher(CLAVE), settings)
     dashboard = DashboardSettings(
         enabled=True,

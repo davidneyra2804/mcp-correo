@@ -35,8 +35,8 @@ from config import (
     DashboardSettings,
     ServerSettings,
     ensure_local_bind,
-    load_config,
     load_dashboard_settings,
+    load_server_settings,
     require_bearer_token,
     write_capabilities,
     write_capabilities_detail,
@@ -58,7 +58,7 @@ from store.accounts import (
 )
 from store.crypto import Cipher
 from store.db import Database
-from store.store import Store, importar_cuentas
+from store.store import Store
 from version import __version__
 
 logger = logging.getLogger("mcp_correo.server")
@@ -386,8 +386,8 @@ class BearerAuth:
                 return ("account", frozenset({key}), key)
         if low.isdigit():
             wanted = int(low)
-            # El 0 es el valor centinela de las cuentas que vienen del TOML:
-            # no son rutables por número, porque no tienen.
+            # El 0 es el valor centinela de una cuenta sin identificador
+            # numérico: no es rutable por número, porque no tiene.
             if wanted > 0:
                 for key, account in self._accounts.items():
                     if account.index == wanted:
@@ -958,33 +958,15 @@ async def _unauthorized(send: Send) -> None:
 def _preparar_la_base(
     dashboard: DashboardSettings,
     settings: ServerSettings,
-    cuentas: Mapping[str, Account],
     audit: AuditLog,
 ) -> tuple[Store, AccountSource]:
-    """Prepara la base de datos y devuelve el almacén y la fuente.
-
-    La base de datos es la fuente de las cuentas. Las del entorno o del
-    TOML se importan **una vez**, y solo si la base está vacía: en cuanto
-    la base tiene una cuenta, la base manda. Dos fuentes a la vez son dos
-    verdades, y de dos verdades sale una que nadie sabe cuál es.
-    """
+    """Prepara la base de datos, única fuente de cuentas del servidor."""
     database = Database(dashboard.db_path)
     database.prepare()
     cipher = Cipher(dashboard.key)
     store = Store(database, cipher, settings)
     store.comprobar_clave()
-    importadas = importar_cuentas(store, cuentas)
-    if importadas:
-        logger.info(
-            "Cuentas importadas del entorno: %d. A partir de aquí la base de datos manda.",
-            importadas,
-        )
-    elif cuentas:
-        logger.info(
-            "La base de datos ya tiene cuentas: las %d del entorno se ignoran.",
-            len(cuentas),
-        )
-    else:
+    if not store.hay_cuentas():
         logger.info("No hay cuentas todavía. Se dan de alta desde el panel.")
     source = DatabaseAccounts(
         store,
@@ -997,10 +979,10 @@ def _preparar_la_base(
 def _bootstrap() -> BearerAuth:
     token = require_bearer_token()
     dashboard = load_dashboard_settings()
-    settings, cuentas = load_config()
+    settings = load_server_settings()
     ensure_local_bind(settings.bind_host)
     audit = AuditLog(settings.audit_log, secrets=[token])
-    store, source = _preparar_la_base(dashboard, settings, cuentas, audit)
+    store, source = _preparar_la_base(dashboard, settings, audit)
     application, runtime = create_app(
         settings, source, token, audit=audit, store=store, dashboard=dashboard
     )
@@ -1022,9 +1004,8 @@ def _bootstrap() -> BearerAuth:
         # aparece y no se sabe por qué.
         logger.info("Por qué están apagadas: %s", "; ".join(motivos))
     logger.info(
-        "mcp-correo %s | Configuración: %s. Cuentas: %s",
+        "mcp-correo %s | Configuración: variables de entorno. Cuentas: %s",
         __version__,
-        "variables de entorno" if settings.config_source == "env" else "accounts.toml",
         ", ".join(sorted(runtime.accounts)),
     )
     logger.info(

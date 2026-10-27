@@ -21,8 +21,8 @@ sudo install -m 0600 -o root -g root /dev/null /etc/mcp-correo/env
 sudo install -d -m 0750 -o mcpmail -g mcpmail /var/log/mcp-correo
 sudo install -d -m 0750 -o mcpmail -g mcpmail /var/lib/mcp-correo
 # Editar /etc/mcp-correo/env: MCP_BEARER_TOKEN, MCP_DASHBOARD_KEY,
-# MCP_DASHBOARD_TOKEN, MCP_DASHBOARD_DB y las variables
-# MCP_ACCOUNT_<CAMPO>_<N> de cada cuenta.
+# MCP_DASHBOARD_TOKEN y MCP_DASHBOARD_DB=/var/lib/mcp-correo/cuentas.db.
+# Después del arranque, crea dominios y cuentas desde el panel.
 
 sudo cp deploy/mcp-correo.service /etc/systemd/system/
 sudo systemctl daemon-reload && sudo systemctl enable --now mcp-correo
@@ -33,9 +33,8 @@ sudo cp deploy/logrotate.conf /etc/logrotate.d/mcp-correo
 ```
 
 El contrato de variables es el mismo que en Docker, y está en
-[configuracion.md](configuracion.md). El `accounts.toml` sigue siendo una
-alternativa válida, pero no hace falta: con el `EnvironmentFile` de la unidad
-todo cabe en `/etc/mcp-correo/env`.
+[configuracion.md](configuracion.md). La configuración del servidor va en el
+`EnvironmentFile`; las cuentas se gestionan desde el panel.
 
 Ojo con `MCP_BIND_HOST` y `MCP_BIND_PORT` aquí: la unidad fija el bind en
 loopback en su `ExecStart` y no los lee. Déjalos sin definir, o a `127.0.0.1`

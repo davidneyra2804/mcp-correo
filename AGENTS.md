@@ -22,24 +22,19 @@ Estas no son preferencias. Cada una viene de un fallo real.
 
 ### 1. Todo por variables de entorno
 
-El servidor se configura **entero** con variables `MCP_*`. Un fichero de
-configuración es la alternativa legacy (`accounts.toml`), no el camino normal.
-
-Una variable por campo, con el índice de la cuenta al final:
+El servidor se configura **entero** con variables `MCP_*`. No hay fichero de
+configuración: no hay TOML, ni cuentas por variables, ni listas que mantener.
 
 ```
-MCP_ACCOUNT_USERNAME_1=ada@corp.example.com
-MCP_ACCOUNT_INBOX_HOST_1=imap.corp.example.com
-MCP_ACCOUNT_PASSWORD_1=la-clave
+MCP_BEARER_TOKEN=el-secreto-del-cliente-mcp
+MCP_DASHBOARD_KEY=la-clave-que-cifra-las-contrasenas
+MCP_DASHBOARD_TOKEN=la-credencial-del-panel
 ```
-
-Para añadir una cuenta: copias el bloque y cambias el número. No hay listas
-que mantener, ni variables que enumerar en el compose.
 
 **Las cuentas no van por el entorno.** Viven en la base de datos y las
-gestiona el panel. Las del entorno se importan **una sola vez**, y solo si
-la base está vacía. A partir de ahí la base manda, y las variables de
-cuenta ya no se leen.
+gestiona el panel. No hay ninguna variable `MCP_ACCOUNT_*`: si alguna
+volviera, el compose o el `.env.example` la documentarían y alguien creería
+que configura una cuenta.
 
 El panel y la base **siempre están**: es la forma de gestionar las
 cuentas. `MCP_DASHBOARD_KEY` y `MCP_DASHBOARD_TOKEN` son obligatorias, y
@@ -53,7 +48,8 @@ Un valor mal escrito **aborta el arranque**. Nunca se ignora en silencio.
 
 - Un interruptor solo admite `true`, `false`, `1` y `0`. `MCP_ENABLE_SEND=yes`
   no significa "apagado": significa error.
-- Un nombre de campo desconocido es un error, con la lista de los válidos.
+- Un límite de `0` es un error, no "sin definir": un `0` explícito tiene que
+  llegar al validador y ser rechazado.
 - Un salto de línea en un valor que acaba en una cabecera es un error.
 
 El motivo es concreto: con un TOML, un error de sintaxis se ve al leer el
@@ -120,7 +116,6 @@ con valores ficticios.
 | `dashboard/app.py` | El panel: rutas, sesión y anti-CSRF |
 | `dashboard/api.py` | Los handlers del panel, incluida la prueba de conexión |
 | `dashboard/ui.py` | La interfaz y el login |
-| `docker/entrypoint.py` | Prepara el `accounts.toml` si lo hay. Nada más |
 | `docker/rotate_audit.py` | Rota el JSONL de auditoría |
 | `docker/healthcheck.py` | La sonda: el MCP y, si está, el panel |
 
@@ -220,8 +215,8 @@ Cada una de estas costó una release rota.
   la imagen existe por esto.
 - **Dos módulos con la misma regla y reglas distintas.** El entrypoint seguía
   mirando `MCP_ACCOUNTS` después de que el esquema pasara a discovery por
-  índice. El entrypoint **no** decide si hay cuentas: solo prepara el fichero.
-  Esa pregunta es de `config.py`.
+  índice. Hoy el entrypoint no existe: la configuración va entera por
+  entorno, y las cuentas, por la base.
 - **Un mensaje que lista lo que ya está puesto.** Decía *"marcado necesita
   `MCP_ENABLE_MARK=true` y `MCP_ACCOUNT_ALLOW_MARK_<N>=true`*" con la global
   ya en `true`, y hacía dudar de la que estaba bien. **Di solo lo que falta.**
@@ -279,13 +274,13 @@ Cada una de estas costó una release rota.
 La versión vive en `version.py`. Para subir una:
 
 ```bash
-sed -i 's/__version__ = ".*"/__version__ = "1.2.0"/' version.py
-sed -i 's/^version = ".*"/version = "1.2.0"/' pyproject.toml
-sed -i 's/ARG MCP_VERSION=.*/ARG MCP_VERSION=1.2.0/' Dockerfile
-sed -i 's/mcp-correo 2\.0\.0 |/mcp-correo 1.2.0 |/' docs/configuracion.md README.md
-sed -i 's|mcp-correo:2\.0\.0|mcp-correo:1.2.0|' README.md
-git commit -am "version 1.2.0"
-git tag v1.2.0 && git push origin v1.2.0
+sed -i 's/__version__ = ".*"/__version__ = "2.0.1"/' version.py
+sed -i 's/^version = ".*"/version = "2.0.1"/' pyproject.toml
+sed -i 's/ARG MCP_VERSION=.*/ARG MCP_VERSION=2.0.1/' Dockerfile
+sed -i 's/mcp-correo 2\.0\.0 |/mcp-correo 2.0.1 |/' docs/configuracion.md README.md
+sed -i 's|mcp-correo:2\.0\.0|mcp-correo:2.0.1|' README.md
+git commit -am "version 2.0.1"
+git tag v2.0.1 && git push origin v2.0.1
 ```
 
 Los `sed` de los dos últimos ficheros no son opcionales: hay un test que

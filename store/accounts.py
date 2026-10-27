@@ -3,7 +3,8 @@
 El servidor no guarda el conjunto de cuentas en un diccionario: lo pide a
 una fuente. Hay dos:
 
-- ``StaticAccounts``, la del entorno o del ``accounts.toml``. No cambia.
+- ``StaticAccounts``, la de un conjunto fijo, que no cambia. La usan las
+  pruebas y quien monta la aplicación a mano.
 - ``DatabaseAccounts``, la del panel. Se recarga cuando alguien toca el
   panel, sin reiniciar el servidor.
 
@@ -62,7 +63,7 @@ class AccountSource(Protocol):
 
 
 class StaticAccounts:
-    """Las cuentas del entorno o del ``accounts.toml``. No cambian."""
+    """Un conjunto fijo de cuentas. No cambian."""
 
     def __init__(self, accounts: Mapping[str, Account]) -> None:
         self._snapshot = AccountSnapshot(

@@ -67,13 +67,10 @@ MCP_PUBLIC_HOST=mcp.example.com
 
 # El token del panel.
 CLOUDFLARE_TUNNEL_TOKEN=eyJhIjoiXXXX...
-
-# Las cuentas, numeradas.
-MCP_ACCOUNT_USERNAME_1=ada@example.com
-MCP_ACCOUNT_INBOX_HOST_1=imap.corp.example.com
-MCP_ACCOUNT_PASSWORD_1=la-clave
-MCP_ACCOUNT_BEARER_1=bearer-solo-de-la-cuenta-1-0123456789abcdef
 ```
+
+Las cuentas se dan de alta desde el panel, no por variables: crea un dominio,
+crea la cuenta dentro y copia el token que se genera.
 
 `MCP_PUBLIC_HOST` no es opcional en este escenario, y no es cosmético:
 
@@ -226,7 +223,7 @@ accesos, ni listas de IP, ni rate limit en el edge.
 **Access y las rutas por cuenta son cosas distintas.** Access decide si la
 petición entra al servidor; la ruta decide qué buzones ve el cliente que
 entra. Se pueden usar las dos a la vez: Access con un Service Token para
-todo el servidor, y el `MCP_ACCOUNT_BEARER_<N>` para que cada agente solo
+todo el servidor, y el token de cada cuenta para que cada agente solo
 vea su buzón. El Service Token no sustituye al bearer por cuenta: sin él, un
 cliente que pase el filtro de Access vería el catálogo de rutas entero, y
 con el bearer general, todas las cuentas.

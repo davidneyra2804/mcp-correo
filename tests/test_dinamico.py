@@ -16,8 +16,9 @@ from pathlib import Path
 import pytest
 from starlette.testclient import TestClient
 
-from config import load_config
-from server import create_app
+from audit import AuditLog
+from config import DashboardSettings, load_server_settings
+from server import _preparar_la_base, create_app
 from store.accounts import DatabaseAccounts
 from store.crypto import Cipher
 from store.db import Database
@@ -26,6 +27,28 @@ from store.store import Store
 ROOT = Path(__file__).resolve().parents[1]
 TOKEN = "token-general-0123456789abcdef"
 CLAVE = "clave-del-panel-0123456789abcdef"
+
+
+def test_arranque_no_importa_cuentas_del_entorno(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("MCP_ACCOUNT_USERNAME_1", "ada@example.com")
+    monkeypatch.setenv("MCP_ACCOUNT_INBOX_HOST_1", "mail.example.com")
+    monkeypatch.setenv("MCP_ACCOUNT_PASSWORD_1", "clave-ficticia")
+    dashboard = DashboardSettings(
+        enabled=True,
+        db_path=str(tmp_path / "cuentas.db"),
+        key=CLAVE,
+        token=TOKEN,
+        bind_host="127.0.0.1",
+        bind_port=8766,
+    )
+    settings = load_server_settings()
+    store, source = _preparar_la_base(dashboard, settings, AuditLog(str(tmp_path / "audit.jsonl")))
+    assert not store.cuentas()
+    assert not source.snapshot().accounts
+
+
 JSON_HEADERS = {
     "Content-Type": "application/json",
     "Accept": "application/json, text/event-stream",
@@ -41,7 +64,7 @@ BEARER_DOMINIO = "bearer-solo-del-dominio-0123456789"
 def store(tmp_path: Path) -> Store:
     base = Database(tmp_path / "cuentas.db")
     base.prepare()
-    settings, _cuentas = load_config(ROOT / "accounts.example.toml")
+    settings = load_server_settings()
     almacen = Store(base, Cipher(CLAVE), settings)
     almacen.comprobar_clave()
     return almacen
@@ -49,7 +72,7 @@ def store(tmp_path: Path) -> Store:
 
 @pytest.fixture
 def cliente(store: Store) -> TestClient:
-    settings, _cuentas = load_config(ROOT / "accounts.example.toml")
+    settings = load_server_settings()
     source = DatabaseAccounts(store, settings)
     app, _runtime = create_app(settings, source, TOKEN)
     with TestClient(app, base_url="http://127.0.0.1:8765") as http:
@@ -250,7 +273,7 @@ def test_en_modo_panel_las_tools_de_escritura_siguen_dependiendo_del_global(
 ) -> None:
     from config import ServerSettings, write_capabilities
 
-    settings, _cuentas = load_config(ROOT / "accounts.example.toml")
+    settings = load_server_settings()
     apagado = ServerSettings(**{**settings.__dict__, "enable_send": False})
     assert write_capabilities(apagado, {}, dynamic=True)["send"] is False
     encendido = ServerSettings(**{**settings.__dict__, "enable_send": True})

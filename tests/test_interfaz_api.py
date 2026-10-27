@@ -23,11 +23,12 @@ from pathlib import Path
 import pytest
 from starlette.testclient import TestClient
 
-from config import load_config, load_dashboard_settings
+from config import load_dashboard_settings
 from dashboard.app import crear_app, rutas_de_la_api
 from store.crypto import Cipher
 from store.db import Database
 from store.store import Store
+from tests.ayuda import ajustes
 
 ROOT = Path(__file__).resolve().parents[1]
 CSRF = {"X-MCP-Dashboard": "1"}
@@ -43,7 +44,7 @@ _PLANTILLA = re.compile(r"^/api/[^/]+(?:/\{[^}]+\})?(?:/[a-z]+)?$")
 
 @pytest.fixture
 def cliente(tmp_path: Path) -> Iterator[TestClient]:
-    settings, _cuentas = load_config(ROOT / "accounts.example.toml")
+    settings = ajustes()
     dashboard = load_dashboard_settings()
     base = Database(tmp_path / "cuentas.db")
     base.prepare()
@@ -56,7 +57,7 @@ def cliente(tmp_path: Path) -> Iterator[TestClient]:
 @pytest.fixture
 def rutas_api() -> set[tuple[str, str]]:
     """Las rutas de la API que declara la aplicación, con su método."""
-    settings, _cuentas = load_config(ROOT / "accounts.example.toml")
+    settings = ajustes()
     dashboard = load_dashboard_settings()
     base = Database(Path(tempfile.gettempdir()) / "mcp-correo-test-rutas.db")
     base.prepare()
