@@ -16,7 +16,7 @@ from typing import Any, NoReturn
 from imapclient import IMAPClient
 from imapclient.exceptions import IMAPClientError
 
-from config import MAX_FOLDER_LENGTH, Account, ServerSettings
+from config import MAX_FOLDER_LENGTH, Account, ServerSettings, account_allows
 from mail.errors import MailError
 from mail.mime import (
     decode_header_value,
@@ -69,10 +69,10 @@ class MailService:
                     "account": account.key,
                     "label": account.label,
                     "user": account.username,
-                    "can_send": self.settings.enable_send and account.allow_send,
-                    "can_mark": self.settings.enable_mark and account.allow_mark,
-                    "can_delete": self.settings.enable_delete and account.allow_delete,
-                    "can_draft": self.settings.enable_drafts and account.allow_drafts,
+                    "can_send": account_allows(account, "send", self.settings),
+                    "can_mark": account_allows(account, "mark", self.settings),
+                    "can_delete": account_allows(account, "delete", self.settings),
+                    "can_draft": account_allows(account, "drafts", self.settings),
                 }
                 for account in accounts
             ]

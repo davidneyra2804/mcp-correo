@@ -13,7 +13,7 @@ from typing import Any
 
 from imapclient.exceptions import CapabilityError, IMAPClientError
 
-from config import WRITE_GATES, Account
+from config import WRITE_GATES, Account, account_allows
 from mail.compose import build_outgoing, without_bcc
 from mail.confirm import ConfirmationStore, SendQuota
 from mail.errors import MailError
@@ -354,8 +354,10 @@ class MailboxWriter:
 
     def _gated(self, account_key: str, kind: str) -> Account:
         account = self.service._account(account_key)
-        global_name, account_name, _corta, label = WRITE_GATES[kind]
-        if not getattr(self.service.settings, global_name) or not getattr(account, account_name):
+        global_name, _account_name, _corta, label = WRITE_GATES[kind]
+        if not getattr(self.service.settings, global_name):
+            raise MailError(f"{label} está desactivado en el servidor.")
+        if not account_allows(account, kind, self.service.settings):
             raise MailError(f"{label} está desactivado para la cuenta {account.key}.")
         return account
 

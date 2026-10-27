@@ -226,10 +226,12 @@ class Account:
     sent_folder: str = "Sent"
     trash_folder: str = ""
     smtp_security: str = ""
-    allow_send: bool = False
-    allow_mark: bool = False
-    allow_delete: bool = False
-    allow_drafts: bool = False
+    #: Permiso de escritura por cuenta. None = no definido, y entonces
+    #: hereda el interruptor global. True/False = permiso explícito.
+    allow_send: bool | None = None
+    allow_mark: bool | None = None
+    allow_delete: bool | None = None
+    allow_drafts: bool | None = None
     #: Número de cuenta en las variables de entorno. 0 si viene del TOML.
     index: int = 0
 
@@ -674,7 +676,7 @@ def _account_from_env(index: int, settings: ServerSettings) -> Account:
         stripped = value.strip()
         return stripped or None
 
-    def flag(field: str, default: bool) -> bool:
+    def flag(field: str, default: bool | None) -> bool | None:
         value = text(field)
         if value is None:
             return default
@@ -728,10 +730,10 @@ def _account_from_env(index: int, settings: ServerSettings) -> Account:
         sent_folder=text("sent_folder") or "Sent",
         trash_folder=_optional_folder(text("trash_folder"), f"{var('trash_folder')}"),
         smtp_security=smtp_security,
-        allow_send=flag("allow_send", False),
-        allow_mark=flag("allow_mark", False),
-        allow_delete=flag("allow_delete", False),
-        allow_drafts=flag("allow_drafts", False),
+        allow_send=flag("allow_send", None),
+        allow_mark=flag("allow_mark", None),
+        allow_delete=flag("allow_delete", None),
+        allow_drafts=flag("allow_drafts", None),
         index=index,
     )
 
@@ -836,10 +838,10 @@ def _account(key: str, raw: object) -> Account:
         sent_folder=str(raw.get("sent_folder") or "Sent"),
         trash_folder=_optional_folder(raw.get("trash_folder"), f"{key}.trash_folder"),
         smtp_security=_optional_security(raw.get("smtp_security"), f"{key}.smtp_security"),
-        allow_send=_as_bool(raw.get("allow_send"), f"{key}.allow_send"),
-        allow_mark=_as_bool(raw.get("allow_mark"), f"{key}.allow_mark"),
-        allow_delete=_as_bool(raw.get("allow_delete"), f"{key}.allow_delete"),
-        allow_drafts=_as_bool(raw.get("allow_drafts"), f"{key}.allow_drafts"),
+        allow_send=_as_bool_optional(raw.get("allow_send"), f"{key}.allow_send"),
+        allow_mark=_as_bool_optional(raw.get("allow_mark"), f"{key}.allow_mark"),
+        allow_delete=_as_bool_optional(raw.get("allow_delete"), f"{key}.allow_delete"),
+        allow_drafts=_as_bool_optional(raw.get("allow_drafts"), f"{key}.allow_drafts"),
     )
 
 
@@ -859,12 +861,32 @@ WRITE_GATES: dict[str, tuple[str, str, str, str]] = {
 MAX_FOLDER_LENGTH = 200
 
 
+def account_allows(account: Account, capability: str, settings: ServerSettings) -> bool:
+    """Si una cuenta puede usar una capacidad de escritura.
+
+    El interruptor global manda y además es el valor por defecto:
+
+    - global apagado -> nada, ni con permisos por cuenta.
+    - global encendido y la cuenta no dice nada -> la cuenta lo hereda.
+    - global encendido y la cuenta lo dice -> manda la cuenta.
+
+    Así, encender una capacidad es una línea, y el permiso por cuenta es un
+    override opcional.
+    """
+    global_name, account_name, _corta, _larga = WRITE_GATES[capability]
+    if not getattr(settings, global_name):
+        return False
+    valor = getattr(account, account_name)
+    if valor is None:
+        return True
+    return bool(valor)
+
+
 def write_capabilities(settings: ServerSettings, accounts: dict[str, Account]) -> dict[str, bool]:
-    """Una tool de escritura existe solo si el interruptor global y alguna cuenta lo permiten."""
+    """Una tool de escritura existe solo si alguna cuenta puede usarla."""
     return {
-        name: getattr(settings, global_name)
-        and any(getattr(account, account_name) for account in accounts.values())
-        for name, (global_name, account_name, _corta, _larga) in WRITE_GATES.items()
+        name: any(account_allows(account, name, settings) for account in accounts.values())
+        for name in WRITE_GATES
     }
 
 
@@ -873,27 +895,23 @@ def write_capabilities_detail(
 ) -> tuple[list[str], list[str]]:
     """Qué capacidades hay, y por qué faltan las demás.
 
-    Encender `MCP_ENABLE_MARK` no basta: la cuenta tiene que tener
-    `MCP_ACCOUNT_ALLOW_MARK_<N>`. Sin esta explicación, el síntoma es que
-    la tool no aparece y no se sabe por qué.
+    Cada capacidad dice solo lo que falta. Decir "necesita X e Y" cuando X ya
+    está puesto hace dudar de lo que hay que tocar.
     """
     activas: list[str] = []
     motivos: list[str] = []
-    for global_name, account_name, corta, _larga in WRITE_GATES.values():
+    for name, (global_name, account_name, corta, _larga) in WRITE_GATES.items():
         variable_global = "MCP_" + global_name.upper()
         variable_cuenta = f"MCP_ACCOUNT_{account_name.upper()}_<N>"
         if not getattr(settings, global_name):
             motivos.append(f"{corta}: falta {variable_global}=true")
-        elif not any(getattr(account, account_name) for account in accounts.values()):
-            # Solo se dice lo que falta. Decir "necesita X e Y" cuando X ya
-            # está puesto hace dudar de lo que hay que tocar.
-            ejemplo = ""
-            indices = sorted(cuenta.index for cuenta in accounts.values() if cuenta.index)
-            if indices:
-                ejemplo = f" (por ejemplo, {variable_cuenta.replace('<N>', str(indices[0]))}=true)"
-            motivos.append(f"{corta}: falta {variable_cuenta}=true en la cuenta{ejemplo}")
-        else:
-            activas.append(corta)
+            continue
+        if not any(account_allows(account, name, settings) for account in accounts.values()):
+            # El global está bien: lo que falla es que todas las cuentas lo
+            # tienen puesto en false.
+            motivos.append(f"{corta}: todas las cuentas tienen {variable_cuenta}=false")
+            continue
+        activas.append(corta)
     return activas, motivos
 
 
@@ -920,6 +938,13 @@ def _as_bool(value: object, field_name: str) -> bool:
     if isinstance(value, bool):
         return value
     raise SystemExit(f"{field_name} debe ser true o false, no un texto")
+
+
+def _as_bool_optional(value: object, field_name: str) -> bool | None:
+    """Un booleano del TOML, o None si no está: entonces hereda el global."""
+    if value is None:
+        return None
+    return _as_bool(value, field_name)
 
 
 def _smtp_security(value: object, field_name: str) -> str:

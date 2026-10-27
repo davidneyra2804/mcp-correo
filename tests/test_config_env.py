@@ -117,7 +117,9 @@ def test_los_valores_por_defecto_de_una_cuenta(monkeypatch: pytest.MonkeyPatch) 
     assert account.drafts_folder == "Drafts"
     assert account.sent_folder == "Sent"
     assert account.trash_folder == ""
-    assert account.allow_send is False
+    # El permiso por cuenta no está definido: hereda el interruptor global.
+    assert account.allow_send is None
+    assert account.allow_mark is None
     assert account.bearer == ""
 
 
@@ -370,29 +372,57 @@ def test_un_bearer_repetido_no_arranca(monkeypatch: pytest.MonkeyPatch) -> None:
         load_config()
 
 
-def test_el_texto_explica_por_que_una_capacidad_no_esta(
+def test_el_global_encendido_basta_si_la_cuenta_no_dice_nada(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Encender el interruptor global no basta: la cuenta también tiene que permitir."""
-    from config import write_capabilities_detail
+    """El permiso por cuenta es un override opcional, no un segundo interruptor."""
+    from config import write_capabilities
 
     _cuenta(monkeypatch, 1, MCP_ENABLE_MARK="true")
     settings, accounts = load_config()
-    activas, motivos = write_capabilities_detail(settings, accounts)
-    assert "marcado" not in activas
-    texto = "; ".join(motivos)
-    # Solo dice lo que falta. Si dijera "necesita X e Y" con X ya puesto,
-    # no se sabria que tocar.
-    assert "falta MCP_ACCOUNT_ALLOW_MARK_<N>=true" in texto
-    assert "MCP_ENABLE_MARK" not in texto
-    # Y da un ejemplo que se puede copiar.
-    assert "MCP_ACCOUNT_ALLOW_MARK_1=true" in texto
+    assert accounts["ada@corp.example.com"].allow_mark is None
+    assert write_capabilities(settings, accounts)["mark"] is True
 
-    monkeypatch.setenv("MCP_ACCOUNT_ALLOW_MARK_1", "true")
+
+def test_un_override_por_cuenta_manda(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Si la cuenta lo dice, manda la cuenta."""
+    from config import write_capabilities
+
+    _cuenta(monkeypatch, 1, MCP_ENABLE_MARK="true", MCP_ACCOUNT_ALLOW_MARK_1="false")
     settings, accounts = load_config()
-    activas, motivos = write_capabilities_detail(settings, accounts)
-    assert "marcado" in activas
-    assert not any("marcado" in motivo for motivo in motivos)
+    assert accounts["ada@corp.example.com"].allow_mark is False
+    assert write_capabilities(settings, accounts)["mark"] is False
+
+
+def test_el_global_apagado_manda_sobre_el_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """El global es el interruptor maestro: apagado, nada."""
+    from config import write_capabilities
+
+    _cuenta(monkeypatch, 1, MCP_ENABLE_MARK="false", MCP_ACCOUNT_ALLOW_MARK_1="true")
+    settings, accounts = load_config()
+    assert write_capabilities(settings, accounts)["mark"] is False
+
+
+def test_una_cuenta_puede_tener_una_capacidad_que_otra_no(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """El override es por cuenta: una puede, otra no."""
+    from config import write_capabilities
+
+    _cuenta(monkeypatch, 1, MCP_ENABLE_MARK="true", MCP_ACCOUNT_ALLOW_MARK_1="false")
+    _cuenta(
+        monkeypatch,
+        2,
+        username="luis@corp.example.com",
+        MCP_ENABLE_MARK="true",
+        MCP_ACCOUNT_ALLOW_MARK_2="true",
+    )
+    settings, accounts = load_config()
+    assert write_capabilities(settings, accounts)["mark"] is True
+    assert accounts["ada@corp.example.com"].allow_mark is False
+    assert accounts["luis@corp.example.com"].allow_mark is True
 
 
 def test_el_texto_dice_el_global_cuando_eso_es_lo_que_falta(
@@ -406,6 +436,19 @@ def test_el_texto_dice_el_global_cuando_eso_es_lo_que_falta(
     texto = "; ".join(motivos)
     assert "marcado: falta MCP_ENABLE_MARK=true" in texto
     assert "ALLOW_MARK" not in texto
+
+
+def test_el_texto_dice_que_todas_las_cuentas_lo_tienen_en_false(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from config import write_capabilities_detail
+
+    _cuenta(monkeypatch, 1, MCP_ENABLE_MARK="true", MCP_ACCOUNT_ALLOW_MARK_1="false")
+    settings, accounts = load_config()
+    _activas, motivos = write_capabilities_detail(settings, accounts)
+    texto = "; ".join(motivos)
+    assert "todas las cuentas tienen MCP_ACCOUNT_ALLOW_MARK_<N>=false" in texto
+    assert "falta MCP_ENABLE_MARK" not in texto
 
 
 def test_un_bearer_igual_al_global_no_arranca(monkeypatch: pytest.MonkeyPatch) -> None:

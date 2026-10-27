@@ -249,4 +249,45 @@ Correcciones de una auditoría completa del proyecto.
 [1.0.3]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.3
 [1.0.2]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.2
 [1.0.1]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.1
+## [1.0.9] — 2026-10-26
+
+### Cambiado
+
+- **El permiso por cuenta de escritura es un override opcional, no un segundo
+  interruptor.** Antes hagan falta las dos cosas: el global
+  (`MCP_ENABLE_MARK=true`) y el permiso de la cuenta
+  (`MCP_ACCOUNT_ALLOW_MARK_<N>=true`). Encender una capacidad eran dos
+  cambios en dos sitios, y el síntoma —que la tool no aparezca— no decía
+  cuál faltaba.
+
+  Ahora el global es el maestro y además el valor por defecto:
+
+  | Global | Permiso de la cuenta | Resultado |
+  | --- | --- | --- |
+  | `false` | lo que sea | apagada: el global manda |
+  | `true` | sin definir | encendida: la cuenta lo hereda |
+  | `true` | `true` | encendida |
+  | `true` | `false` | apagada para esa cuenta: manda la cuenta |
+
+  El override por cuenta sigue sirviendo para dejar fuera una cuenta sin
+  apagar la capacidad entera.
+
+  **Esto también cambia el `accounts.toml`**: una cuenta sin `allow_send` ahora
+  hereda el `enable_send` global, en vez de estar apagada.
+
+### Añadido
+
+- `write_capabilities_detail` distingue los dos motivos por los que una
+  capacidad puede estar apagada: que falte el global, o que todas las
+  cuentas la tengan en `false`.
+
+[1.0.9]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.9
+[1.0.8]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.8
+[1.0.7]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.7
+[1.0.6]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.6
+[1.0.5]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.5
+[1.0.4]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.4
+[1.0.3]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.3
+[1.0.2]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.2
+[1.0.1]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.1
 [1.0.0]: https://github.com/davidneyra2804/mcp-correo/releases/tag/v1.0.0

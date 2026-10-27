@@ -121,28 +121,36 @@ descuadre de cuentas es un error de configuración, no un aviso.
 | `DRAFTS_FOLDER` | texto | `Drafts` | Carpeta de borradores. |
 | `SENT_FOLDER` | texto | `Sent` | Carpeta de enviados. |
 | `TRASH_FOLDER` | texto | — | Carpeta de papelera. Si se deja vacía, se busca una con el flag `\Trash`. |
-| `ALLOW_SEND` | bool | `false` | Permite enviar con esta cuenta. |
-| `ALLOW_MARK` | bool | `false` | Permite marcar con esta cuenta. |
-| `ALLOW_DELETE` | bool | `false` | Permite borrar con esta cuenta. |
-| `ALLOW_DRAFTS` | bool | `false` | Permite dejar borradores con esta cuenta. |
+| `ALLOW_SEND` | bool \| *sin definir* | *hereda* | Permite enviar con esta cuenta. |
+| `ALLOW_MARK` | bool \| *sin definir* | *hereda* | Permite marcar con esta cuenta. |
+| `ALLOW_DELETE` | bool \| *sin definir* | *hereda* | Permite borrar con esta cuenta. |
+| `ALLOW_DRAFTS` | bool \| *sin definir* | *hereda* | Permite dejar borradores con esta cuenta. |
 | `BEARER` | texto | — | Credencial propia de la cuenta. Ver [Rutas](#rutas). |
 
-Una capacidad de escritura hace falta **las dos cosas**: el interruptor global
-(`MCP_ENABLE_SEND`) y el permiso de la cuenta (`MCP_ACCOUNT_ALLOW_SEND_<N>`).
-Con cualquiera de los dos apagado, la tool no se registra: no aparece en
-`tools/list` y no se puede llamar.
+### Interruptores de escritura
 
-Si una capacidad no aparece, el arranque dice por qué:
+Cada capacidad de escritura se decide con dos cosas:
+
+| | `MCP_ENABLE_<CAP>` (global) | `MCP_ACCOUNT_ALLOW_<CAP>_<N>` (cuenta) | Resultado |
+| --- | --- | --- | --- |
+| 1 | `false` | lo que sea | **Apagada.** El global es el maestro. |
+| 2 | `true` | sin definir | **Encendida** para esa cuenta: lo hereda. |
+| 3 | `true` | `true` | **Encendida** para esa cuenta. |
+| 4 | `true` | `false` | **Apagada** para esa cuenta: manda la cuenta. |
+
+El override por cuenta es opcional. Sirve para dejar fuera alguna cuenta sin
+tener que apagar la capacidad entera.
+
+Si una capacidad no aparece en `tools/list`, el arranque dice qué falta:
 
 ```
-INFO     Servidor listo: 1 cuentas, escucha 0.0.0.0:8765, escritura=ninguna
-INFO     Por qué están apagadas: marcado necesita MCP_ENABLE_MARK=true y
-         MCP_ACCOUNT_ALLOW_MARK_<N>=true en la cuenta; envío necesita
-         MCP_ENABLE_SEND=true
+INFO     Servidor listo: 2 cuentas, escucha 0.0.0.0:8765, escritura=mark
+INFO     Por qué están apagadas: envío: falta MCP_ENABLE_SEND=true; borrado:
+         todas las cuentas tienen MCP_ACCOUNT_ALLOW_DELETE_<N>=false
 ```
 
 Y `list_accounts` dice, por cuenta, lo que puede hacer (`can_send`, `can_mark`,
-`can_delete`, `can_draft`).
+`can_delete`, `can_draft`), ya con el override aplicado.
 
 ## Rutas
 
@@ -254,7 +262,7 @@ En el arranque, el proceso dice de dónde salió la configuración:
 ```
 INFO     Escritura activa: ninguna
 INFO     Servidor listo: 2 cuentas, escucha 0.0.0.0:8765, escritura=apagada
-INFO     mcp-correo 1.0.8 | Configuración: variables de entorno. Cuentas: archivo, principal
+INFO     mcp-correo 1.0.9 | Configuración: variables de entorno. Cuentas: archivo, principal
 ```
 
 La línea de capacidades (`Escritura activa: ...`) dice qué tools de escritura
