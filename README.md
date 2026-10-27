@@ -278,12 +278,6 @@ MCP_IMAGE=ghcr.io/davidneyra2804/mcp-correo:1.0.9
 MCP_PULL_POLICY=always
 ```
 
-Un detalle de GHCR: el paquete se crea **privado**. Para que Portainer pueda
-descargarlo sin credenciales hay que hacerlo público en *Settings → Packages
-→ mcp-correo → Change visibility → Public*. Si prefieres dejarlo privado,
-registra el token en Portainer (*Settings → Registry*) y déjalo en `docker.io`
-con las credenciales de GHCR.
-
 Con `MCP_PULL_POLICY` vacío, el compose construye la imagen localmente y
 `audit-rotate` usa esa misma imagen sin volver a construirla.
 
