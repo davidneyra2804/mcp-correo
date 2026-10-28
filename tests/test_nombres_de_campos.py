@@ -44,6 +44,14 @@ SECRET_NAME_PATTERN = (
 )
 SECRET_KEY_RE = re.compile(rf"^(?:{SECRET_NAME_PATTERN})(?:_plain|_ref)?$", re.IGNORECASE)
 
+#: La versión de texto, que es la que se aplica a un bloque de texto con
+#: JSON dentro. Es la que más falta hizo: la respuesta del MCP es un bloque
+#: de texto, no un objeto con campos.
+JSON_SECRET_FIELD_TEXT_RE = re.compile(
+    rf"((?:\"|')?{SECRET_NAME_PATTERN}(?:\"|')?\s*:\s*(?:\"|'))[^\"'\r\n]+((?:\"|'))",
+    re.IGNORECASE,
+)
+
 #: Un valor con esta forma tampoco debe aparecer: son las formas que las
 #: plataformas reconocen como credenciales de un proveedor concreto.
 SECRET_VALUE_RES = (
@@ -113,6 +121,103 @@ def test_las_claves_de_la_respuesta_no_parecen_secretos(tmp_path: Path) -> None:
     asyncio.run(run())
 
 
+def test_las_claves_de_las_respuestas_de_escritura_no_parecen_secretos(tmp_path: Path) -> None:
+    """Lo mismo para la respuesta del envío y la del borrador.
+
+    Una plataforma que tape la respuesta del envío hide justo lo que hace
+    falta para comprobarlo: dónde quedó la copia y con qué identificador.
+    """
+    rig = Rig(tmp_path, draft=True, drafts=True)
+
+    async def run() -> None:
+        prepared = await rig.mcp.call_tool(
+            "prepare_send",
+            {
+                "account": "principal",
+                "to": ["ana@example.com"],
+                "subject": "Hola",
+                "body": "Cuerpo",
+            },
+        )
+        preview = json.loads(prepared.content[0].text)  # type: ignore[attr-defined]
+        sent = await rig.mcp.call_tool(
+            "send_message",
+            {"account": "principal", "confirmation_id": preview["confirmation_id"]},
+        )
+        resultado = json.loads(sent.content[0].text)  # type: ignore[attr-defined]
+        for name in resultado:
+            assert not SECRET_KEY_RE.match(name), (
+                f"La clave {name!r} de la respuesta de send_message tiene un "
+                "nombre que las plataformas tapan."
+            )
+
+        draft = await rig.mcp.call_tool(
+            "create_draft",
+            {
+                "account": "principal",
+                "to": ["ana@example.com"],
+                "subject": "Borrador",
+                "body": "Cuerpo",
+            },
+        )
+        borrador = json.loads(draft.content[0].text)  # type: ignore[attr-defined]
+        for name in borrador:
+            assert not SECRET_KEY_RE.match(name), (
+                f"La clave {name!r} de la respuesta de create_draft tiene un "
+                "nombre que las plataformas tapan."
+            )
+
+    asyncio.run(run())
+
+
+def test_un_cliente_con_el_catalogo_viejo_recibe_un_error_que_se_puede_seguir(
+    tmp_path: Path,
+) -> None:
+    """Un cliente con el esquema viejo recibe un error accionable.
+
+    Pasó en producción: la conexión tenía el catálogo cacheado con el
+    nombre anterior del argumento, y la llamada se rechazó por validación
+    local. Lo que importa es que el error dijera qué campo faltaba, para que
+    el agente lo corrigiera solo en la siguiente llamada. Y que no fuera el
+    error del valor tapado, que no dice qué hacer.
+    """
+    rig = Rig(tmp_path)
+
+    async def run() -> None:
+        prepared = await rig.mcp.call_tool(
+            "prepare_send",
+            {
+                "account": "principal",
+                "to": ["ana@example.com"],
+                "subject": "Hola",
+                "body": "Cuerpo",
+            },
+        )
+        preview = json.loads(prepared.content[0].text)  # type: ignore[attr-defined]
+
+        with pytest.raises(ToolError) as excinfo:
+            await rig.mcp.call_tool(
+                "send_message",
+                {"account": "principal", "confirm_token": preview["confirmation_id"]},
+            )
+        error = str(excinfo.value)
+        assert "confirmation_id" in error, error
+        assert "Field required" in error, error
+        # Y no es el error del valor tapado: ese deja al agente sin salida.
+        assert "desconocido" not in error, error
+        assert "oculto" not in error, error
+
+        # Con el campo correcto, el mismo identificador funciona.
+        sent = await rig.mcp.call_tool(
+            "send_message",
+            {"account": "principal", "confirmation_id": preview["confirmation_id"]},
+        )
+        resultado = json.loads(sent.content[0].text)  # type: ignore[attr-defined]
+        assert resultado["sent"] is True
+
+    asyncio.run(run())
+
+
 def test_el_valor_del_confirmation_id_no_parece_como_credencial(tmp_path: Path) -> None:
     """El valor tampoco puede tener la forma de una credencial conocida.
 
@@ -138,6 +243,42 @@ def test_el_valor_del_confirmation_id_no_parece_como_credencial(tmp_path: Path) 
                 "El confirmation_id tiene la forma de una credencial conocida "
                 "y una plataforma podría taparlo."
             )
+
+    asyncio.run(run())
+
+
+def test_el_confirmation_id_sobrevive_a_la_redaccion_de_la_plataforma(tmp_path: Path) -> None:
+    """El valor tiene que llegar al agente entero, después de tapar.
+
+    Esto es lo que pasó en producción: la respuesta de la preparación
+    volvió con el valor sustituido y el agente no pudo completar el envío.
+    Aquí se aplica a la respuesta real la misma regex que aplica Paperclip,
+    y se mira que el confirmation_id siga ahí.
+    """
+    rig = Rig(tmp_path)
+
+    async def run() -> None:
+        prepared = await rig.mcp.call_tool(
+            "prepare_send",
+            {
+                "account": "principal",
+                "to": ["ana@example.com"],
+                "subject": "Hola",
+                "body": "Cuerpo",
+            },
+        )
+        texto = prepared.content[0].text  # type: ignore[attr-defined]
+        valor = json.loads(texto)["confirmation_id"]
+
+        # Lo que hace la plataforma: tapar por nombre y por forma de JSON.
+        tapado = JSON_SECRET_FIELD_TEXT_RE.sub(r"\1***REDACTED***\2", texto)
+        recibido = json.loads(tapado)["confirmation_id"]
+
+        assert recibido == valor, (
+            "La plataforma tapó el confirmation_id. El agente recibiría un "
+            "valor que no sirve y no podría completar el envío."
+        )
+        assert "***REDACTED***" not in tapado, tapado
 
     asyncio.run(run())
 

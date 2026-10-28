@@ -57,6 +57,12 @@ el versionado es [SemVer](https://semver.org/lang/es/).
   test se comprobó revirtiendo el nombre: falla, que es lo que tiene que
   hacer.
 
+  Cubre las tres cosas que pasaron en producción: que el `confirmation_id`
+  sobrevive a la redacción de la plataforma (se aplica su regex a la
+  respuesta real), que un cliente con el catálogo viejo recibe un error
+  accionable y no el del valor tapado, y que las respuestas de envío y
+  borrador tampoco tienen claves que se tapen.
+
 ### Changed
 
 - **El flujo de envío y de borrado se explica en tres capas.** El agente
