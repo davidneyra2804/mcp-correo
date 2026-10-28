@@ -7,7 +7,7 @@ Directivas para trabajar en **mcp-correo**. Léelo antes de tocar nada.
 Un servidor [MCP](https://modelcontextprotocol.io) que da a un asistente de
 IA acceso a buzones IMAP/SMTP de terceros. El asistente **lee** libremente y
 **escribe** solo con una orden explícita de quien lo opera, en dos pasos con un
-token de un solo uso.
+`confirmation_id` de un solo uso.
 
 El despliegue de referencia es **Portainer + Cloudflare Tunnel**, con toda la
 configuración en variables de entorno.
@@ -90,6 +90,11 @@ Hay tests que verifican que:
 Un documento que miente es peor que ningún documento: alguien lo sigue y
 pierde el tiempo.
 
+Esto incluye la **documentación de las tools**: la descripción de cada tool
+y la respuesta que devuelve son parte del contrato, no comentarios. Si una
+tool cambia de nombre o de argumentos, el CHANGELOG lo dice y la sección de
+despliegue avisa de lo que tiene que hacer el cliente.
+
 ### 6. Nada de secretos en la imagen ni en git
 
 La imagen no lleva tokens ni contraseñas. Las cuentas se configuran por
@@ -106,7 +111,7 @@ con valores ficticios.
 | `audit.py` | JSONL de cada llamada, sin cuerpos ni credenciales |
 | `mail/imap.py` | Lectura (`EXAMINE`, `BODY.PEEK`) y el punto único de aislamiento |
 | `mail/mutate.py` | Escritura: marcar, borrar, borrador, enviar |
-| `mail/confirm.py` | Token de un solo uso y cupo diario, en memoria |
+| `mail/confirm.py` | `confirmation_id` de un solo uso y cupo diario, en memoria |
 | `mail/compose.py` | Construcción del mensaje y escapado de cabeceras |
 | `mail/readonly.py` | Proxy que bloquea la escritura en las rutas de lectura |
 | `store/db.py` | La base de datos: esquema, migraciones, revisión |
@@ -119,6 +124,7 @@ con valores ficticios.
 | `docker/rotate_audit.py` | Rota el JSONL de auditoría |
 | `docker/healthcheck.py` | La sonda: el MCP y, si está, el panel |
 | `tests/ayuda.py` | Ajustes del servidor y cuentas de mentira para las pruebas |
+| `tests/test_nombres_de_campos.py` | Los nombres de campo de la superficie MCP, que no pueden parecer credenciales |
 
 ## El modelo de rutas y permisos
 
@@ -284,6 +290,49 @@ Cada una de estas costó una release rota.
 - **`example.com`, nunca `ejemplo.com`.** Los dominios reservados son
   `example.com`, `example.org`, `example.net`, `*.test`, `*.invalid` y
   `*.localhost`. Esta confusión se coló dos veces.
+- **Un nombre de campo puede hacer que el agente nunca reciba el valor.**
+  Paperclip tapa por **nombre** los campos de una respuesta de tool que
+  "parecen credenciales" (`token`, `secret`, `password`, `api_key`,
+  `bearer`...), y **lo que entrega al modelo es el valor tapado**, no el
+  original: su `validateToolContent` devuelve el resultado redactado. Con un
+  campo llamado `confirm_token`, el agente recibía `***REDACTED***` en lugar
+  del identificador y no podía completar el envío. El nombre del campo, no
+  su valor, decide si se tapa. **Por eso el campo se llama
+  `confirmation_id`, y su valor lleva un prefijo `cfm_`** que tampoco lo hace
+  parecer una clave de proveedor. `tests/test_nombres_de_campos.py` lo fija:
+  ningún nombre de la superficie MCP puede caer en un patrón de secreto, y
+  el valor no puede tener la forma de una credencial conocida.
+  El `confirmation_id` **no es una credencial**: sin el bearer de la cuenta no
+  sirve de nada, solo vale para una operación, en una cuenta, y durante diez
+  minutos.
+- **La respuesta de una tool es un bloque de texto con JSON dentro.** La
+  redacción de la plataforma también se aplica al texto, no solo a las claves:
+  `"confirm_token": "..."` se sustituye dentro del bloque. Al comprobar si un
+  valor sobrevive, hay que pasar la regex **por el texto de la respuesta**,
+  no solo por las claves del objeto.
+- **El cliente MCP cachea el catálogo de las tools.** Cambiar el nombre de un
+  argumento rompe la primera llamada hasta que el cliente refresca el
+  catálogo: manda el nombre viejo, el servidor lo rechaza con un error de
+  validación, y el agente tiene que releer el esquema para salir del paso.
+  Al cambiar el contrato de una tool, hay que **refrescar el catálogo en el
+  cliente** y decirlo en el CHANGELOG, en la sección de despliegue.
+- **Una respuesta sin identificadores no se puede comprobar.** `send_message`
+  decía `sent: true` y `copy_in_sent: true`, pero sin `message_id` ni
+  `sent_uid` no había forma de localizar la copia en Enviados: había que
+  adivinar carpeta y criterio de búsqueda, y una búsqueda mal escrita daba
+  cero resultados y parecía que la copia no estaba. **Toda operación que
+  escriba algo que se pueda volver a leer devuelve cómo llegar a ello.**
+- **Un test que recorre una lista vacía pasa siempre.** El doble de IMAP
+  expone el esquema como `input_schema`, y el test leía `inputSchema`:
+  `getattr` devolvía `None`, la lista quedaba vacía y el test pasaba sin
+  mirar nada. **Un test que no puede fallar no vigila nada**: hay que
+  comprobar que el esquema existe y que se han mirado nombres, y hay que
+  comprobar que el test falla cuando se rompe lo que vigila (revertir el
+  nombre y ver que falla).
+- **El doble de IMAP tiene que saber lo que el código usa.** El criterio
+  `HEADER Message-ID` no estaba simulado: el doble lo ignoraba y daba
+  "coincide todo". Un test puede pasar **por el motivo equivocado** si el
+  doble no modela lo que el servidor real modela.
 
 ## Publicar
 
@@ -303,13 +352,30 @@ Los `sed` de los dos últimos ficheros no son opcionales: hay un test que
 comprueba que la documentación no habla de una versión vieja. El patrón es
 la versión **actual**, así que hay que cambiarlo en cada subida.
 
+En macOS, `sed -i` necesita el sufijo vacío: `sed -i '' 's/.../.../'`. Sin
+él, `sed` se come el script como si fuera un fichero y falla.
+
+El ejemplo de arriba es el de la **próxima** versión: el patrón tiene que ser
+la versión actual, o el `sed` no cambia nada y se publica una versión que
+dice ser la anterior. Lo mismo en el README y aquí.
+
 La etiqueta dispara `.github/workflows/release.yml`, que pasa los tests,
 publica la imagen en GHCR y crea el Release. **Si los tests fallan, la imagen
 no se publica.** Así se detectó una fuga de correo real en el CHANGELOG: la
 1.1.0 rota nunca llegó al registro.
 
-La v2.0.0 se publicó así (2026-10-27): commit `d7ebf0c`, etiqueta `v2.0.0`,
-imagen en `ghcr.io/davidneyra2804/mcp-correo:2.0.0` y `latest`. **La
+El cuerpo del Release **sale del CHANGELOG**: un paso del workflow extrae la
+sección de la versión y la compone con el bloque de la imagen. Las notas
+automáticas de GitHub no bastaban: no recogían los cambios ni la advertencia
+de que la imagen se publica sin probar en local. Si el CHANGELOG no tiene
+sección para la versión, el paso avisa y sigue, porque la imagen ya está
+publicada cuando llega y no debe ser él el que rompa.
+
+La v2.0.1 se publicó así (2026-10-28): commit `bc2657b`, etiqueta `v2.0.1`,
+imagen en `ghcr.io/davidneyra2804/mcp-correo:2.0.1` y `latest`. Se publicó
+**sin Docker en la máquina**, así que la imagen no se ha arrancado ni probado
+en local. La v2.0.0 se publicó así (2026-10-27): commit `d7ebf0c`, etiqueta
+`v2.0.0`, imagen en `ghcr.io/davidneyra2804/mcp-correo:2.0.0` y `latest`. **La
 imagen sale solo para `linux/amd64`**: el workflow no lleva `setup-qemu` ni
 `platforms`, así que en un host arm64 hay que construirse en local o añadir
 multi-arch al workflow.
@@ -341,7 +407,15 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 
 Esto último es lo que garantiza que la imagen publicada lleva la versión
 correcta: `org.opencontainers.image.version` tiene que coincidir con
-`version.py`, y el `entrypoint` tiene que ser el actual.
+`version.py`, y el `entrypoint` tiene que ser el actual. El manifiesto es un
+índice multi-arch: hay que bajar al manifiesto de `linux/amd64`, sacar su
+`config.digest` y leer **ese** blob. El `entrypoint` va en `config.Entrypoint`,
+no en las etiquetas.
+
+Sin `gh` no se puede editar un Release: para cambiar sus notas hay que
+re-ejecutar la etiqueta (`git tag -f` y `git push --force origin vX.Y.Z`), que
+vuelve a publicar la imagen. Por eso el cuerpo se compone en el workflow y no
+a mano.
 
 ## Antes de fusionar a `main`
 
@@ -352,6 +426,9 @@ correcta: `org.opencontainers.image.version` tiene que coincidir con
 - [ ] Ningún dato real en el árbol.
 - [ ] Si cambia el contrato de configuración, `.env.example`, el compose y
       `docs/configuracion.md` actualizados, con el CHANGELOG al día.
+- [ ] Si cambia el **nombre** de un argumento o de una clave de la respuesta,
+      está dicho en el CHANGELOG, en la sección de despliegue, porque el
+      cliente cachea el catálogo y hay que refrescarlo.
 - [ ] Si cambian las rutas, el `deploy/nginx-mcp.conf` las sigue: con
       `location = /mcp` (coincidencia exacta) las rutas por cuenta y por
       dominio dan 404.
@@ -364,3 +441,18 @@ copia (`tests/test_docker.py`) detecta los módulos que no llegan a la
 imagen, pero **no** que la imagen construya, ni que los permisos del
 contenador sean los correctos, ni que el volumen de datos funcione. Es una
 red de seguridad, no una prueba de la imagen.
+
+## Lo que está pendiente
+
+- **Envío directo, opt-in.** El flujo en dos pasos obliga al agente a llevar
+  un valor de una llamada a otra. En Paperclip eso choca con dos cosas: el
+  cliente puede tapar ese valor (ya está resuelto con el nombre) y la
+  aprobación *Ask first* mostraría un identificador opaco en vez del correo.
+  La idea es una tool de envío directo, con el contenido en los argumentos y
+  la aprobación humana gestionada por la política de la plataforma, con
+  idempotencia para no duplicar envíos. **Cambia el modelo de seguridad**: el
+  MCP dejaría de imponer el paso previo, así que tiene que ser opt-in por
+  configuración, con el modo actual como predeterminado, y el borrado se
+  queda fuera.
+- **Multi-arch.** La imagen sale solo para `linux/amd64`. En un host arm64 hay
+  que construirla en local o añadir `setup-qemu` y `platforms` al workflow.

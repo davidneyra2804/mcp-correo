@@ -7,6 +7,18 @@ el versionado es [SemVer](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+### Documentación
+
+- **Las lecciones de esta versión quedan en el `AGENTS.md`.** Siete trampas
+  nuevas, cada una con su historia: el nombre de un campo puede hacer que el
+  agente nunca reciba el valor; la respuesta de una tool es texto con JSON
+  dentro y también se redacta; el cliente cachea el catálogo de las tools;
+  una respuesta sin identificadores no se puede comprobar; un test que recorre
+  una lista vacía pasa siempre; y el doble de IMAP tiene que saber lo que el
+  código usa, o el test pasa por el motivo equivocado.
+- Se documenta el **envío directo opt-in** como pendiente, con sus condiciones:
+  cambia el modelo de seguridad y no puede sustituir al modo actual.
+
 ## [2.0.1] — 2026-10-27
 
 Corrección del contrato de las tools de escritura y del flujo de confirmación,

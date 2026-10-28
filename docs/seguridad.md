@@ -14,9 +14,11 @@ Hecho en el código:
 - Cupo diario, máximo de destinatarios, dominios opcionales, tope de UID por borrado o marcado, y tamaño de adjuntos.
 - Auditoría JSONL de cada acción, sin cuerpos, sin `confirmation_id` y sin credenciales. Si no se puede escribir, no hay efecto en el buzón.
 - Los nombres de campo de la superficie MCP no pueden parecer credenciales (`tests/test_nombres_de_campos.py`). Hay plataformas que tapan por nombre los campos de una respuesta de tool y entregan al modelo el valor tapado: con un campo llamado `confirm_token`, el agente recibía `***REDACTED***` y no podía completar el envío. El `confirmation_id` no es una credencial (sin el bearer de la cuenta no sirve de nada) y su valor lleva un prefijo que no lo hace parecer una clave de ningún proveedor.
+- Una `confirmation_id` que llega tapado produce un error que lo dice, en vez de «desconocido o ya usado»: el agente tiene que saber que el valor nunca llegó y que hay que volver a preparar.
+- Todo lo que se escribe y se puede volver a leer devuelve cómo encontrarlo: el envío devuelve `message_id`, `sent_uid` y `sent_folder`, y el borrador devuelve `message_id` y `draft_uid`. Sin eso, comprobar una escritura obliga a adivinar carpeta y criterio de búsqueda.
 - Instrucciones del servidor: el correo no es confiable y `send_message` / `delete_message` solo se ejecutan tras una orden explícita en la conversación.
 - El flujo en dos pasos se dice en tres capas, para que el agente no dependa de una sola: las instrucciones del servidor, la descripción de cada tool y la respuesta de la preparación. La respuesta lleva `status: "prepared"`, `sent: false` y `next_tool`, de modo que el estado no hay que deducirlo de un texto. Preparar no envía y no borra: `prepare_send` y `prepare_delete` no tienen efecto sobre el buzón.
-- Un solo worker. Los tokens y el cupo no salen del proceso.
+- Un solo worker. Los `confirmation_id` y el cupo no salen del proceso.
 - DNS rebinding: `allowed_hosts` y `allowed_origins`. En Docker, `MCP_PUBLIC_HOST` o las listas `MCP_ALLOWED_*` los ajustan al dominio público.
 - Escucha por defecto en `127.0.0.1`. En el contenedor, `0.0.0.0` solo con `MCP_ALLOW_NONLOCAL_BIND=1`, y el compose publica `127.0.0.1:8765`.
 - Imagen sin token ni contraseñas. Usuario `mcp` no root, raíz de solo lectura, `cap_drop: ALL` y `no-new-privileges`. `GET /health` no pide token y no devuelve datos del buzón.
@@ -66,7 +68,7 @@ Lo aplica quien despliega:
 
 ## Lo que el reinicio del contenedor resetea
 
-El cupo diario de envíos y los tokens de confirmación viven en memoria, porque
+El cupo diario de envíos y los `confirmation_id` viven en memoria, porque
 el proceso es de un solo worker. Un reinicio del contenedor, un OOM o un
 redespliegue los pone a cero. El cupo diario es un tope accidental, no una
 garantía: si necesita ser un tope real, ponlo en el servidor SMTP o en el
