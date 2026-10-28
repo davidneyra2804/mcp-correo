@@ -35,6 +35,22 @@ el versionado es [SemVer](https://semver.org/lang/es/).
 
 ### Added
 
+- **El envío dice cómo localizar el mensaje.** `send_message` devuelve
+  `message_id` y `sent_uid`, además de `sent_folder`. `create_draft` devuelve
+  `message_id` y `draft_uid`. Con un diagnóstico real en la mano: el envío
+  devolvió `copy_in_sent: true` y `sent: true`, pero las búsquedas
+  posteriores en la carpeta de Enviados devolvieron cero mensajes y el
+  informe no tenía forma de comprobar la copia, porque la respuesta no
+  traía ningún identificador. Con `message_id` y `sent_uid`, el mensaje se
+  localiza sin adivinar carpeta ni criterio.
+- **`search_messages` acepta `message_id`.** Es la forma determinista de
+  encontrar un mensaje concreto del que se conoce el identificador, y la
+  que se usa para localizar la copia de un envío. Acepta el Message-ID con o
+  sin ángulos.
+- **`list_accounts` dice `sent_folder` y `drafts_folder`** de cada cuenta. La
+  guía decía dónde está cada buzón, pero no en qué carpeta se guarda la
+  copia de Enviados: el agente tenía que adivinar el nombre y acababa
+  buscando en una carpeta que no era.
 - **`tests/test_nombres_de_campos.py`.** Ningún nombre de campo de la
   superficie MCP puede caer en un patrón de secreto, y el valor del
   `confirmation_id` no puede tener la forma de una credencial conocida. El
@@ -67,6 +83,14 @@ el versionado es [SemVer](https://semver.org/lang/es/).
 No cambia el modelo de seguridad: sigue haciendo falta la orden explícita de
 quien opera el asistente, y el `confirmation_id` sigue siendo de un solo uso,
 ligado a la cuenta y a la operación.
+
+### Despliegue
+
+Al subir esto hay que **refrescar el catálogo de la conexión** en el cliente
+MCP: el nombre del argumento de `send_message` y `delete_message` ha cambiado,
+y un cliente con el catálogo viejo sigue mandando `confirm_token`, que el
+servidor rechaza con un error de validación. Se recupera leyendo el esquema
+de nuevo, pero es mejor no llegar ahí.
 
 ## [1.0.0] — 2026-10-26
 

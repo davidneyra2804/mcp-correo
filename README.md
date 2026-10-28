@@ -92,6 +92,34 @@ interruptor global está en `true` y alguna cuenta lo permite.
 | `delete_message` | escritura | los mismos, más `confirmation_id` |
 | `create_draft` | escritura | `enable_drafts` y `allow_drafts` |
 
+### Cómo se localiza un correo enviado
+
+`send_message` no dice solo que salió. Devuelve **cómo encontrarlo**:
+
+| Campo | Qué es |
+| --- | --- |
+| `sent: true` | El servidor SMTP aceptó el mensaje. |
+| `message_id` | El Message-ID del mensaje, el mismo que va en la cabecera. |
+| `sent_uid` | El UID que le dio el servidor a la copia en Enviados, si lo dio. |
+| `sent_folder` | La carpeta donde se guardó la copia. |
+| `copy_in_sent` | Si la copia se pudo guardar. |
+
+Con `message_id`, el mensaje se localiza sin adivinar:
+
+```text
+search_messages(folder=<sent_folder>, message_id=<message_id>)
+```
+
+Y con `sent_uid`, se lee directo, sin buscar:
+
+```text
+get_message(folder=<sent_folder>, uid=<sent_uid>)
+```
+
+`list_accounts` dice también `sent_folder` y `drafts_folder` de cada cuenta,
+para que el agente no tenga que adivinar el nombre de la carpeta. `create_draft`
+devuelve lo mismo: `message_id` y `draft_uid`.
+
 `list_accounts` es la **guía**: devuelve el ámbito de la ruta y el catálogo
 de rutas, con la ruta de cada cuenta y de cada dominio. Es lo primero que
 debe llamar el asistente.

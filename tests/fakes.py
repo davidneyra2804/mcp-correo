@@ -419,9 +419,24 @@ def _matches(stored: StoredMessage, criteria: object) -> bool:
             value = criteria[index + 1]
             index += 2
             ok = ok and _match_key(name, value, parsed, stored.raw)
+        elif name == "HEADER":
+            field = criteria[index + 1]
+            value = criteria[index + 2]
+            index += 3
+            ok = ok and _match_header(field, value, parsed)
         else:
             index += 1
     return ok
+
+
+def _match_header(field: object, value: object, parsed: EmailMessage) -> bool:
+    """La cabecera tiene que contener el valor, como en IMAP."""
+    name = str(field).lower()
+    wanted = str(value).lower()
+    header = parsed.get(name)
+    if header is None:
+        return False
+    return wanted in str(header).lower()
 
 
 def _match_key(name: str, value: object, parsed: EmailMessage, raw: bytes) -> bool:

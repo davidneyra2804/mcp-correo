@@ -124,6 +124,9 @@ Uso:
 - El confirmation_id caduca (expires_in_seconds), es de un solo uso y no debe
   aparecer en mensajes ni en registros. Si falta, está caducado o ya se usó,
   vuelve a preparar el mensaje y pide de nuevo la orden: no inventes uno.
+- send_message devuelve message_id y sent_uid: son la forma de localizar la
+  copia en Enviados. Con message_id, búscalo con search_messages usando la
+  carpeta que devolvió el envío (sent_folder), no una inventada.
 - El borrado definitivo solo si, al preparar, se pidió permanent=true.
 - create_draft, si existe, guarda un borrador y no lo envía.
 """.strip()
@@ -577,12 +580,19 @@ def _register_tools(mcp: MCPServer, service: MailService, audit: AuditLog) -> No
         text: str | None = None,
         sender: str | None = None,
         recipient: str | None = None,
+        message_id: str | None = None,
         since: str | None = None,
         before: str | None = None,
         limit: int = 20,
         account: str = "",
     ) -> dict:
-        """Busca por SUBJECT, TEXT, FROM, TO y rango de fechas. No modifica flags."""
+        """Busca por Message-ID, SUBJECT, TEXT, FROM, TO y rango de fechas.
+
+        No modifica flags. Usa message_id para localizar un mensaje concreto
+        del que conoces el identificador, por ejemplo el que devolvió un
+        envío. La carpeta se indica con folder; para Enviados, usa la que
+        devolvió el envío.
+        """
         args = {
             "account": account,
             "folder": folder,
@@ -590,6 +600,7 @@ def _register_tools(mcp: MCPServer, service: MailService, audit: AuditLog) -> No
             "text": text,
             "sender": sender,
             "recipient": recipient,
+            "message_id": message_id,
             "since": since,
             "before": before,
             "limit": limit,
@@ -599,7 +610,16 @@ def _register_tools(mcp: MCPServer, service: MailService, audit: AuditLog) -> No
             account,
             args,
             lambda: service.search_messages(
-                account, folder, subject, text, sender, recipient, since, before, limit
+                account,
+                folder,
+                subject,
+                text,
+                sender,
+                recipient,
+                message_id,
+                since,
+                before,
+                limit,
             ),
         )
 
@@ -776,6 +796,8 @@ def _register_write_tools(
             reescribas: vuelve a llamar a prepare_send y pide de nuevo la orden.
 
             Devuelve sent: true solo si el servidor SMTP aceptó el mensaje.
+            También devuelve message_id y sent_uid, con los que se localiza
+            la copia en Enviados sin adivinar la carpeta.
             """
 
             def action() -> dict:

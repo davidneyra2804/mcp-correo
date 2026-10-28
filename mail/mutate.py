@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import imaplib
 import logging
+import re
 from dataclasses import replace
 from typing import Any
 
@@ -37,9 +38,33 @@ NOTICE_DELETE = (
     "Siguiente paso: muestra esta vista previa a quien opera el asistente y "
     "espera su orden explícita de borrado. Con esa orden, llama a "
     "delete_message con el confirmation_id devuelto aquí y la misma cuenta. "
-    "El modo (Papelera o definitivo) queda fijado en este confirmation_id. No digas que "
-    "se borró hasta que delete_message lo confirme."
+    "El modo (Papelera o definitivo) queda fijado en este confirmation_id. "
+    "No digas que se borró hasta que delete_message lo confirme."
 )
+
+
+def _uid_de_append(response: Any) -> int | None:
+    """El UID que le dio el servidor al mensaje guardado, si lo dio.
+
+    Muchos servidores contestan al APPEND con un APPENDUID, que es el UID
+    exacto del mensaje guardado. Con ese UID, el mensaje se puede leer
+    directamente, sin buscar por asunto ni adivinar la carpeta. Los que no
+    lo contestan devuelven None: no es un fallo, solo hay menos información.
+    """
+    if response is None:
+        return None
+    if isinstance(response, int) and not isinstance(response, bool):
+        return response
+    texto = " ".join(
+        item.decode(errors="replace") if isinstance(item, bytes) else str(item)
+        for item in (response if isinstance(response, list | tuple) else [response])
+    )
+    if "APPENDUID" not in texto.upper():
+        return None
+    numeros = re.findall(r"\d+", texto)
+    if not numeros:
+        return None
+    return int(numeros[-1])
 
 
 class MailboxWriter:
@@ -177,13 +202,18 @@ class MailboxWriter:
             self.quota.release(account.key)
             raise
         folder = str(pending.public.get("sent_folder") or account.sent_folder)
-        copied = self._copy_to_sent(account, folder, pending.secret["raw"])
+        copied, sent_uid = self._copy_to_sent(account, folder, pending.secret["raw"])
         return {
             "account": account.key,
             "status": "sent",
             "sent": True,
             "copy_in_sent": copied,
             "sent_folder": folder if copied else None,
+            # El UID y el Message-ID localizan la copia sin adivinar la
+            # carpeta ni el criterio de búsqueda. Con ellos, el mensaje se
+            # puede leer directo con get_message.
+            "sent_uid": sent_uid,
+            "message_id": pending.public.get("message_id", ""),
             "to": pending.public["to"],
             "cc": pending.public["cc"],
             "bcc": pending.public["bcc"],
@@ -272,30 +302,35 @@ class MailboxWriter:
             attachments=attachments,
             settings=draft_settings,
         )
-        self._append(account, account.drafts_folder, raw, ["\\Draft"])
+        response = self._append(account, account.drafts_folder, raw, ["\\Draft"])
         return {
             "account": account.key,
+            "status": "draft",
             "folder": account.drafts_folder,
+            "draft_uid": _uid_de_append(response),
+            "message_id": public.get("message_id", ""),
             "to": public["to"],
             "cc": public["cc"],
             "subject": public["subject"],
             "filenames": public["filenames"],
             "saved": True,
+            "notice": "Borrador guardado. No se ha enviado nada.",
         }
 
-    def _copy_to_sent(self, account: Account, folder: str, raw: bytes) -> bool:
+    def _copy_to_sent(self, account: Account, folder: str, raw: bytes) -> tuple[bool, int | None]:
+        """Guarda la copia en Enviados. Devuelve (copia hecha, uid)."""
         try:
             # Sin Bcc: los destinatarios ocultos no se guardan en Enviados.
-            self._append(account, folder, without_bcc(raw), ["\\Seen"])
+            response = self._append(account, folder, without_bcc(raw), ["\\Seen"])
         except MailError as exc:
             logger.warning("Copia en Enviados no realizada (%s): %s", account.key, exc)
-            return False
-        return True
+            return False, None
+        return True, _uid_de_append(response)
 
-    def _append(self, account: Account, folder: str, raw: bytes, flags: list[str]) -> None:
+    def _append(self, account: Account, folder: str, raw: bytes, flags: list[str]) -> Any:
         with self.service.session(account.key, writable=True) as client:
             try:
-                client.append(folder, raw, flags=flags)
+                return client.append(folder, raw, flags=flags)
             except (IMAPClientError, imaplib.IMAP4.error, TimeoutError, OSError) as exc:
                 self.service._raise_imap(account, exc)
 

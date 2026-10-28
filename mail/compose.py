@@ -79,7 +79,8 @@ def build_outgoing(
     message["Subject"] = subject_text
     message["Date"] = format_datetime(datetime.now(UTC))
     domain = sender.split("@", 1)[1]
-    message["Message-ID"] = make_msgid(domain=domain)
+    message_id = make_msgid(domain=domain)
+    message["Message-ID"] = message_id
     if reply:
         message["In-Reply-To"] = reply
     if refs:
@@ -99,6 +100,10 @@ def build_outgoing(
         "filenames": filenames,
         "in_reply_to": reply or "",
         "references": refs or "",
+        # El Message-ID identifica el mensaje ante el servidor y ante quien
+        # lo busque después. Sin devolverlo, no hay forma de localizar la
+        # copia en Enviados salvo adivinar carpeta y criterio de búsqueda.
+        "message_id": message_id,
     }
     preview = body[:_PREVIEW_CHARS]
     return raw, public, preview

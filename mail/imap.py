@@ -181,6 +181,12 @@ class MailService:
                     "can_mark": account_allows(account, "mark", self.settings),
                     "can_delete": account_allows(account, "delete", self.settings),
                     "can_draft": account_allows(account, "drafts", self.settings),
+                    # Dónde guarda el servidor la copia de Enviados y el
+                    # borrador. Sin esto, el agente tiene que adivinar el
+                    # nombre de la carpeta y acaba buscando en la que no
+                    # está.
+                    "sent_folder": account.sent_folder,
+                    "drafts_folder": account.drafts_folder,
                 }
                 for account in en_ambito
             ],
@@ -228,6 +234,7 @@ class MailService:
         text: str | None = None,
         sender: str | None = None,
         recipient: str | None = None,
+        message_id: str | None = None,
         since: str | None = None,
         before: str | None = None,
         limit: int = 20,
@@ -239,10 +246,12 @@ class MailService:
             recipient=_clean_text(recipient, "recipient"),
             subject=_clean_text(subject, "subject"),
             text=_clean_text(text, "text"),
+            message_id=_message_id(message_id),
         )
         if criteria == ["ALL"]:
             raise MailError(
-                "Indica al menos un criterio: subject, text, sender, recipient, since o before"
+                "Indica al menos un criterio: subject, text, sender, recipient, "
+                "message_id, since o before"
             )
         return self._search_summaries(account, folder, criteria, limit)
 
@@ -588,6 +597,7 @@ def _criteria(
     recipient: str | None = None,
     subject: str | None = None,
     text: str | None = None,
+    message_id: str | None = None,
 ) -> list[Any]:
     criteria: list[Any] = []
     if unseen:
@@ -606,6 +616,8 @@ def _criteria(
         criteria.extend(["SUBJECT", subject])
     if text:
         criteria.extend(["TEXT", text])
+    if message_id:
+        criteria.extend(["HEADER", "Message-ID", message_id])
     return criteria or ["ALL"]
 
 
@@ -679,6 +691,27 @@ def _clean_text(value: str | None, field_name: str) -> str | None:
     if len(value) > 500:
         raise MailError(f"{field_name} supera los 500 caracteres")
     return value
+
+
+def _message_id(value: str | None) -> str | None:
+    """Normaliza un Message-ID para buscar por él.
+
+    El Message-ID se busca tal cual va en la cabecera, con sus ángulos.
+    Si no viene con ellos, se los ponen: el servidor compara el texto
+    completo de la cabecera.
+    """
+    if value is None or value == "":
+        return None
+    if not isinstance(value, str) or any(char in value for char in "\r\n\x00"):
+        raise MailError("message_id contiene caracteres no permitidos")
+    text = value.strip()
+    if len(text) > 500:
+        raise MailError("message_id supera los 500 caracteres")
+    if not text:
+        return None
+    if not text.startswith("<"):
+        text = f"<{text.strip('<>')}>"
+    return text
 
 
 def folder_name(folder: str) -> str:

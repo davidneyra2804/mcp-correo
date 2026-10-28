@@ -7,6 +7,7 @@ import base64
 import json
 import smtplib
 from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 from email import message_from_bytes
 from pathlib import Path
 
@@ -474,6 +475,181 @@ def test_borrado_va_a_la_papelera_y_el_definitivo_es_aparte(tmp_path: Path) -> N
     assert not any(
         b"Aviso HTML" in item.raw for item in rig.fake.folders["Trash"].messages.values()
     )
+
+
+def test_el_envio_devuelve_como_localizar_el_mensaje(tmp_path: Path) -> None:
+    """El envío dice dónde está el mensaje, no solo que salió.
+
+    En un diagnóstico real, `send_message` devolvió `copy_in_sent: true` y
+    `sent: true`, pero las búsquedas posteriores en Enviados devolvieron cero
+    mensajes, y el informe no tenía forma de comprobar la copia porque la
+    respuesta no traía ningún identificador. Con `message_id` y `sent_uid`
+    el mensaje se localiza sin adivinar.
+    """
+    rig = Rig(tmp_path)
+
+    async def run() -> None:
+        prepared = _json(await rig.mcp.call_tool("prepare_send", _send()))
+        sent = _json(
+            await rig.mcp.call_tool(
+                "send_message",
+                {"account": "principal", "confirmation_id": prepared["confirmation_id"]},
+            )
+        )
+        assert sent["message_id"], sent
+        assert sent["message_id"].startswith("<")
+        assert sent["message_id"].endswith(">")
+        assert sent["sent_uid"] is not None, sent
+        assert sent["sent_folder"] == "Sent"
+
+        # Y con ese Message-ID, el mensaje se encuentra sin adivinar nada.
+        por_id = _json(
+            await rig.mcp.call_tool(
+                "search_messages",
+                {
+                    "account": "principal",
+                    "folder": "Sent",
+                    "message_id": sent["message_id"],
+                },
+            )
+        )
+        assert len(por_id["messages"]) == 1, por_id
+        assert por_id["messages"][0]["subject"] == "Hola"
+
+    asyncio.run(run())
+
+
+def test_buscar_por_message_id_sin_acentos_ni_angulos(tmp_path: Path) -> None:
+    """El Message-ID se acepta con o sin ángulos, como lo da un humano."""
+    rig = Rig(tmp_path)
+
+    async def run() -> None:
+        prepared = _json(await rig.mcp.call_tool("prepare_send", _send()))
+        sent = _json(
+            await rig.mcp.call_tool(
+                "send_message",
+                {"account": "principal", "confirmation_id": prepared["confirmation_id"]},
+            )
+        )
+        sin_angulos = sent["message_id"].strip("<>")
+        por_id = _json(
+            await rig.mcp.call_tool(
+                "search_messages",
+                {"account": "principal", "folder": "Sent", "message_id": sin_angulos},
+            )
+        )
+        assert len(por_id["messages"]) == 1, por_id
+
+    asyncio.run(run())
+
+
+def test_el_borrador_devuelve_como_localizarlo(tmp_path: Path) -> None:
+    """Un borrador también dice dónde está y con qué identificador."""
+    rig = Rig(tmp_path, draft=True, drafts=True)
+
+    async def run() -> None:
+        draft = _json(
+            await rig.mcp.call_tool(
+                "create_draft",
+                {
+                    "account": "principal",
+                    "to": ["ana@example.com"],
+                    "subject": "Borrador",
+                    "body": "Cuerpo",
+                },
+            )
+        )
+        assert draft["saved"] is True
+        assert draft["message_id"], draft
+        assert draft["draft_uid"] is not None, draft
+        assert draft["status"] == "draft"
+
+    asyncio.run(run())
+
+
+def test_el_correo_enviado_se_encuentra_en_enviados(tmp_path: Path) -> None:
+    """Después de enviar, el mensaje se tiene que poder buscar en Enviados.
+
+    Es el escenario que se，反复 en un diagnóstico real: `send_message`
+    devolvió `copy_in_sent: true` y `sent: true`, pero las búsquedas
+    posteriores en la carpeta de Enviados devolvieron cero mensajes. Sin este
+    test, nada impedía que la copia quedara fuera del alcance de las
+    búsquedas.
+    """
+    rig = Rig(tmp_path)
+
+    async def run() -> None:
+        prepared = _json(await rig.mcp.call_tool("prepare_send", _send()))
+        sent = _json(
+            await rig.mcp.call_tool(
+                "send_message",
+                {"account": "principal", "confirmation_id": prepared["confirmation_id"]},
+            )
+        )
+        assert sent["sent"] is True
+        assert sent["copy_in_sent"] is True
+        assert sent["sent_folder"] == "Sent"
+
+        # Por asunto.
+        por_asunto = _json(
+            await rig.mcp.call_tool(
+                "search_messages",
+                {"account": "principal", "folder": "Sent", "subject": "Hola"},
+            )
+        )
+        assert len(por_asunto["messages"]) == 1, por_asunto
+        assert por_asunto["messages"][0]["subject"] == "Hola"
+
+        # Por remitente: el buzón de ejemplo ya trae mensajes de la misma
+        # persona, así que se busca el que se acaba de enviar.
+        por_remitente = _json(
+            await rig.mcp.call_tool(
+                "search_messages",
+                {"account": "principal", "folder": "Sent", "sender": "ada@example.com"},
+            )
+        )
+        assert any(item["subject"] == "Hola" for item in por_remitente["messages"]), por_remitente
+
+        # Listando la carpeta entera.
+        listado = _json(
+            await rig.mcp.call_tool("list_messages", {"account": "principal", "folder": "Sent"})
+        )
+        assert any(item["subject"] == "Hola" for item in listado["messages"]), listado
+
+    asyncio.run(run())
+
+
+def test_el_correo_enviado_se_encuentra_por_fecha(tmp_path: Path) -> None:
+    """También por rango de fechas, que es como se buscan duplicados.
+
+    Un diagnóstico real comparó duplicados en Enviados "para el 27 y el 28 de
+    octubre". Si la búsqueda por fecha no encuentra el mensaje que el propio
+    servidor acaba de guardar, no sirve para nada.
+    """
+    rig = Rig(tmp_path)
+    hoy = datetime.now(UTC).date().isoformat()
+    manana = (datetime.now(UTC).date() + timedelta(days=1)).isoformat()
+
+    async def run() -> None:
+        prepared = _json(await rig.mcp.call_tool("prepare_send", _send()))
+        await rig.mcp.call_tool(
+            "send_message",
+            {"account": "principal", "confirmation_id": prepared["confirmation_id"]},
+        )
+        por_fecha = _json(
+            await rig.mcp.call_tool(
+                "search_messages",
+                {
+                    "account": "principal",
+                    "folder": "Sent",
+                    "since": hoy,
+                    "before": manana,
+                },
+            )
+        )
+        assert len(por_fecha["messages"]) == 1, por_fecha
+
+    asyncio.run(run())
 
 
 def test_sin_papelera_no_hay_borrado_salvo_permanent(tmp_path: Path) -> None:
