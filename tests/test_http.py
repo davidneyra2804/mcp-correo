@@ -122,7 +122,7 @@ def test_instrucciones_avisan_de_contenido_no_confiable() -> None:
     assert "inyección" in text
     assert "solo lectura" in text
     assert "orden explícita" in text
-    assert "confirm_token" in text
+    assert "confirmation_id" in text
 
 
 def test_instrucciones_describen_el_flujo_de_envio_paso_a_paso() -> None:

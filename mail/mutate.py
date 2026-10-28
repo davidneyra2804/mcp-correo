@@ -29,15 +29,15 @@ NOTICE_SEND = (
     "Preparado, NO enviado. Este mensaje todavía no ha salido. "
     "Siguiente paso: muestra esta vista previa a quien opera el asistente y "
     "espera su orden explícita de envío. Con esa orden, llama a send_message "
-    "con el confirm_token devuelto aquí y la misma cuenta. No digas que el "
+    "con el confirmation_id devuelto aquí y la misma cuenta. No digas que el "
     "correo se envió hasta que send_message lo confirme."
 )
 NOTICE_DELETE = (
     "Preparado, NO borrado. Ningún mensaje se ha borrado todavía. "
     "Siguiente paso: muestra esta vista previa a quien opera el asistente y "
     "espera su orden explícita de borrado. Con esa orden, llama a "
-    "delete_message con el confirm_token devuelto aquí y la misma cuenta. "
-    "El modo (Papelera o definitivo) queda fijado en este token. No digas que "
+    "delete_message con el confirmation_id devuelto aquí y la misma cuenta. "
+    "El modo (Papelera o definitivo) queda fijado en este confirmation_id. No digas que "
     "se borró hasta que delete_message lo confirme."
 )
 

@@ -214,11 +214,11 @@ def test_el_agente_sabe_que_preparar_no_envia(tmp_path: Path) -> None:
         prepare = by_name["prepare_send"].description or ""
         assert "NO envía" in prepare
         assert "send_message" in prepare
-        assert "confirm_token" in prepare
+        assert "confirmation_id" in prepare
 
         send = by_name["send_message"].description or ""
         assert "prepare_send" in send
-        assert "confirm_token" in send
+        assert "confirmation_id" in send
         assert "orden explícita" in send
 
         prepared = _json(await rig.mcp.call_tool("prepare_send", _send()))
@@ -234,7 +234,7 @@ def test_el_agente_sabe_que_preparar_no_envia(tmp_path: Path) -> None:
         sent = _json(
             await rig.mcp.call_tool(
                 "send_message",
-                {"account": "principal", "confirm_token": prepared["confirm_token"]},
+                {"account": "principal", "confirmation_id": prepared["confirmation_id"]},
             )
         )
         assert sent["status"] == "sent"
@@ -272,7 +272,7 @@ def test_el_borrado_dice_que_no_borra_y_a_que_tool_segue(tmp_path: Path) -> None
         deleted = _json(
             await rig.mcp.call_tool(
                 "delete_message",
-                {"account": "principal", "confirm_token": prepared["confirm_token"]},
+                {"account": "principal", "confirmation_id": prepared["confirmation_id"]},
             )
         )
         assert deleted["status"] == "deleted"
@@ -285,10 +285,10 @@ def test_envio_exige_token_de_un_solo_uso(tmp_path: Path) -> None:
     rig = Rig(tmp_path)
 
     async def run() -> None:
-        with pytest.raises(ToolError, match="confirm_token"):
+        with pytest.raises(ToolError, match="confirmation_id"):
             await rig.mcp.call_tool(
                 "send_message",
-                {"account": "principal", "confirm_token": "   "},
+                {"account": "principal", "confirmation_id": "   "},
             )
         prepared = _json(
             await rig.mcp.call_tool(
@@ -299,14 +299,14 @@ def test_envio_exige_token_de_un_solo_uso(tmp_path: Path) -> None:
                 ),
             )
         )
-        token = prepared["confirm_token"]
+        token = prepared["confirmation_id"]
         assert prepared["from"] == "ada@example.com"
         assert "CUERPO-SECRETO-DE-ENVIO" in prepared["body_preview"]
         assert prepared["notice"]
         sent = _json(
             await rig.mcp.call_tool(
                 "send_message",
-                {"account": "principal", "confirm_token": token},
+                {"account": "principal", "confirmation_id": token},
             )
         )
         assert sent["sent"] is True
@@ -314,7 +314,7 @@ def test_envio_exige_token_de_un_solo_uso(tmp_path: Path) -> None:
         with pytest.raises(ToolError, match="ya usado"):
             await rig.mcp.call_tool(
                 "send_message",
-                {"account": "principal", "confirm_token": token},
+                {"account": "principal", "confirmation_id": token},
             )
 
     asyncio.run(run())
@@ -353,10 +353,10 @@ def test_los_destinatarios_ocultos_no_quedan_en_enviados(tmp_path: Path) -> None
                 },
             )
         )
-        token = preview["confirm_token"]
+        token = preview["confirmation_id"]
         await rig.mcp.call_tool(
             "send_message",
-            {"account": "principal", "confirm_token": token},
+            {"account": "principal", "confirmation_id": token},
         )
 
     asyncio.run(run())
@@ -382,27 +382,29 @@ def test_el_token_caduca_y_no_cruza_cuenta_ni_operacion(tmp_path: Path) -> None:
 
     async def run() -> None:
         prepared = _json(await rig.mcp.call_tool("prepare_send", _send()))
-        token = prepared["confirm_token"]
+        token = prepared["confirmation_id"]
         rig.clock.now += 601
         with pytest.raises(ToolError, match="caducado"):
             await rig.mcp.call_tool(
                 "send_message",
-                {"account": "principal", "confirm_token": token},
+                {"account": "principal", "confirmation_id": token},
             )
         rig.clock.now -= 601
         fresh = _json(await rig.mcp.call_tool("prepare_send", _send(subject="Otro")))
-        other = fresh["confirm_token"]
+        other = fresh["confirmation_id"]
         with pytest.raises(ToolError, match="no corresponde"):
-            await rig.mcp.call_tool("send_message", {"account": "archivo", "confirm_token": other})
+            await rig.mcp.call_tool(
+                "send_message", {"account": "archivo", "confirmation_id": other}
+            )
         with pytest.raises(ToolError, match="no corresponde"):
             await rig.mcp.call_tool(
                 "delete_message",
-                {"account": "principal", "confirm_token": other},
+                {"account": "principal", "confirmation_id": other},
             )
         sent = _json(
             await rig.mcp.call_tool(
                 "send_message",
-                {"account": "principal", "confirm_token": other},
+                {"account": "principal", "confirmation_id": other},
             )
         )
         assert sent["sent"] is True
@@ -429,7 +431,7 @@ def test_borrado_va_a_la_papelera_y_el_definitivo_es_aparte(tmp_path: Path) -> N
         deleted = _json(
             await rig.mcp.call_tool(
                 "delete_message",
-                {"account": "principal", "confirm_token": prepared["confirm_token"]},
+                {"account": "principal", "confirmation_id": prepared["confirmation_id"]},
             )
         )
         assert deleted["permanent"] is False
@@ -437,7 +439,7 @@ def test_borrado_va_a_la_papelera_y_el_definitivo_es_aparte(tmp_path: Path) -> N
         with pytest.raises(ToolError, match="ya usado"):
             await rig.mcp.call_tool(
                 "delete_message",
-                {"account": "principal", "confirm_token": prepared["confirm_token"]},
+                {"account": "principal", "confirmation_id": prepared["confirmation_id"]},
             )
 
     asyncio.run(run())
@@ -461,7 +463,7 @@ def test_borrado_va_a_la_papelera_y_el_definitivo_es_aparte(tmp_path: Path) -> N
         assert prepared["trash_folder"] == ""
         await rig.mcp.call_tool(
             "delete_message",
-            {"account": "principal", "confirm_token": prepared["confirm_token"]},
+            {"account": "principal", "confirmation_id": prepared["confirmation_id"]},
         )
 
     asyncio.run(definitive())
@@ -488,7 +490,7 @@ def test_sin_papelera_no_hay_borrado_salvo_permanent(tmp_path: Path) -> None:
         )
         await rig.mcp.call_tool(
             "delete_message",
-            {"account": "principal", "confirm_token": prepared["confirm_token"]},
+            {"account": "principal", "confirmation_id": prepared["confirmation_id"]},
         )
 
     asyncio.run(run())
@@ -511,7 +513,7 @@ def test_si_no_hay_move_copia_y_expunge_solo_esos_uid(tmp_path: Path) -> None:
         )
         await rig.mcp.call_tool(
             "delete_message",
-            {"account": "principal", "confirm_token": prepared["confirm_token"]},
+            {"account": "principal", "confirmation_id": prepared["confirmation_id"]},
         )
 
     asyncio.run(run())
@@ -576,9 +578,9 @@ def test_auditoria_de_escritura_sin_cuerpo_ni_token(tmp_path: Path) -> None:
         )
         await rig.mcp.call_tool(
             "send_message",
-            {"account": "principal", "confirm_token": prepared["confirm_token"]},
+            {"account": "principal", "confirmation_id": prepared["confirmation_id"]},
         )
-        return prepared["confirm_token"]
+        return prepared["confirmation_id"]
 
     token = asyncio.run(run())
     blob = rig.lines()
@@ -593,7 +595,7 @@ def test_auditoria_de_escritura_sin_cuerpo_ni_token(tmp_path: Path) -> None:
     parsed = [json.loads(line) for line in blob.splitlines()]
     assert {line["tool"] for line in parsed} >= {"prepare_send", "send_message"}
     assert all("body" not in line["args"] for line in parsed)
-    assert all("confirm_token" not in line["args"] for line in parsed)
+    assert all("confirmation_id" not in line["args"] for line in parsed)
 
 
 def test_limites_cupo_dominio_y_adjunto(tmp_path: Path) -> None:
@@ -630,15 +632,17 @@ def test_limites_cupo_dominio_y_adjunto(tmp_path: Path) -> None:
         first = _json(await rig.mcp.call_tool("prepare_send", _send(subject="Uno")))
         second = _json(await rig.mcp.call_tool("prepare_send", _send(subject="Dos")))
         await rig.mcp.call_tool(
-            "send_message", {"account": "principal", "confirm_token": first["confirm_token"]}
+            "send_message", {"account": "principal", "confirmation_id": first["confirmation_id"]}
         )
         with pytest.raises(ToolError, match="Tope diario"):
             await rig.mcp.call_tool(
-                "send_message", {"account": "principal", "confirm_token": second["confirm_token"]}
+                "send_message",
+                {"account": "principal", "confirmation_id": second["confirmation_id"]},
             )
         with pytest.raises(ToolError, match="ya usado"):
             await rig.mcp.call_tool(
-                "send_message", {"account": "principal", "confirm_token": second["confirm_token"]}
+                "send_message",
+                {"account": "principal", "confirmation_id": second["confirmation_id"]},
             )
         with pytest.raises(ToolError, match="Tope diario"):
             await rig.mcp.call_tool("prepare_send", _send(subject="Tres"))
@@ -657,21 +661,22 @@ def test_fallo_smtp_gasta_el_token_y_no_el_cupo(tmp_path: Path) -> None:
         with pytest.raises(ToolError, match="SMTP") as caught:
             await rig.mcp.call_tool(
                 "send_message",
-                {"account": "principal", "confirm_token": prepared["confirm_token"]},
+                {"account": "principal", "confirmation_id": prepared["confirmation_id"]},
             )
         assert "rechazo de prueba" not in str(caught.value)
         assert rig.account.password not in str(caught.value)
         with pytest.raises(ToolError, match="ya usado"):
             await rig.mcp.call_tool(
                 "send_message",
-                {"account": "principal", "confirm_token": prepared["confirm_token"]},
+                {"account": "principal", "confirmation_id": prepared["confirmation_id"]},
             )
         assert rig.writer.quota.remaining("principal") == 1
         rig.smtp.fail_send = False
         again = _json(await rig.mcp.call_tool("prepare_send", _send(subject="Reintento")))
         sent = _json(
             await rig.mcp.call_tool(
-                "send_message", {"account": "principal", "confirm_token": again["confirm_token"]}
+                "send_message",
+                {"account": "principal", "confirmation_id": again["confirmation_id"]},
             )
         )
         assert sent["sent"] is True
@@ -690,7 +695,7 @@ def test_si_falla_la_copia_en_enviados_el_correo_sigue_enviado(tmp_path: Path) -
         sent = _json(
             await rig.mcp.call_tool(
                 "send_message",
-                {"account": "principal", "confirm_token": prepared["confirm_token"]},
+                {"account": "principal", "confirmation_id": prepared["confirmation_id"]},
             )
         )
         assert sent["sent"] is True

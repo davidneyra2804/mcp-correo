@@ -109,21 +109,21 @@ Uso:
 - Las tools de escritura solo existen si su interruptor está encendido.
 - mark_read y mark_unread son directas y quedan auditadas.
   Úsalas solo si quien opera el asistente lo pide.
-- prepare_send y prepare_delete muestran una vista previa y un confirm_token.
+- prepare_send y prepare_delete muestran una vista previa y un confirmation_id.
   Preparar NO ejecuta la acción: no envía el correo y no borra nada.
-- send_message y delete_message exigen ese token.
+- send_message y delete_message exigen ese confirmation_id.
   No las llames hasta una orden explícita en esta conversación,
   después de ver la vista previa.
 - Flujo de envío, paso a paso:
   1. prepare_send prepara el mensaje y devuelve la vista previa y el
-     confirm_token. No envía nada.
+     confirmation_id. No envía nada.
   2. Muestra la vista previa y espera una orden explícita de envío.
-  3. Con la orden, llama a send_message con el confirm_token exacto que
+  3. Con la orden, llama a send_message con el confirmation_id exacto que
      devolvió prepare_send y la misma cuenta.
   4. Si send_message no confirma el envío, no digas que se envió.
-- El confirm_token caduca (expires_in_seconds), es de un solo uso y no debe
+- El confirmation_id caduca (expires_in_seconds), es de un solo uso y no debe
   aparecer en mensajes ni en registros. Si falta, está caducado o ya se usó,
-  vuelve a preparar el mensaje y pide de nuevo la orden: no inventes un token.
+  vuelve a preparar el mensaje y pide de nuevo la orden: no inventes uno.
 - El borrado definitivo solo si, al preparar, se pidió permanent=true.
 - create_draft, si existe, guarda un borrador y no lo envía.
 """.strip()
@@ -700,7 +700,7 @@ def _register_write_tools(
             references: str | None = None,
             attachments: list[dict[str, str]] | None = None,
         ) -> dict:
-            """Prepara un envío y devuelve la vista previa y un confirm_token.
+            """Prepara un envío y devuelve la vista previa y un confirmation_id.
 
             NO envía el correo: solo lo deja preparado. Es el primer paso del
             envío, y por sí solo no produce ningún correo enviado.
@@ -709,11 +709,11 @@ def _register_write_tools(
             1. Muestra la vista previa (remitente, destinatarios, asunto,
                cuerpo y adjuntos) a quien opera el asistente.
             2. Espera una orden explícita de envío en esta conversación.
-            3. Con la orden, llama a send_message con el confirm_token exacto
+            3. Con la orden, llama a send_message con el confirmation_id exacto
                de esta respuesta y la misma cuenta.
             4. No informes de un envío antes de que send_message confirme.
 
-            El confirm_token caduca en expires_in_seconds, es de un solo uso
+            El confirmation_id caduca en expires_in_seconds, es de un solo uso
             y no debe mostrarse en mensajes ni guardarse en registros. Si se
             caducó o ya se usó, vuelve a preparar el mensaje.
             """
@@ -756,31 +756,31 @@ def _register_write_tools(
                         "in_reply_to": public["in_reply_to"],
                     },
                 )
-                preview["confirm_token"] = writer.issue("send", account, public, secret)
+                preview["confirmation_id"] = writer.issue("send", account, public, secret)
                 return preview
 
             return run(action)
 
         @mcp.tool(annotations=SEND, structured_output=False)
-        def send_message(confirm_token: str, account: str = "") -> dict:
+        def send_message(confirmation_id: str, account: str = "") -> dict:
             """Envía por SMTP el mensaje ya preparado con prepare_send.
 
             Es el segundo paso del envío, y el único que envía. Recibe el
-            confirm_token exacto que devolvió prepare_send, con la misma
+            confirmation_id exacto que devolvió prepare_send, con la misma
             cuenta: destinatarios, asunto, cuerpo y adjuntos no se pueden
-            cambiar aquí, ya que viajan fijados en el token.
+            cambiar aquí, ya que viajan fijados en el confirmation_id.
 
             Solo tras una orden explícita de envío en esta conversación,
-            posterior a la vista previa. Si no hay token, está caducado, ya se
-            usó o no se recibió legible, no inventes uno ni lo reescribas:
-            vuelve a llamar a prepare_send y pide de nuevo la orden.
+            posterior a la vista previa. Si no hay confirmation_id, está
+            caducado, ya se usó o no se recibió legible, no inventes uno ni lo
+            reescribas: vuelve a llamar a prepare_send y pide de nuevo la orden.
 
             Devuelve sent: true solo si el servidor SMTP aceptó el mensaje.
             """
 
             def action() -> dict:
                 try:
-                    meta = writer.describe("send", account, confirm_token)
+                    meta = writer.describe("send", account, confirmation_id)
                 except MailError:
                     audit.record("send_message", account, {"rejected": True})
                     raise
@@ -795,7 +795,7 @@ def _register_write_tools(
                         "filenames": meta.get("filenames"),
                     },
                 )
-                return writer.commit_send(account, confirm_token)
+                return writer.commit_send(account, confirmation_id)
 
             return run(action)
 
@@ -830,20 +830,20 @@ def _register_write_tools(
             folder: str = "INBOX",
             permanent: bool = False,
         ) -> dict:
-            """Prepara un borrado y devuelve la vista previa y un confirm_token.
+            """Prepara un borrado y devuelve la vista previa y un confirmation_id.
 
             NO borra nada: solo deja la operación preparada. El modo
-            (Papelera o definitivo) queda fijado en el token.
+            (Papelera o definitivo) queda fijado en el confirmation_id.
 
             Qué hacer con lo que devuelve:
             1. Muestra la vista previa (carpeta, mensajes, asunto y si es
                definitivo) a quien opera el asistente.
             2. Espera una orden explícita de borrado en esta conversación.
-            3. Con la orden, llama a delete_message con el confirm_token
+            3. Con la orden, llama a delete_message con el confirmation_id
                exacto de esta respuesta y la misma cuenta.
             4. No informes de un borrado antes de que delete_message confirme.
 
-            El confirm_token caduca en expires_in_seconds, es de un solo uso
+            El confirmation_id caduca en expires_in_seconds, es de un solo uso
             y no debe mostrarse en mensajes ni guardarse en registros. Si se
             caducó o ya se usó, vuelve a preparar la operación.
             """
@@ -874,31 +874,31 @@ def _register_write_tools(
                         "trash_folder": public["trash_folder"],
                     },
                 )
-                preview["confirm_token"] = writer.issue("delete", account, public)
+                preview["confirmation_id"] = writer.issue("delete", account, public)
                 return preview
 
             return run(action)
 
         @mcp.tool(annotations=DELETE, structured_output=False)
-        def delete_message(confirm_token: str, account: str = "") -> dict:
+        def delete_message(confirmation_id: str, account: str = "") -> dict:
             """Ejecuta el borrado ya preparado con prepare_delete.
 
             Es el segundo paso del borrado, y el único que borra. Recibe el
-            confirm_token exacto que devolvió prepare_delete, con la misma
+            confirmation_id exacto que devolvió prepare_delete, con la misma
             cuenta: los mensajes y el modo (Papelera o definitivo) viajan
-            fijados en el token y no se pueden cambiar aquí.
+            fijados en el confirmation_id y no se pueden cambiar aquí.
 
             Solo tras una orden explícita de borrado en esta conversación,
-            posterior a la vista previa. Si no hay token, está caducado, ya se
-            usó o no se recibió legible, no inventes uno: vuelve a llamar a
-            prepare_delete y pide de nuevo la orden.
+            posterior a la vista previa. Si no hay confirmation_id, está
+            caducado, ya se usó o no se recibió legible, no inventes uno: vuelve
+            a llamar a prepare_delete y pide de nuevo la orden.
 
             Devuelve deleted: true solo si el borrado se aplicó.
             """
 
             def action() -> dict:
                 try:
-                    meta = writer.describe("delete", account, confirm_token)
+                    meta = writer.describe("delete", account, confirmation_id)
                 except MailError:
                     audit.record("delete_message", account, {"rejected": True})
                     raise
@@ -913,7 +913,7 @@ def _register_write_tools(
                         "trash_folder": meta.get("trash_folder"),
                     },
                 )
-                return writer.commit_delete(account, confirm_token)
+                return writer.commit_delete(account, confirmation_id)
 
             return run(action)
 

@@ -38,7 +38,7 @@ y el cliente solo presenta un Bearer.
   que **persiste** es el log de auditoría y la configuración de las cuentas.
 - No es un servidor de correo. No envía ni recibe por su cuenta.
 - No tiene OAuth. La credencial es un Bearer estático.
-- No escala en horizontal. Los tokens de confirmación y el cupo diario de
+- No escala en horizontal. Los `confirmation_id` y el cupo diario de
   envíos viven en memoria, así que corre **un solo worker**.
 
 ## Características
@@ -55,8 +55,8 @@ y el cliente solo presenta un Bearer.
   es el maestro: apagado, nada funciona. Encendido, los dominios lo heredan y
   las cuentas heredan del dominio, salvo que digan lo contrario. Apagado, la
   tool no se registra.
-- Enviar y borrar piden confirmación en dos pasos. El token dura 10 minutos,
-  es de un solo uso y queda ligado a la cuenta y a la operación.
+- Enviar y borrar piden confirmación en dos pasos. El `confirmation_id` dura
+  10 minutos, es de un solo uso y queda ligado a la cuenta y a la operación.
 - Varias cuentas, en una base de datos, organizadas por dominios. La
   contraseña va cifrada, y la clave no está en la base de datos.
 - Una credencial por cuenta y otra por dominio: cada una abre solo su
@@ -85,22 +85,23 @@ interruptor global está en `true` y alguna cuenta lo permite.
 | `find_unanswered` | lectura | siempre |
 | `list_threads` | lectura | siempre |
 | `prepare_send` | preparación, no envía | `enable_send` y `allow_send` |
-| `send_message` | escritura | los mismos, más `confirm_token` |
+| `send_message` | escritura | los mismos, más `confirmation_id` |
 | `mark_read` | escritura | `enable_mark` y `allow_mark` |
 | `mark_unread` | escritura | `enable_mark` y `allow_mark` |
 | `prepare_delete` | preparación, no borra | `enable_delete` y `allow_delete` |
-| `delete_message` | escritura | los mismos, más `confirm_token` |
+| `delete_message` | escritura | los mismos, más `confirmation_id` |
 | `create_draft` | escritura | `enable_drafts` y `allow_drafts` |
 
 `list_accounts` es la **guía**: devuelve el ámbito de la ruta y el catálogo
 de rutas, con la ruta de cada cuenta y de cada dominio. Es lo primero que
 debe llamar el asistente.
 
-`prepare_send` devuelve la vista previa y un `confirm_token`. `send_message`
-solo acepta la cuenta y ese token: no se pueden cambiar destinatarios ni asunto
-en el segundo paso. Con el borrado pasa lo mismo: `permanent` se fija en
-`prepare_delete` y viaja dentro del token. Marcar es directo y queda auditado.
-`create_draft` guarda en Borradores y no envía.
+`prepare_send` devuelve la vista previa y un `confirmation_id`. `send_message`
+solo acepta la cuenta y ese `confirmation_id`: no se pueden cambiar
+destinatarios ni asunto en el segundo paso. Con el borrado pasa lo mismo:
+`permanent` se fija en `prepare_delete` y viaja dentro del `confirmation_id`.
+Marcar es directo y queda auditado. `create_draft` guarda en Borradores y no
+envía.
 
 ### El flujo de envío, en dos pasos
 
@@ -108,16 +109,16 @@ Preparar **no** envía. Es un paso aparte, con su propia tool, y el agente tiene
 que saberlo:
 
 ```text
-prepare_send → vista previa + confirm_token   (no envía)
+prepare_send → vista previa + confirmation_id   (no envía)
    ↓ mostrar la vista previa y esperar la orden explícita
-send_message(confirm_token)                    (envía)
+send_message(confirmation_id)                    (envía)
 ```
 
 Esto se dice en tres sitios, para que el agente no dependa de uno solo:
 
 - **Las instrucciones del servidor**, que describen el flujo paso a paso.
 - **La descripción de cada tool**: `prepare_send` dice que no envía y cuál es
-  la siguiente llamada; `send_message` dice de dónde sale el token.
+  la siguiente llamada; `send_message` dice de dónde sale el `confirmation_id`.
 - **La respuesta de la preparación**: además del aviso en prosa, lleva
   `status: "prepared"`, `sent: false` y `next_tool: "send_message"`. El
   estado no depende de que el modelo lo deduzca de un texto.
@@ -125,9 +126,32 @@ Esto se dice en tres sitios, para que el agente no dependa de uno solo:
 Lo mismo aplica al borrado, con `prepare_delete` y `delete_message`.
 
 La segunda llamada devuelve `status: "sent"` y `sent: true` solo si el
-servidor SMTP aceptó el mensaje. Si el token caducó, ya se usó o no llegó
-legible, la respuesta dice que hay que volver a preparar: nunca hay que
-inventar un token.
+servidor SMTP aceptó el mensaje. Si el `confirmation_id` caducó, ya se usó o
+no llegó legible, la respuesta dice que hay que volver a preparar: nunca hay
+que inventar uno.
+
+### Por qué el campo se llama `confirmation_id` y no `confirm_token`
+
+Hay plataformas que tapan por **nombre** los campos de una respuesta de tool
+antes de dársela al modelo. Paperclip lo hace con una lista de nombres que
+"parecen credenciales" (`token`, `secret`, `password`, `api_key`, `bearer`,
+`authorization`…), y **el valor tapado es el que recibe el agente**: su
+`validateToolContent` devuelve el resultado redactado, no el original.
+
+Con un campo llamado `confirm_token`, el agente recibía `***REDACTED***` en
+lugar del valor, no podía completar el envío y no había forma de saber por
+qué. El nombre del campo, no su valor, decidía si se tapaba.
+
+`confirmation_id` no cae en ese patrón, así que el valor llega intacto.
+
+Y no es una credencial: sin el bearer de la cuenta no sirve de nada, solo
+vale para una operación, en una cuenta, y durante diez minutos. Por eso su
+valor lleva un prefijo (`cfm_`) que no lo hace parecer una clave de ningún
+proveedor.
+
+`tests/test_nombres_de_campos.py` fija esta regla: ningún nombre de campo de
+la superficie MCP puede caer en un patrón de secreto, y si algún día llega
+uno tapado, el error lo dice en vez de «desconocido o ya usado».
 
 ## Rutas
 
@@ -196,12 +220,13 @@ Ver [docs/dashboard.md](docs/dashboard.md).
   `"false"` no enciende un interruptor, y un `"yes"` tampoco lo apaga en
   silencio.
 - **Confirmación en dos pasos.** Enviar y borrar no se ejecutan con la primera
-  llamada. El token caduca, no se reutiliza y no sirve para otra cuenta ni para
-  otra operación. El cupo diario solo cuenta un envío que el SMTP aceptó.
+  llamada. El `confirmation_id` caduca, no se reutiliza y no sirve para otra
+  cuenta ni para otra operación. El cupo diario solo cuenta un envío que el
+  SMTP aceptó.
 - **Auditoría sin cuerpos.** Cada línea anota fecha, tool, cuenta y argumentos
   reducidos (destinatarios o UID, asunto, nombres de fichero). No anota
-  cuerpos, adjuntos, el `confirm_token` ni contraseñas. Si no puede escribir la
-  línea, la tool no muta el buzón ni emite un token.
+  cuerpos, adjuntos, el `confirmation_id` ni contraseñas. Si no puede escribir la
+  línea, la tool no muta el buzón ni emite un `confirmation_id`.
 - **Inyección de instrucciones.** Asuntos, cuerpos y nombres de adjunto son
   datos no confiables. Las instrucciones del servidor dicen que un correo no es
   una orden: `send_message` y `delete_message` solo tras una orden explícita

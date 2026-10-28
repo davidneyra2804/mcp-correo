@@ -7,6 +7,40 @@ el versionado es [SemVer](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+### Fixed
+
+- **`confirm_token` se renombra a `confirmation_id`.** El agente no conseguía
+  leer el valor de la preparación y no podía completar el envío. La causa
+  estaba en Paperclip: tapa por **nombre** los campos de una respuesta de tool
+  que "parecen credenciales" (`token`, `secret`, `password`, `api_key`,
+  `bearer`...), y **el valor tapado es el que recibe el agente**, no el
+  original. `confirm_token` caía en ese patrón, así que el agente recibía
+  `***REDACTED***` en lugar del identificador. `confirmation_id` no cae, y el
+  valor llega intacto.
+
+  El `confirmation_id` no es una credencial: sin el bearer de la cuenta no
+  sirve de nada, solo vale para una operación, en una cuenta, y durante diez
+  minutos. Su valor lleva ahora un prefijo `cfm_` para que tampoco tenga la
+  forma de una clave de ningún proveedor.
+
+  Es un cambio de contrato: el argumento de `send_message` y `delete_message`
+  se llama ahora `confirmation_id`, y la respuesta de `prepare_send` y
+  `prepare_delete` devuelve ese campo. Los clientes que leían el esquema
+  dinámicamente no se enteran; los que lo tenían escrito, sí.
+
+- **Un `confirmation_id` que llega tapado dice que llegó tapado.** Antes el
+  error era «desconocido o ya usado», que no distinguía un identificador
+  malo de uno que nunca llegó. Ahora el mensaje dice que la plataforma lo
+  redactó y que hay que volver a preparar.
+
+### Added
+
+- **`tests/test_nombres_de_campos.py`.** Ningún nombre de campo de la
+  superficie MCP puede caer en un patrón de secreto, y el valor del
+  `confirmation_id` no puede tener la forma de una credencial conocida. El
+  test se comprobó revirtiendo el nombre: falla, que es lo que tiene que
+  hacer.
+
 ### Changed
 
 - **El flujo de envío y de borrado se explica en tres capas.** El agente
@@ -14,8 +48,8 @@ el versionado es [SemVer](https://semver.org/lang/es/).
   que llamar después a `send_message`. Ahora el contrato se dice en las
   instrucciones del servidor (paso a paso), en la descripción de cada tool
   (`prepare_send` dice que no envía y cuál es la siguiente llamada;
-  `send_message` dice de dónde sale el token) y en la respuesta de la
-  preparación. No se puede depender de que el cliente trasmita las
+  `send_message` dice de dónde sale el `confirmation_id`) y en la respuesta de
+  la preparación. No se puede depender de que el cliente trasmita las
   instrucciones generales del servidor.
 - **La respuesta de la preparación lleva el estado explícito.** `prepare_send`
   y `prepare_delete` devuelven `status: "prepared"`, `sent: false` o
@@ -26,12 +60,13 @@ el versionado es [SemVer](https://semver.org/lang/es/).
   no solo prohíbe llamar a `send_message` o `delete_message` antes de tiempo:
   indica que la operación no se ha ejecutado, que hay que mostrar la vista
   previa, esperar la orden explícita y luego llamar a la tool siguiente con el
-  `confirm_token` devuelto. También avisa de que el token caduca y de que, si
-  falta o no llegó legible, hay que volver a preparar en vez de inventarlo.
+  `confirmation_id` devuelto. También avisa de que el `confirmation_id` caduca
+  y de que, si falta o no llegó legible, hay que volver a preparar en vez de
+  inventarlo.
 
 No cambia el modelo de seguridad: sigue haciendo falta la orden explícita de
-quien opera el asistente, y el token sigue siendo de un solo uso, ligado a la
-cuenta y a la operación.
+quien opera el asistente, y el `confirmation_id` sigue siendo de un solo uso,
+ligado a la cuenta y a la operación.
 
 ## [1.0.0] — 2026-10-26
 

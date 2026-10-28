@@ -14,7 +14,7 @@ _REDACT_KEYS = frozenset(
     {
         "password",
         "token",
-        "confirm_token",
+        "confirmation_id",
         "authorization",
         "body",
         "body_preview",

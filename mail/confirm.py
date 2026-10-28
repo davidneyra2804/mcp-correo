@@ -12,6 +12,21 @@ from typing import Any
 
 from mail.errors import MailError
 
+#: Valores con los que una plataforma sustituye un campo que ha classified
+#: como secreto. Si uno de estos llega aquí, no es un confirmation_id malo:
+#: es un confirmation_id que nunca llegó. El mensaje tiene que decirlo, o el
+#: agente solo ve "desconocido" y no sabe que hay que volver a preparar.
+_REDACTED_PLACEHOLDERS = frozenset(
+    {
+        "***REDACTED***",
+        "REDACTED",
+        "redacted",
+        "<redacted>",
+        "[REDACTED]",
+        "***",
+    }
+)
+
 
 @dataclass
 class PendingAction:
@@ -20,6 +35,19 @@ class PendingAction:
     public: dict[str, Any]
     secret: dict[str, Any]
     expires_at: float
+
+
+def _new_id() -> str:
+    """Un confirmation_id nuevo, con una forma que no parece un secreto.
+
+    El prefijo evita que el valor se confunda con las formas que las
+    plataformas tapan por resemble a una credencial (las de OpenAI o GitHub,
+    por ejemplo). El confirmation_id no es una credencial: sin el bearer de la
+    cuenta no sirve de nada, y solo vale para una operación, en una cuenta y
+    durante diez minutos. Pero si una plataforma lo tapa, el agente no puede
+    completar el envío, así que conviene que no se parezca a un secreto.
+    """
+    return "cfm_" + secrets.token_urlsafe(24)
 
 
 class ConfirmationStore:
@@ -35,9 +63,9 @@ class ConfirmationStore:
         now = self._clock()
         with self._lock:
             self._purge(now)
-            token = secrets.token_urlsafe(24)
+            token = _new_id()
             while token in self._pending:
-                token = secrets.token_urlsafe(24)
+                token = _new_id()
             self._pending[token] = PendingAction(
                 kind=kind,
                 account=account,
@@ -58,17 +86,23 @@ class ConfirmationStore:
     def _lookup(self, token: str, kind: str, account: str, *, pop: bool) -> PendingAction:
         if not isinstance(token, str) or not token.strip():
             raise MailError(
-                "Falta confirm_token. Prepara la operación y espera "
+                "Falta confirmation_id. Prepara la operación y espera "
                 "la orden explícita de quien opera el asistente."
+            )
+        if token.strip() in _REDACTED_PLACEHOLDERS:
+            raise MailError(
+                "El confirmation_id llegó oculto (la plataforma lo redactó). "
+                "Vuelve a preparar la operación y usa el valor exacto que "
+                "devuelva esa llamada, sin copiarlo de un registro."
             )
         pending = self._pending.get(token)
         if pending is None:
-            raise MailError("confirm_token desconocido o ya usado.")
+            raise MailError("confirmation_id desconocido o ya usado.")
         if pending.expires_at <= self._clock():
             self._pending.pop(token, None)
-            raise MailError("confirm_token caducado. Vuelve a preparar la operación.")
+            raise MailError("confirmation_id caducado. Vuelve a preparar la operación.")
         if pending.kind != kind or pending.account != account:
-            raise MailError("confirm_token no corresponde a esta cuenta o a esta operación.")
+            raise MailError("confirmation_id no corresponde a esta cuenta o a esta operación.")
         if pop:
             self._pending.pop(token, None)
         return pending
