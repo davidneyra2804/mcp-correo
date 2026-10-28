@@ -67,21 +67,49 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Notas del CHANGELOG
+        env:
+          RELEASE_VERSION: ${{ env.VERSION }}
+          RELEASE_IMAGE: ${{ env.IMAGE_NAME }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import pathlib
+          import re
+
+          version = os.environ["RELEASE_VERSION"]
+          image = os.environ["RELEASE_IMAGE"]
+          texto = pathlib.Path("CHANGELOG.md").read_text(encoding="utf-8")
+          patron = rf"^## \[{re.escape(version)}\][^\n]*\n(.*?)(?=^## |\Z)"
+          encontrado = re.search(patron, texto, re.MULTILINE | re.DOTALL)
+          seccion = encontrado.group(1).strip() if encontrado else ""
+          if not seccion:
+              print(f"::warning::El CHANGELOG no tiene seccion para {version}")
+          lineas = [
+              "## Imagen",
+              "",
+              "```",
+              image + ":" + version,
+              "```",
+              "",
+              "En Portainer, para usar la imagen publicada:",
+              "",
+              "```",
+              "MCP_IMAGE=" + image + ":" + version,
+              "MCP_PULL_POLICY=always",
+              "```",
+              "",
+              "## Cambios",
+              "",
+              seccion,
+              "",
+          ]
+          pathlib.Path("release-notes.md").write_text("\n".join(lineas), encoding="utf-8")
+          PY
+
       - name: Crear el Release
         uses: softprops/action-gh-release@v2
         with:
           name: ${{ env.VERSION }}
           generate_release_notes: true
-          body: |
-            ## Imagen
-
-            ```
-            ${{ env.IMAGE_NAME }}:${{ env.VERSION }}
-            ```
-
-            En Portainer, para usar la imagen publicada:
-
-            ```
-            MCP_IMAGE=${{ env.IMAGE_NAME }}:${{ env.VERSION }}
-            MCP_PULL_POLICY=always
-            ```
+          body_path: release-notes.md
