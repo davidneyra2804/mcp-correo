@@ -65,4 +65,4 @@ compose publica el MCP y el panel en loopback y monta los volúmenes `data` y
 y [Cloudflare Tunnel](despliegue-tunel-cloudflare.md).
 
 ---
-mcp-correo 2.0.0 | [Inicio](../README.md)
+mcp-correo 2.0.1 | [Inicio](../README.md)

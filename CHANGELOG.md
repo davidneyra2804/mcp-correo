@@ -7,6 +7,11 @@ el versionado es [SemVer](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+## [2.0.1] — 2026-10-27
+
+Corrección del contrato de las tools de escritura y del flujo de confirmación,
+con dos incidentes reales de por medio.
+
 ### Fixed
 
 - **`confirm_token` se renombra a `confirmation_id`.** El agente no conseguía
@@ -97,6 +102,12 @@ MCP: el nombre del argumento de `send_message` y `delete_message` ha cambiado,
 y un cliente con el catálogo viejo sigue mandando `confirm_token`, que el
 servidor rechaza con un error de validación. Se recupera leyendo el esquema
 de nuevo, pero es mejor no llegar ahí.
+
+La imagen se ha publicado **sin construir ni probar en local**: la máquina de
+publicación no tiene Docker. `tests/test_docker.py` comprueba que los módulos
+que tienen que entrar en la imagen estén, pero no que la imagen construya, ni
+los permisos del contenedor, ni que el volumen de datos funcione. La imagen
+sale solo para `linux/amd64`.
 
 ## [1.0.0] — 2026-10-26
 
