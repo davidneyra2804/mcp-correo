@@ -39,6 +39,23 @@ el versionado es [SemVer](https://semver.org/lang/es/).
 
 ### Fixed
 
+- **La migración añade la columna que falta.** La v2 añadió el permiso
+  `allow_direct_send` a `domains` y `accounts`, pero la migración solo
+  creaba la tabla `direct_sends`: la columna se había añadido al
+  `CREATE TABLE` de la v1, y eso solo afecta a las bases **nuevas**. Una
+  base v1 en marcha migraba sin la columna y el servidor se caía al
+  arrancar con `IndexError: No item with that key` al leer las cuentas.
+
+  Ahora la migración hace el `ALTER TABLE` que faltaba, y la comprobación
+  es **idempotente y no depende del número de versión**: se mira la tabla
+  real. Eso repara también las bases que quedaron a medias (marcadas como
+  la versión nueva pero sin la columna), que es lo que pasó en el
+  despliegue queitersalió el error.
+
+  **Despliegue:** actualiza la imagen y reinicia. La reparación es
+  automática al arrancar: no hay que tocar la base a mano y las cuentas no
+  se pierden.
+
 - **La versión del esquema se escribe al migrar.** La migración escribía
   `schema_version` solo si la fila no existía. Una base que migraba
   aplicaba los cambios pero seguía marcando la versión anterior, así que

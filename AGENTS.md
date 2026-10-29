@@ -379,6 +379,23 @@ Cada una de estas costó una release rota.
   cuentas dentro, y comprobar que después queda en la versión nueva. Un
   `prepare()` sobre una base recién creada no lo detecta: ahí la fila no
   existe y el `if` hace lo correcto.
+- **Añadir una columna no es cambiar el `CREATE TABLE`.** El `CREATE TABLE`
+  solo afecta a las bases **nuevas**. Una base que ya existe necesita un
+  `ALTER TABLE`, y si la migración no lo hace, el servidor arranca y se
+  cae al leer la primera fila: `IndexError: No item with that key`. Pasó
+  con `allow_direct_send`: la columna se añadió al `_SCHEMA_V1` (que es
+  el esquema de las bases nuevas) y la migración `_SCHEMA_V2` solo creaba
+  la tabla `direct_sends`. **La v1 es histórica: no se toca.** Lo que se
+  añade a una tabla existente va en la migración, con su `ALTER TABLE`.
+- **El número de versión puede mentir.** Una migración que aplica los
+  cambios y **después** falla deja la base con la versión nueva escrita y
+  los cambios a medias. Una migración gateada por el número ("si la
+  versión es menor que 2, migra") no la toca nunca más: parece al día y
+  no lo está. Por eso la comprobación de columnas se hace **contra la
+  tabla real** (`PRAGMA table_info`), no contra el número, y por eso
+  tiene que ser **idempotente**: si la columna ya está, no se toca. El
+  test que vigila esto arma una base "a medias" a mano: con la tabla
+  nueva, la versión nueva y **sin** la columna.
 - **Un test que recorre una lista vacía pasa siempre.** El doble de IMAP
   expone el esquema como `input_schema`, y el test leía `inputSchema`:
   `getattr` devolvía `None`, la lista quedaba vacía y el test pasaba sin
@@ -515,6 +532,8 @@ a mano.
       nuevo.
 - [ ] Si cambia el **esquema de la base**, la migración está probada desde
       la versión anterior, y el arranque con una base vieja no se rompe.
+- [ ] Si la migración añade una **columna**, tiene su `ALTER TABLE`: el
+      `CREATE TABLE` solo vale para las bases nuevas.
 
 **Si no hay Docker en la máquina, dilo en el commit y en el Release.** La
 prueba que simula el `COPY` del Dockerfile y arranca el servidor desde esa

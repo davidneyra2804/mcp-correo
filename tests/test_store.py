@@ -8,6 +8,7 @@ entere de que la base ha cambiado.
 
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -113,18 +114,16 @@ def test_preparar_dos_veces_no_rompe_nada(store: Store) -> None:
     assert store.db.meta("schema_version") == str(SCHEMA_VERSION)
 
 
-def test_una_base_de_la_version_anterior_migra(tmp_path: Path) -> None:
-    """La migración desde la versión anterior, con datos dentro.
+def _base_v1(ruta: Path) -> None:
+    """Una base de la versión 1, a mano, con sus cuentas dentro.
 
-    Esto es lo que se encuentra un despliegue en marcha: la base del
-    volumen tiene la versión anterior y hay que migrarla sin perder las
-    cuentas. Se arma una base v1 a mano, con sus cuentas, y se prepara.
+    Es lo que se encuentra un despliegue en marcha: la base del volumen
+    tiene la versión anterior. No se usa el código de la v1 para armarla,
+    porque ese código ya no existe: la base se escribe a mano, con el
+    esquema de la v1, que es lo que hay en el disco.
     """
     import sqlite3
 
-    from store.db import META_REVISION, META_VERSION, SCHEMA_VERSION
-
-    ruta = tmp_path / "vieja.db"
     con = sqlite3.connect(ruta)
     con.executescript(
         """
@@ -184,21 +183,97 @@ def test_una_base_de_la_version_anterior_migra(tmp_path: Path) -> None:
     con.commit()
     con.close()
 
+
+def _columnas(base: Database, tabla: str) -> set[str]:
+    return {str(f["name"]) for f in base.connect().execute(f"PRAGMA table_info({tabla})")}
+
+
+def test_una_base_de_la_version_anterior_migra(tmp_path: Path) -> None:
+    """La migración desde la versión anterior, con datos dentro.
+
+    Esto es lo que se encuentra un despliegue en marcha: la base del
+    volumen tiene la versión anterior y hay que migrarla sin perder las
+    cuentas. Se arma una base v1 a mano, con sus cuentas, y se prepara.
+    """
+    from store.db import META_REVISION, META_VERSION, SCHEMA_VERSION
+
+    ruta = tmp_path / "vieja.db"
+    _base_v1(ruta)
+
     base = Database(ruta)
     assert base.prepare() == SCHEMA_VERSION
     # La cuenta está y la revisión no se ha perdido.
     fila = base.connect().execute("SELECT name FROM accounts").fetchone()
     assert fila["name"] == "ada@corp.example.com"
-    # La migración es una escritura: sube el contador de revisiones, como
-    # cualquier otra. No se reinicia.
-    assert base.revision() == 8
-    # Y la tabla nueva está, con el permiso por cuenta.
+    # La tabla nueva está.
     assert "direct_sends" in {
         f["name"]
         for f in base.connect().execute("SELECT name FROM sqlite_master WHERE type='table'")
     }
+    # Y las columnas nuevas también: la v2 añadió una columna, y eso
+    # necesita un ALTER TABLE, no un CREATE TABLE.
+    assert "allow_direct_send" in _columnas(base, "domains")
+    assert "allow_direct_send" in _columnas(base, "accounts")
     assert base.meta(META_VERSION) == str(SCHEMA_VERSION)
-    assert base.meta(META_REVISION) == "8"
+    # La migración es una escritura: sube el contador de revisiones, como
+    # cualquier otra. No se reinicia.
+    assert int(base.meta(META_REVISION) or "0") > 7
+
+
+def test_una_base_marcada_como_nueva_pero_sin_la_columna_se_repara(tmp_path: Path) -> None:
+    """El caso que se encontró en producción: la versión al día, la columna no.
+
+    Pasó así: la migración aplicó la tabla nueva y escribió la versión,
+    y el servidor se cayó después, al leer las cuentas. La base quedó
+    marcada como la versión nueva pero **sin la columna**, y una
+    migración gateada por el número de versión no la toca: parece al día
+    y no lo está.
+
+    Por eso las columnas se comprueban contra la tabla real, no contra el
+    número de versión.
+    """
+    from store.db import SCHEMA_VERSION
+
+    ruta = tmp_path / "a_medias.db"
+    _base_v1(ruta)
+    # Se simula la migración a medias: la tabla nueva está y la versión
+    # guardada es la nueva, pero las columnas no llegaron a añadirse.
+    con = sqlite3.connect(ruta)
+    con.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS direct_sends (
+            key TEXT PRIMARY KEY,
+            account TEXT NOT NULL,
+            fingerprint TEXT NOT NULL,
+            status TEXT NOT NULL,
+            result TEXT NOT NULL DEFAULT '{}',
+            message_id TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL
+        );
+        """
+    )
+    con.execute("UPDATE meta SET value = ? WHERE key = 'schema_version'", (str(SCHEMA_VERSION),))
+    con.commit()
+    con.close()
+
+    base = Database(ruta)
+    assert base.prepare() == SCHEMA_VERSION
+    assert "allow_direct_send" in _columnas(base, "domains")
+    assert "allow_direct_send" in _columnas(base, "accounts")
+    # Y las cuentas se leen sin reventar: eso es lo que fallaba.
+    fila = base.connect().execute("SELECT name, allow_direct_send FROM accounts").fetchone()
+    assert fila["name"] == "ada@corp.example.com"
+    assert fila["allow_direct_send"] is None
+
+
+def test_preparar_no_añade_la_columna_dos_veces(tmp_path: Path) -> None:
+    """La reparación es idempotente: el segundo arranque no falla."""
+    ruta = tmp_path / "a_medias.db"
+    _base_v1(ruta)
+    base = Database(ruta)
+    base.prepare()
+    base.prepare()
+    assert "allow_direct_send" in _columnas(base, "accounts")
 
 
 # --- las escrituras -----------------------------------------------------------

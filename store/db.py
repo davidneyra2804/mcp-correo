@@ -11,11 +11,14 @@ migrar es peor que no tener base.
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
+
+logger = logging.getLogger("mcp_correo.db")
 
 #: La versión del esquema que este código entiende.
 SCHEMA_VERSION = 2
@@ -31,6 +34,10 @@ META_KEY_CHECK = "key_check"
 #: con la clave del operador, la clave es la correcta.
 KEY_CHECK_PLAINTEXT = "mcp-correo-clave-ok"
 
+#: El esquema de la versión 1. Es histórico: una base creada por esa
+#: versión **no** tiene la columna `allow_direct_send`, y por eso la
+#: migración la añade. No se toca: si se añadiera la columna aquí, una
+#: base nueva y una base vieja seguirían caminos distintos.
 _SCHEMA_V1 = """
 CREATE TABLE IF NOT EXISTS domains (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -42,7 +49,6 @@ CREATE TABLE IF NOT EXISTS domains (
     allow_mark    INTEGER,
     allow_delete  INTEGER,
     allow_drafts  INTEGER,
-    allow_direct_send INTEGER,
     imap_host     TEXT    NOT NULL DEFAULT '',
     imap_port     INTEGER,
     imap_ssl      INTEGER,
@@ -76,7 +82,6 @@ CREATE TABLE IF NOT EXISTS accounts (
     allow_mark      INTEGER,
     allow_delete    INTEGER,
     allow_drafts    INTEGER,
-    allow_direct_send INTEGER,
     bearer          TEXT,
     enabled         INTEGER NOT NULL DEFAULT 1,
     created_at      TEXT    NOT NULL
@@ -104,6 +109,15 @@ CREATE TABLE IF NOT EXISTS direct_sends (
     created_at  TEXT NOT NULL
 );
 """
+
+#: Las columnas que se añaden a las tablas que ya existían. La v2 añadió
+#: el permiso de envío directo, que es una columna y no una tabla: una
+#: base v1 necesita un ``ALTER TABLE``, y el ``CREATE TABLE`` de la v1 no
+#: sirve para una base que ya está creada.
+_COLUMNAS_NUEVAS: tuple[tuple[str, str, str], ...] = (
+    ("domains", "allow_direct_send", "INTEGER"),
+    ("accounts", "allow_direct_send", "INTEGER"),
+)
 
 
 class Database:
@@ -207,6 +221,14 @@ class Database:
             con.executescript(_SCHEMA_V1)
         if version < 2:
             con.executescript(_SCHEMA_V2)
+        # Las columnas se comprueban **siempre**, y no solo cuando la
+        # versión es anterior. Una base puede tener la versión nueva
+        # guardada y aun así no tener la columna: si una migración
+        # aplicó los cambios y después falló el arranque, la versión
+        # quedó escrita y la base parece al día, pero le falta la
+        # columna. Mirar la tabla real y no el número es lo que
+        # repara ese caso.
+        self._asegurar_columnas(con)
         with self.write() as wcon:
             # La versión se escribe siempre, no solo cuando falta: una base
             # que migra tiene que quedar en la versión nueva. Si se
@@ -217,3 +239,31 @@ class Database:
             if self.meta(META_REVISION) is None:
                 self.set_meta(wcon, META_REVISION, "0")
         return SCHEMA_VERSION
+
+    def _asegurar_columnas(self, con: sqlite3.Connection) -> None:
+        """Añade las columnas que falten, si faltan.
+
+        SQLite no tiene ``ADD COLUMN IF NOT EXISTS``, así que hay que
+        mirar la tabla antes. El ``ALTER TABLE`` es una escritura: cada
+        cambio sube el contador de revisiones, que es lo que hace que el
+        servidor recargue las cuentas.
+        """
+        for tabla, columna, tipo in _COLUMNAS_NUEVAS:
+            if self._tiene_columna(con, tabla, columna):
+                continue
+            with self.write() as wcon:
+                wcon.execute(f"ALTER TABLE {tabla} ADD COLUMN {columna} {tipo}")
+            logger.info(
+                "Columna %s.%s añadida a la base (migración del esquema).",
+                tabla,
+                columna,
+            )
+
+    @staticmethod
+    def _tiene_columna(con: sqlite3.Connection, tabla: str, columna: str) -> bool:
+        """Si la tabla tiene esa columna."""
+        try:
+            filas = con.execute(f"PRAGMA table_info({tabla})").fetchall()
+        except sqlite3.Error:
+            return False
+        return any(str(fila["name"]) == columna for fila in filas)
