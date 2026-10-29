@@ -267,7 +267,15 @@ def test_no_hay_palabras_en_ingles_coladas() -> None:
     ficheros nuevos: un destroce en el CHANGELOG se cuela igual, y este
     mismo test lo caza.
     """
-    prohibidas = ("participated", "finds", "Theoretical", "cateó", "queitersalió")
+    prohibidas = (
+        "participated",
+        "finds",
+        "Theoretical",
+        "cateó",
+        "queitersalió",
+        "que working",
+        "agentes que working",
+    )
     for fichero in (
         SKILL,
         PROMPT,

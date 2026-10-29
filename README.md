@@ -513,7 +513,7 @@ overlay del túnel en *Additional paths*.
 La imagen publicada se usa sin reconstruir:
 
 ```
-MCP_IMAGE=ghcr.io/davidneyra2804/mcp-correo:2.0.1
+MCP_IMAGE=ghcr.io/davidneyra2804/mcp-correo:2.1.0
 MCP_PULL_POLICY=always
 ```
 
@@ -669,13 +669,13 @@ Release con las notas de los commits.
 
 ```bash
 # Publicar una versión
-sed -i 's/__version__ = ".*"/__version__ = "2.0.2"/' version.py
-sed -i 's/^version = ".*"/version = "2.0.2"/' pyproject.toml
-sed -i 's/ARG MCP_VERSION=.*/ARG MCP_VERSION=2.0.2/' Dockerfile
-sed -i 's/mcp-correo 2\.0\.1 |/mcp-correo 2.0.2 |/' docs/configuracion.md README.md
-sed -i 's|mcp-correo:2\.0\.1|mcp-correo:2.0.2|' README.md
-git commit -am "version 2.0.2"
-git tag v2.0.2 && git push origin v2.0.2
+sed -i 's/__version__ = ".*"/__version__ = "2.2.0"/' version.py
+sed -i 's/^version = ".*"/version = "2.2.0"/' pyproject.toml
+sed -i 's/ARG MCP_VERSION=.*/ARG MCP_VERSION=2.2.0/' Dockerfile
+sed -i 's/mcp-correo 2\.1\.0 |/mcp-correo 2.2.0 |/' docs/configuracion.md
+sed -i 's|mcp-correo:2\.1\.0|mcp-correo:2.2.0|' README.md
+git commit -am "version 2.2.0"
+git tag v2.2.0 && git push origin v2.2.0
 ```
 
 Los dos últimos `sed` no son opcionales: un test comprueba que la

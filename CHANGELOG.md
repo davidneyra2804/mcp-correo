@@ -7,12 +7,17 @@ el versionado es [SemVer](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+## [2.1.0] — 2026-10-29
+
+El **envío directo** para las rutinas automáticas, y la herramienta que
+impide dar por buena una implementación sin mirarla.
+
 ### Added
 
 - **Envío directo opt-in para rutinas automáticas.** La tool
   `send_message_direct` envía el mensaje en **una sola llamada**, sin
   `confirmation_id` y sin confirmación humana por mensaje. Existe para los
-  agentes que working en segundo plano: en Paperclip, un agente que
+  agentes que trabajan en segundo plano: en Paperclip, un agente que
   extrae pendientes de Trello y manda el correo llama una vez, y la
   plataforma no le deja hacer la segunda llamada del flujo de dos pasos.
 
@@ -37,6 +42,11 @@ el versionado es [SemVer](https://semver.org/lang/es/).
   incierto, porque el correo pudo salir, y el servidor se niega a
   reenviarlo con esa clave.
 
+  Esto cambia el modelo de seguridad a propósito: en una cuenta con envío
+  directo, el servidor **no** exige confirmación por mensaje. La
+  autorización es la que se dio de antemano, y conviene limitarla a la
+  cuenta que usa la rutina.
+
 ### Fixed
 
 - **La migración añade la columna que falta.** La v2 añadió el permiso
@@ -52,20 +62,11 @@ el versionado es [SemVer](https://semver.org/lang/es/).
   la versión nueva pero sin la columna), que es lo que pasó en el
   despliegue que falló.
 
-  **Despliegue:** actualiza la imagen y reinicia. La reparación es
-  automática al arrancar: no hay que tocar la base a mano y las cuentas no
-  se pierden.
-
 - **La versión del esquema se escribe al migrar.** La migración escribía
   `schema_version` solo si la fila no existía. Una base que migraba
   aplicaba los cambios pero seguía marcando la versión anterior, así que
   la migración se volvía a aplicar en cada arranque. Ahora se escribe
   siempre.
-
-  Esto cambia el modelo de seguridad a propósito: en una cuenta con envío
-  directo, el servidor **no** exige confirmación por mensaje. La
-  autorización es la que se dio de antemano, y conviene limitarla a la
-  cuenta que usa la rutina.
 
 ### Documentación
 
@@ -91,28 +92,42 @@ el versionado es [SemVer](https://semver.org/lang/es/).
   Existe porque las dos últimas implementaciones se dieron por buenas sin
   ejecutar validaciones que el propio `AGENTS.md` ya pedía: una migración
   sin `ALTER TABLE` y un clon limpio sin hacer. La skill se corrigió
-  cuatro veces con la ayuda del revisor antes de estar lista: encontró,
+  varias veces con la ayuda del revisor antes de estar lista: encontró,
   entre otros, que el detector de datos ficticios pasaba en falso sobre
   los ficheros nuevos sin versionar.
 
 - **`tests/test_revision.py`.** La skill se vigila a sí misma: que el
-  frontmatter sea válido, que los marcadores del prompt coincidan con los
-  que lista la skill, que el fichero de referencia exista, que el agente
-  no pueda editar, que la skill y el `AGENTS.md` no se contradigan y que
-  no se cuelen palabras en otro idioma.
+  frontmatter sea YAML válido, que los marcadores del prompt coincidan con
+  los de la skill, que el fichero de referencia exista en la ruta que dice,
+  que el agente no pueda editar, que la skill y el `AGENTS.md` no se
+  contradigan y que no se cuelen palabras en otro idioma.
 
-- **Las lecciones de esta versión quedan en el `AGENTS.md`.** Seis trampas
-  nuevas, cada una con su historia: el nombre de un campo puede hacer que el
-  agente nunca reciba el valor; la respuesta de una tool es texto con JSON
-  dentro y también se redacta; el cliente cachea el catálogo de las tools;
-  una respuesta sin identificadores no se puede comprobar; un test que recorre
-  una lista vacía pasa siempre; y el doble de IMAP tiene que saber lo que el
-  código usa, o el test pasa por el motivo equivocado.
-- Se documenta el **envío directo opt-in** como pendiente, con sus condiciones:
-  cambia el modelo de seguridad y no puede sustituir al modo actual.
+- **Las lecciones de esta versión quedan en el `AGENTS.md`.** Catorce
+  trampas nuevas, cada una con su historia. Seis son del terreno del
+  contrato con el cliente: el nombre de un campo puede hacer que el
+  agente nunca reciba el valor; la respuesta de una tool es texto con
+  JSON dentro y también se redacta; el cliente cachea el catálogo de las
+  tools; una respuesta sin identificadores no se puede comprobar; un
+  test que recorre una lista vacía pasa siempre; y el doble de IMAP tiene
+  que saber lo que el código usa, o el test pasa por el motivo equivocado.
+
+  Las otras ocho son de este trabajo: una tool que se llama una vez no
+  puede depender de la segunda; un nombre de argumento con `key` puede
+  acabar tapado; un rechazo y una falta de respuesta no son lo mismo; una
+  clave de idempotencia necesita una huella, no solo una clave; una base
+  de datos de pruebas se queda en el disco; la versión del esquema se
+  escribe siempre, no solo cuando falta; **añadir una columna no es
+  cambiar el `CREATE TABLE`**; y el número de versión puede mentir.
 
 ### Despliegue
 
+- **La base de datos migra sola al arrancar.** El esquema pasa a la
+  versión 2. No hay que tocar la base a mano y **las cuentas no se
+  pierden**: la migración añade la columna que faltaba y comprueba las
+  columnas contra la tabla real, así que también repara las bases que
+  quedaron a medias con una versión nueva escrita y los cambios sin
+  aplicar. El log dice qué columnas se han añadido; si el arranque falla,
+  el error dice si la base está en solo lectura o bloqueada.
 - Hay que **refrescar el catálogo de las tools** en el cliente MCP: se
   añade `send_message_direct` y aparece un permiso nuevo en el panel. Un
   cliente con el catálogo viejo sigue funcionando con las tools de antes.
@@ -122,6 +137,14 @@ el versionado es [SemVer](https://semver.org/lang/es/).
 - En Paperclip, la política del agente tiene que permitir `send_message_direct`
   sin aprobación interactiva: el servidor ya no pide confirmación, pero el
   cliente puede tenerla configurada por su cuenta.
+- **La imagen se ha publicado sin construir ni probar en local**: la
+  máquina de publicación no tiene Docker. `tests/test_docker.py` comprueba
+  que los módulos que tienen que entrar en la imagen estén, pero no que
+  la imagen construya, ni que los permisos del contenedor sean los
+  correctos, ni que el volumen de datos funcione.
+- **La imagen sale solo para `linux/amd64`**: el workflow no lleva
+  `setup-qemu` ni `platforms`. En un host arm64 hay que construirla en
+  local.
 
 ## [2.0.1] — 2026-10-27
 
