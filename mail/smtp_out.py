@@ -50,8 +50,16 @@ def transmit(
         try:
             client.login(account.username, account.password)
             client.send_message(parsed)
-        except (smtplib.SMTPException, OSError, TimeoutError) as exc:
+        except smtplib.SMTPRecipientsRefused as exc:
+            # El servidor rechazó a los destinatarios: el mensaje no salió.
             _fail(account, exc)
+        except smtplib.SMTPResponseException as exc:
+            # Un 4xx o un 5xx con respuesta: el mensaje no se aceptó.
+            _fail(account, exc)
+        except (smtplib.SMTPException, OSError, TimeoutError) as exc:
+            # Aquí el resultado no se sabe: la conexión se cayó o el
+            # servidor no respondió. El correo pudo salir.
+            _uncertain(account, exc)
     finally:
         try:
             client.quit()
@@ -63,6 +71,26 @@ def _fail(account: Account, exc: BaseException) -> None:
     safe = str(exc).replace(account.password, "***")[:400] if account.password else str(exc)[:400]
     logger.warning("SMTP %s (%s): %s", account.key, type(exc).__name__, safe)
     raise MailError(f"El servidor SMTP rechazó el envío en la cuenta {account.key}.") from None
+
+
+class SmtpUncertain(MailError):
+    """El envío no tiene respuesta clara: el SMTP pudo aceptarlo.
+
+    No es lo mismo que un rechazo. Si la conexión se cae después de
+    ``DATA``, el servidor pudo entregar el correo y no se sabe. Quien
+    llama tiene que distinguir los dos casos: reenviar a ciegas puede
+    duplicar el mensaje.
+    """
+
+
+def _uncertain(account: Account, exc: BaseException) -> None:
+    """El fallo no permite saber si el correo salió."""
+    safe = str(exc).replace(account.password, "***")[:400] if account.password else str(exc)[:400]
+    logger.warning("SMTP %s (%s, resultado incierto): %s", account.key, type(exc).__name__, safe)
+    raise SmtpUncertain(
+        f"No se pudo saber si el envío en la cuenta {account.key} salió: "
+        "el servidor SMTP no respondió. No lo reenvíes sin comprobar antes."
+    ) from None
 
 
 def probar_smtp(

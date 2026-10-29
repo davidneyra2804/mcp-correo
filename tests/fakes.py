@@ -575,7 +575,8 @@ class FakeSMTP:
 
     def send_message(self, message, from_addr=None, to_addrs=None) -> None:
         if self.fail_send:
-            raise smtplib.SMTPException("rechazo de prueba")
+            # Un rechazo con respuesta del servidor: el mensaje no salió.
+            raise smtplib.SMTPRecipientsRefused({})
         self.sent.append(message.as_bytes())
         del from_addr, to_addrs
 

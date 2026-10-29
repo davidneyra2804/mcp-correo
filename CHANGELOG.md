@@ -7,6 +7,49 @@ el versionado es [SemVer](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+### Added
+
+- **Envío directo opt-in para rutinas automáticas.** La tool
+  `send_message_direct` envía el mensaje en **una sola llamada**, sin
+  `confirmation_id` y sin confirmación humana por mensaje. Existe para los
+  agentes que working en segundo plano: en Paperclip, un agente que
+  extrae pendientes de Trello y manda el correo llama una vez, y la
+  plataforma no le deja hacer la segunda llamada del flujo de dos pasos.
+
+  El modo está apagado por defecto y es independiente del envío normal:
+
+  | | Interruptor global | Permiso de dominio/cuenta |
+  | --- | --- | --- |
+  | Envío con confirmación | `MCP_ENABLE_SEND` | `allow_send` |
+  | Envío directo | `MCP_ENABLE_DIRECT_SEND` | `allow_direct_send` |
+
+  La tool exige `idempotency_key`: una clave estable por envío. La misma
+  clave con el mismo contenido **no vuelve a enviar**, devuelve el
+  resultado anterior con `duplicate: true`; la misma clave con otro
+  contenido se rechaza. Las claves viven en la base de datos, así que
+  sobreviven a un reinicio y un reintento no duplica el correo.
+
+  El esquema de la base pasa a la versión 2, con la tabla `direct_sends`.
+  La migración se aplica al arrancar.
+
+  Los fallos del SMTP se distinguen: un **rechazo** libera la clave y
+  permite reintentar; una **falta de respuesta** deja la clave en estado
+  incierto, porque el correo pudo salir, y el servidor se niega a
+  reenviarlo con esa clave.
+
+### Fixed
+
+- **La versión del esquema se escribe al migrar.** La migración escribía
+  `schema_version` solo si la fila no existía. Una base que migraba
+  aplicaba los cambios pero seguía marcando la versión anterior, así que
+  la migración se volvía a aplicar en cada arranque. Ahora se escribe
+  siempre.
+
+  Esto cambia el modelo de seguridad a propósito: en una cuenta con envío
+  directo, el servidor **no** exige confirmación por mensaje. La
+  autorización es la que se dio de antemano, y conviene limitarla a la
+  cuenta que usa la rutina.
+
 ### Documentación
 
 - **Las lecciones de esta versión quedan en el `AGENTS.md`.** Siete trampas
@@ -18,6 +61,18 @@ el versionado es [SemVer](https://semver.org/lang/es/).
   código usa, o el test pasa por el motivo equivocado.
 - Se documenta el **envío directo opt-in** como pendiente, con sus condiciones:
   cambia el modelo de seguridad y no puede sustituir al modo actual.
+
+### Despliegue
+
+- Hay que **refrescar el catálogo de las tools** en el cliente MCP: se
+  añade `send_message_direct` y aparece un permiso nuevo en el panel. Un
+  cliente con el catálogo viejo sigue funcionando con las tools de antes.
+- Para usar el envío directo: `MCP_ENABLE_DIRECT_SEND=true` en el entorno
+  (y en el compose), y `allow_direct_send` en el panel, en el dominio o en
+  la cuenta concreta.
+- En Paperclip, la política del agente tiene que permitir `send_message_direct`
+  sin aprobación interactiva: el servidor ya no pide confirmación, pero el
+  cliente puede tenerla configurada por su cuenta.
 
 ## [2.0.1] — 2026-10-27
 

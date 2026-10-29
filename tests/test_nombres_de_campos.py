@@ -300,3 +300,25 @@ def test_un_confirmation_id_tapado_dice_que_llego_oculto(tmp_path: Path) -> None
             )
 
     asyncio.run(run())
+
+
+def test_el_nombre_de_la_clave_de_idempotencia_no_parece_como_secreto(tmp_path: Path) -> None:
+    """`idempotency_key` tiene que sobrevivir a la redacción de la plataforma.
+
+    El nombre importa, no el valor: una plataforma que tapa por nombre
+    dejaría al agente sin la clave y el reintento duplicaría el correo.
+    """
+    from tests.test_direct_send import DirectRig
+
+    rig = DirectRig(tmp_path)
+
+    async def run() -> None:
+        by_name = {tool.name: tool for tool in await rig.mcp.list_tools()}
+        esquema = by_name["send_message_direct"].input_schema
+        assert "idempotency_key" in esquema["properties"]
+        assert not SECRET_KEY_RE.match("idempotency_key"), (
+            "El nombre idempotency_key cae en el patrón de secreto: la "
+            "plataforma taparía la clave y el agente no podría reintentar."
+        )
+
+    asyncio.run(run())

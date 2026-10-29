@@ -18,7 +18,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 #: La versión del esquema que este código entiende.
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 #: Clave de la fila de metadatos con la versión del esquema.
 META_VERSION = "schema_version"
@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS domains (
     allow_mark    INTEGER,
     allow_delete  INTEGER,
     allow_drafts  INTEGER,
+    allow_direct_send INTEGER,
     imap_host     TEXT    NOT NULL DEFAULT '',
     imap_port     INTEGER,
     imap_ssl      INTEGER,
@@ -75,6 +76,7 @@ CREATE TABLE IF NOT EXISTS accounts (
     allow_mark      INTEGER,
     allow_delete    INTEGER,
     allow_drafts    INTEGER,
+    allow_direct_send INTEGER,
     bearer          TEXT,
     enabled         INTEGER NOT NULL DEFAULT 1,
     created_at      TEXT    NOT NULL
@@ -83,6 +85,23 @@ CREATE TABLE IF NOT EXISTS accounts (
 CREATE TABLE IF NOT EXISTS meta (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
+);
+"""
+
+#: Las claves de idempotencia del envío directo. La clave la elige el
+#: agente y es única en toda la base: una misma clave con otro contenido
+#: se rechaza, y una clave ya resuelta devuelve su resultado sin enviar
+#: otra vez. Vive en la base porque el reinicio del servidor no puede
+#: olvidar un envío ya hecho.
+_SCHEMA_V2 = """
+CREATE TABLE IF NOT EXISTS direct_sends (
+    key         TEXT PRIMARY KEY,
+    account     TEXT NOT NULL,
+    fingerprint TEXT NOT NULL,
+    status      TEXT NOT NULL,
+    result      TEXT NOT NULL DEFAULT '{}',
+    message_id  TEXT NOT NULL DEFAULT '',
+    created_at  TEXT NOT NULL
 );
 """
 
@@ -186,9 +205,15 @@ class Database:
             )
         if version < 1:
             con.executescript(_SCHEMA_V1)
+        if version < 2:
+            con.executescript(_SCHEMA_V2)
         with self.write() as wcon:
-            if self.meta(META_VERSION) is None:
-                self.set_meta(wcon, META_VERSION, str(SCHEMA_VERSION))
+            # La versión se escribe siempre, no solo cuando falta: una base
+            # que migra tiene que quedar en la versión nueva. Si se
+            # escribiera solo al crear, la base seguiría marcando la
+            # versión anterior y la migración se volvería a aplicar en
+            # cada arranque.
+            self.set_meta(wcon, META_VERSION, str(SCHEMA_VERSION))
             if self.meta(META_REVISION) is None:
                 self.set_meta(wcon, META_REVISION, "0")
         return SCHEMA_VERSION

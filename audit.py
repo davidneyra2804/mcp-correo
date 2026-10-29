@@ -15,6 +15,7 @@ _REDACT_KEYS = frozenset(
         "password",
         "token",
         "confirmation_id",
+        "idempotency_key",
         "authorization",
         "body",
         "body_preview",

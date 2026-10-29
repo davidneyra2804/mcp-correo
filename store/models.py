@@ -34,6 +34,7 @@ class DomainRecord:
     allow_mark: bool | None = None
     allow_delete: bool | None = None
     allow_drafts: bool | None = None
+    allow_direct_send: bool | None = None
     imap_host: str = ""
     imap_port: int | None = None
     imap_ssl: bool | None = None
@@ -54,6 +55,7 @@ class DomainRecord:
             allow_mark=_tri(fila["allow_mark"]),
             allow_delete=_tri(fila["allow_delete"]),
             allow_drafts=_tri(fila["allow_drafts"]),
+            allow_direct_send=_tri(fila["allow_direct_send"]),
             imap_host=str(fila["imap_host"] or ""),
             imap_port=fila["imap_port"],
             imap_ssl=_tri(fila["imap_ssl"]),
@@ -88,6 +90,7 @@ class AccountRecord:
     allow_mark: bool | None = None
     allow_delete: bool | None = None
     allow_drafts: bool | None = None
+    allow_direct_send: bool | None = None
     bearer: str = ""
     enabled: bool = True
     created_at: str = ""
@@ -115,6 +118,7 @@ class AccountRecord:
             allow_mark=_tri(fila["allow_mark"]),
             allow_delete=_tri(fila["allow_delete"]),
             allow_drafts=_tri(fila["allow_drafts"]),
+            allow_direct_send=_tri(fila["allow_direct_send"]),
             bearer=str(fila["bearer"] or ""),
             enabled=bool(fila["enabled"]),
             created_at=str(fila["created_at"] or ""),
@@ -168,6 +172,7 @@ def to_account(
         allow_mark=resolve_permission(record.allow_mark, domain.allow_mark),
         allow_delete=resolve_permission(record.allow_delete, domain.allow_delete),
         allow_drafts=resolve_permission(record.allow_drafts, domain.allow_drafts),
+        allow_direct_send=resolve_permission(record.allow_direct_send, domain.allow_direct_send),
         index=record.id,
         domain=domain.name,
     )

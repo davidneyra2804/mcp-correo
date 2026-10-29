@@ -72,6 +72,11 @@ def test_la_api_da_todo_lo_que_la_interfaz_lee(cliente: TestClient) -> None:
         assert clave in listado, f"la interfaz lee domain.{clave}"
     for clave in ("id", "name", "route", "enabled", "domain_id"):
         assert clave in listado["accounts"][0], f"la interfaz lee account.{clave}"
+    # Los permisos de escritura, incluido el envío directo: el editor los
+    # pinta y los manda.
+    for clave in ("allow_send", "allow_direct_send"):
+        assert clave in listado, f"la interfaz lee domain.{clave}"
+        assert clave in listado["accounts"][0], f"la interfaz lee account.{clave}"
 
 
 def test_al_crear_una_cuenta_se_devuelve_el_token(cliente: TestClient) -> None:

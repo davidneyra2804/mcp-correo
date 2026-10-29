@@ -118,6 +118,7 @@ con valores ficticios.
 | `store/crypto.py` | El cifrado de las contraseñas, con la clave fuera de la base |
 | `store/store.py` | Las operaciones: dominios, cuentas y tokens |
 | `store/accounts.py` | La fuente de cuentas: estática o de la base, con recarga |
+| `store/direct_send.py` | La idempotencia del envío directo: claves y huellas, en la base |
 | `dashboard/app.py` | El panel: rutas, sesión y anti-CSRF |
 | `dashboard/api.py` | Los handlers del panel, incluida la prueba de conexión |
 | `dashboard/ui.py` | La interfaz y el login |
@@ -156,6 +157,13 @@ manda, y el que no dice nada hereda.
 | `true` | sin definir | `true` | encendida |
 | `true` | sin definir | `false` | apagada para esa cuenta |
 | `true` | `false` | lo que sea | apagada en el dominio |
+
+**El envío directo es una capacidad aparte**, con su propio interruptor
+(`MCP_ENABLE_DIRECT_SEND`) y su propio permiso (`allow_direct_send`). No
+hereda de `send`: una cuenta puede tener los dos o solo uno. En una cuenta
+con envío directo, el MCP **no** exige confirmación por mensaje; la
+autorización es la que se dio de antemano, y la idempotencia (en la base)
+es lo que hace seguro el reintento.
 
 ## El flujo de trabajo
 
@@ -322,6 +330,55 @@ Cada una de estas costó una release rota.
   adivinar carpeta y criterio de búsqueda, y una búsqueda mal escrita daba
   cero resultados y parecía que la copia no estaba. **Toda operación que
   escriba algo que se pueda volver a leer devuelve cómo llegar a ello.**
+- **Una tool que se llama una vez no puede depender de la segunda.** El
+  flujo de dos pasos obligaba al agente a llevar un `confirmation_id` de
+  una llamada a otra, y en Paperclip eso no ocurría: el agente llamaba una
+  vez y la plataforma no le dejaba hacer la segunda. El **envío directo**
+  (`send_message_direct`) resuelve eso: una llamada, sin confirmación por
+  mensaje. Pero cambia el modelo de seguridad, así que es **opt-in**: su
+  propio interruptor global (`MCP_ENABLE_DIRECT_SEND`), su propio permiso
+  (`allow_direct_send`) y la idempotencia va en la base de datos, no en
+  memoria. Un reintento tras un reinicio del servidor no puede duplicar el
+  correo: si la clave viviera en memoria, el reinicio la borraría y el
+  reintento enviaría otra vez.
+- **Un nombre de argumento con `key` puede acabar tapado.** Paperclip
+  redacta por nombre lo que parece una credencial, y `idempotency_key`
+  lleva `key` dentro. El patrón de `tests/test_nombres_de_campos.py` no
+  lo marca, pero el nombre es un contrato: el test fija que no cae en el
+  patrón, y la auditoría lo redacta.
+- **Un rechazo y una falta de respuesta no son lo mismo.** El SMTP puede
+  rechazar el envío (el mensaje no salió) o dejar de responder (el mensaje
+  **puede** haber salido). En el segundo caso, reenviar a ciegas duplica el
+  correo. `mail/smtp_out.py` distingue los dos: un rechazo con respuesta
+  (`SMTPRecipientsRefused`, `SMTPResponseException`) es un fallo y libera
+  la clave de idempotencia; una excepción de red es `SmtpUncertain` y la
+  clave queda reservada. **El doble de SMTP tiene que modelar el rechazo
+  con la respuesta del servidor**, no con un `SMTPException` genérico: si
+  el doble lanza la excepción genérica, el test dice "rechazó" cuando en
+  realidad el código está viendo un envío incierto, y pasa por el motivo
+  equivocado.
+- **Una clave de idempotencia necesita una huella, no solo una clave.**
+  La clave dice *qué* envío es; la huella dice *con qué contenido*. Sin
+  la huella, un reintento con la misma clave pero con otro cuerpo se
+  devolvería como "ya enviado" y el correo real no saldría nunca. Con la
+  huella, la segunda llamada se rechaza por contenido distinto.
+- **Una base de datos de pruebas se queda en el disco.** El `conftest.py`
+  pone `MCP_DASHBOARD_DB` en el directorio temporal, y el fichero persiste
+  entre ejecuciones. Al cambiar el **esquema** (una columna nueva, una
+  tabla), la base vieja sigue ahí con la versión anterior y el arranque
+  falla con `IndexError: No item with that key` al leer una fila: no es un
+  fallo de la migración, es una base vieja que hay que borrar. Cuando
+  cambia el esquema, hay que borrar la base de pruebas (o usar una base
+  con nombre nuevo).
+- **La versión del esquema se escribe siempre, no solo cuando falta.** La
+  migración de la v1 a la v2 escribía `schema_version` solo si la fila no
+  existía. Una base que migraba aplicaba los cambios pero **seguía
+  marcando "1"**, así que la migración se volvía a aplicar en cada
+  arranque. Solo se nota con una base que ya tiene la fila: por eso el
+  test de migración tiene que **armar la base vieja a mano**, con sus
+  cuentas dentro, y comprobar que después queda en la versión nueva. Un
+  `prepare()` sobre una base recién creada no lo detecta: ahí la fila no
+  existe y el `if` hace lo correcto.
 - **Un test que recorre una lista vacía pasa siempre.** El doble de IMAP
   expone el esquema como `input_schema`, y el test leía `inputSchema`:
   `getattr` devolvía `None`, la lista quedaba vacía y el test pasaba sin
@@ -380,6 +437,28 @@ imagen sale solo para `linux/amd64`**: el workflow no lleva `setup-qemu` ni
 `platforms`, así que en un host arm64 hay que construirse en local o añadir
 multi-arch al workflow.
 
+### Lo que cuesta una release sin probarla
+
+La imagen que sale de la etiqueta **no se ha arrancado en la máquina que la
+publica**, y eso se repite porque la máquina de publicación no tiene Docker.
+La red de seguridad es `tests/test_docker.py`, que simula el `COPY` del
+Dockerfile y arranca el servidor desde esa copia: detecta los módulos que
+no llegan a la imagen, pero **no** que la imagen construya, ni que los
+permisos del contenedor sean correctos, ni que el volumen de datos funcione.
+
+Cuando una release toca el **esquema de la base** (una tabla o una columna
+nueva), esto pesa más: la migración se aplica al arrancar, y una base vieja
+en el volumen `/var/lib/mcp-correo` tiene que migrar bien. La migración
+está probada contra una base v1 en los tests, pero no contra una base real
+de una instalación en marcha.
+
+Por eso, antes de subir una versión que cambia el esquema, conviene
+arrancar la imagen con un volumen que tenga una base de la versión
+anterior y comprobar que la migración sale bien. Si no hay Docker en la
+máquina, hay que decirlo en el commit y en el Release: es mejor que el
+usuario lo sepa antes de redesplegar que descubrirlo con el contenedor
+parado.
+
 ### Comprobar que la publicación salió bien
 
 El workflow puede terminar en verde y la imagen no estar. Sin `gh` instalado,
@@ -434,6 +513,8 @@ a mano.
       dominio dan 404.
 - [ ] Si el panel cambia, `docs/dashboard.md` y el README cuentan el flujo
       nuevo.
+- [ ] Si cambia el **esquema de la base**, la migración está probada desde
+      la versión anterior, y el arranque con una base vieja no se rompe.
 
 **Si no hay Docker en la máquina, dilo en el commit y en el Release.** La
 prueba que simula el `COPY` del Dockerfile y arranca el servidor desde esa
@@ -444,15 +525,5 @@ red de seguridad, no una prueba de la imagen.
 
 ## Lo que está pendiente
 
-- **Envío directo, opt-in.** El flujo en dos pasos obliga al agente a llevar
-  un valor de una llamada a otra. En Paperclip eso choca con dos cosas: el
-  cliente puede tapar ese valor (ya está resuelto con el nombre) y la
-  aprobación *Ask first* mostraría un identificador opaco en vez del correo.
-  La idea es una tool de envío directo, con el contenido en los argumentos y
-  la aprobación humana gestionada por la política de la plataforma, con
-  idempotencia para no duplicar envíos. **Cambia el modelo de seguridad**: el
-  MCP dejaría de imponer el paso previo, así que tiene que ser opt-in por
-  configuración, con el modo actual como predeterminado, y el borrado se
-  queda fuera.
 - **Multi-arch.** La imagen sale solo para `linux/amd64`. En un host arm64 hay
   que construirla en local o añadir `setup-qemu` y `platforms` al workflow.

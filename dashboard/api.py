@@ -71,6 +71,7 @@ def _cuenta_publica(cuenta: AccountRecord) -> dict[str, Any]:
         "allow_mark": cuenta.allow_mark,
         "allow_delete": cuenta.allow_delete,
         "allow_drafts": cuenta.allow_drafts,
+        "allow_direct_send": cuenta.allow_direct_send,
         "has_credential": bool(cuenta.bearer),
         "enabled": cuenta.enabled,
         "password_set": bool(cuenta.password),
@@ -94,6 +95,7 @@ def _dominio_publico(dominio: DomainRecord, cuentas: list[AccountRecord]) -> dic
         "allow_mark": dominio.allow_mark,
         "allow_delete": dominio.allow_delete,
         "allow_drafts": dominio.allow_drafts,
+        "allow_direct_send": dominio.allow_direct_send,
         "accounts": [_cuenta_publica(cuenta) for cuenta in cuentas],
     }
 

@@ -90,6 +90,19 @@ En **Opciones avanzadas** puedes indicar un alias de ruta, una etiqueta o un
 usuario de conexión distinto y servidores propios. Al editar se conservan las
 excepciones existentes; dejar la contraseña vacía conserva la actual.
 
+Ahí mismo están los **permisos de escritura**, con tres valores: *Heredar*
+(sin decidir, manda el dominio y detrás el interruptor global), *Permitir* y
+*Prohibir*. Los del dominio se ponen al editar el dominio; los de la cuenta,
+al editar la cuenta. Cada capacidad va por separado:
+
+| Permiso | Capacidad |
+| --- | --- |
+| `allow_send` | Enviar con confirmación (`prepare_send` + `send_message`). |
+| `allow_mark` | Marcar como leído o no leído. |
+| `allow_delete` | Mover a la Papelera o borrar. |
+| `allow_drafts` | Guardar borradores. |
+| `allow_direct_send` | Enviar en una sola llamada, sin confirmación por mensaje. |
+
 El panel está en `http://127.0.0.1:8766` (o donde lo publiques). Se entra
 con el token y se abre una sesión.
 
@@ -141,7 +154,8 @@ El catálogo lo da `list_accounts`. Un ejemplo:
   "accounts": [
     {"account": "ada@corp.example.com", "route": "/mcp/ada@corp.example.com",
      "domain": "corp.example.com", "own_credential": true,
-     "can_send": true, "can_mark": true, "can_delete": false, "can_draft": true}
+     "can_send": true, "can_mark": true, "can_delete": false, "can_draft": true,
+     "can_send_direct": false}
   ]
 }
 ```
@@ -180,6 +194,34 @@ La cadena es la de siempre, con un nivel más:
 
 El interruptor global sigue siendo el maestro: apagado, nada. El dominio
 y la cuenta son overrides opcionales.
+
+### El envío directo
+
+Hay un segundo permiso de envío: `allow_direct_send`, con su propio
+interruptor global `MCP_ENABLE_DIRECT_SEND`. Es independiente de
+`allow_send`.
+
+- **Envío con confirmación** (`allow_send`): `prepare_send` y después
+  `send_message`. Exige una orden explícita por mensaje.
+- **Envío directo** (`allow_direct_send`): `send_message_direct` envía en
+  una sola llamada, sin confirmación por mensaje.
+
+El envío directo existe para las rutinas automáticas: un agente que
+extrae pendientes de otro sistema y manda el correo sin intervención
+humana. La autorización es la que se dio de antemano al habilitarlo, y
+se limita a la cuenta (o al dominio) que lo tiene permitido.
+
+Para que no se duplique el correo, la tool exige una `idempotency_key`:
+la misma clave con el mismo contenido no vuelve a enviar. Usa una clave
+estable por envío, por ejemplo el identificador del pendiente de origen.
+
+Si el SMTP rechaza el envío, la clave se libera y se puede reintentar. Si
+el SMTP no responde, el correo pudo haber salido: la clave queda reservada
+en estado incierto y el servidor se niega a reenviar con ella, para no
+duplicar el mensaje.
+
+**No actives el envío directo en una cuenta con la que hable una
+persona.** El modo con confirmación existe justo para ese caso.
 
 ## La auditoría
 

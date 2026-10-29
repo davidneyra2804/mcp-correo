@@ -163,9 +163,9 @@ class Store:
         with self.db.write() as con:
             cur = con.execute(
                 "INSERT INTO domains(name, label, is_default, bearer, allow_send, allow_mark, "
-                "allow_delete, allow_drafts, imap_host, imap_port, imap_ssl, smtp_host, "
-                "smtp_port, smtp_security, created_at) "
-                "VALUES(?,?,0,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "allow_delete, allow_drafts, allow_direct_send, imap_host, imap_port, "
+                "imap_ssl, smtp_host, smtp_port, smtp_security, created_at) "
+                "VALUES(?,?,0,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     nombre,
                     etiqueta,
@@ -174,6 +174,7 @@ class Store:
                     _booleano(datos.get("allow_mark"), "allow_mark"),
                     _booleano(datos.get("allow_delete"), "allow_delete"),
                     _booleano(datos.get("allow_drafts"), "allow_drafts"),
+                    _booleano(datos.get("allow_direct_send"), "allow_direct_send"),
                     _sin_saltos(
                         _texto(datos.get("imap_host")), "El servidor IMAP del dominio", 200
                     ),
@@ -208,7 +209,13 @@ class Store:
             if token:
                 self._comprobar_token(token, excluir_dominio=identificador)
             campos["bearer"] = token or None
-        for permiso in ("allow_send", "allow_mark", "allow_delete", "allow_drafts"):
+        for permiso in (
+            "allow_send",
+            "allow_mark",
+            "allow_delete",
+            "allow_drafts",
+            "allow_direct_send",
+        ):
             if permiso in datos:
                 campos[permiso] = _booleano(datos.get(permiso), permiso)
         for campo, donde in (
@@ -279,8 +286,8 @@ class Store:
                 "INSERT INTO accounts(domain_id, name, label, sender, username, password, "
                 "imap_host, imap_port, imap_ssl, smtp_host, smtp_port, smtp_security, "
                 "drafts_folder, sent_folder, trash_folder, allow_send, allow_mark, "
-                "allow_delete, allow_drafts, bearer, enabled, created_at) "
-                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "allow_delete, allow_drafts, allow_direct_send, bearer, enabled, created_at) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     dominio_id,
                     nombre,
@@ -311,6 +318,7 @@ class Store:
                     _booleano(datos.get("allow_mark"), "allow_mark"),
                     _booleano(datos.get("allow_delete"), "allow_delete"),
                     _booleano(datos.get("allow_drafts"), "allow_drafts"),
+                    _booleano(datos.get("allow_direct_send"), "allow_direct_send"),
                     token,
                     1,
                     ahora(),
@@ -358,7 +366,13 @@ class Store:
             campos["bearer"] = token or None
         if "enabled" in datos:
             campos["enabled"] = 1 if _booleano(datos.get("enabled"), "enabled") else 0
-        for permiso in ("allow_send", "allow_mark", "allow_delete", "allow_drafts"):
+        for permiso in (
+            "allow_send",
+            "allow_mark",
+            "allow_delete",
+            "allow_drafts",
+            "allow_direct_send",
+        ):
             if permiso in datos:
                 campos[permiso] = _booleano(datos.get(permiso), permiso)
         for campo, donde in (

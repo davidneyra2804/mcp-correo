@@ -183,6 +183,35 @@ function entrada(tipo, valor = "", nombre = "") {
   return input;
 }
 
+/* Los permisos de escritura son un tri-estado: heredar (sin definir),
+ * permitir (true) o prohibir (false). Heredar es lo que deja que el
+ * dominio y el global manden, como el resto de la configuración.
+ */
+function permisosEscritos(valores) {
+  const caja = document.createElement("div");
+  caja.className = "campo inline";
+  const select = document.createElement("select");
+  for (const texto of ["Heredar", "Permitir", "Prohibir"]) {
+    const opcion = document.createElement("option");
+    opcion.value = texto;
+    opcion.textContent = texto;
+    select.append(opcion);
+  }
+  if (valores === true) select.value = "Permitir";
+  else if (valores === false) select.value = "Prohibir";
+  else select.value = "Heredar";
+  const label = document.createElement("label");
+  label.textContent = "Permisos de escritura";
+  caja.append(label, select);
+  return { caja, select };
+}
+
+function leerPermisos(select) {
+  if (select.value === "Permitir") return true;
+  if (select.value === "Prohibir") return false;
+  return null;
+}
+
 function editor(titulo, campos, alGuardar, alProbar) {
   const dialogo = $("#editor");
   $("#titulo").textContent = titulo;
@@ -202,6 +231,8 @@ function editarDominio(dominio) {
   const etiqueta = entrada("text", dominio?.label || "");
   const imap = entrada("text", dominio?.imap_host || "");
   const smtp = entrada("text", dominio?.smtp_host || "");
+  const permisos = permisosEscritos(dominio?.allow_send);
+  const directos = permisosEscritos(dominio?.allow_direct_send);
   editor(
     "Dominio",
     [
@@ -209,6 +240,8 @@ function editarDominio(dominio) {
       campo("Nombre para identificarlo (opcional)", etiqueta),
       campo("Servidor de correo entrante (IMAP)", imap),
       campo("Servidor de correo saliente (SMTP)", smtp),
+      permisos.caja,
+      directos.caja,
     ],
     async () => {
       const cuerpo = {
@@ -216,6 +249,8 @@ function editarDominio(dominio) {
         label: etiqueta.value,
         imap_host: imap.value,
         smtp_host: smtp.value,
+        allow_send: leerPermisos(permisos.select),
+        allow_direct_send: leerPermisos(directos.select),
       };
       const respuesta = dominio
         ? await pedir(`/api/domains/${dominio.id}`, { method: "PATCH", body: JSON.stringify(cuerpo) })
@@ -248,6 +283,8 @@ function editarCuenta(cuenta, dominioId) {
   const remitente = entrada("text", cuenta ? cuenta.sender : "");
   const imap = entrada("text", cuenta ? cuenta.imap_host : "");
   const smtp = entrada("text", cuenta ? cuenta.smtp_host : "");
+  const permisos = permisosEscritos(cuenta ? cuenta.allow_send : null);
+  const directos = permisosEscritos(cuenta ? cuenta.allow_direct_send : null);
 
   const correo = entrada("email", cuenta ? cuenta.user : "");
   correo.placeholder = "ada@example.com";
@@ -277,12 +314,18 @@ function editarCuenta(cuenta, dominioId) {
   const ayuda = document.createElement("p");
   ayuda.className = "pista";
   ayuda.textContent = "Normalmente no necesitas cambiarlas. Los servidores se toman del dominio seleccionado.";
-  avanzadas.append(resumen, ayuda,
+  const ayudaPermisos = document.createElement("p");
+  ayudaPermisos.className = "pista";
+  ayudaPermisos.textContent =
+    "Envío: exige una confirmación por mensaje. Envío directo: envía en una sola llamada, sin confirmación por mensaje, y solo para rutinas automáticas.";
+  avanzadas.append(resumen, ayuda, ayudaPermisos,
     campo("Alias de la ruta (opcional)", nombre),
     campo("Nombre de la cuenta en el panel (opcional)", etiqueta),
     campo("Usuario de conexión diferente (opcional)", usuario),
     campo("Servidor entrante IMAP (opcional)", imap),
-    campo("Servidor saliente SMTP (opcional)", smtp));
+    campo("Servidor saliente SMTP (opcional)", smtp),
+    permisos.caja,
+    directos.caja);
 
   const recoger = () => ({
     domain_id: Number(selector.value),
@@ -293,6 +336,8 @@ function editarCuenta(cuenta, dominioId) {
     imap_host: imap.value,
     smtp_host: smtp.value,
     password: contrasena.value,
+    allow_send: leerPermisos(permisos.select),
+    allow_direct_send: leerPermisos(directos.select),
   });
 
   editor(

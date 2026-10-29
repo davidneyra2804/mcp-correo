@@ -84,6 +84,9 @@ services:
       MCP_ENABLE_MARK: ${MCP_ENABLE_MARK:-false}
       MCP_ENABLE_DELETE: ${MCP_ENABLE_DELETE:-false}
       MCP_ENABLE_DRAFTS: ${MCP_ENABLE_DRAFTS:-false}
+      # Envío directo: una sola llamada, sin confirmación por mensaje.
+      # Apagado por defecto; el permiso por cuenta se pone en el panel.
+      MCP_ENABLE_DIRECT_SEND: ${MCP_ENABLE_DIRECT_SEND:-false}
       # Red. MCP_PUBLIC_HOST arma allowed_hosts y allowed_origins; las
       # listas explícitas los sustituyen.
       MCP_PUBLIC_HOST: ${MCP_PUBLIC_HOST:-}

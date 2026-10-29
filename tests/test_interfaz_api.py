@@ -189,6 +189,20 @@ def test_las_etiquetas_de_los_campos_estan_asociadas() -> None:
     assert "control.id" in js, "los campos no reciben un identificador"
 
 
+def test_los_permisos_del_editor_se_mandan_en_el_cuerpo() -> None:
+    """El editor pinta los permisos y los manda al guardar.
+
+    Si el JavaScript pintase el permiso y no lo mandase, el panel
+    mostraría un valor y la base guardaría otro: el usuario creería que
+    ha activado el envío directo y no lo ha hecho.
+    """
+    js = JS.read_text(encoding="utf-8")
+    assert "allow_direct_send" in js, "el editor no menciona el envío directo"
+    assert "allow_send" in js, "el editor no menciona el envío normal"
+    # Los permisos se leen al guardar, no solo al pintar.
+    assert "leerPermisos(" in js
+
+
 def test_las_llamadas_del_js_llevan_la_cabecera_anticsrf() -> None:
     """Las peticiones que cambian algo llevan la cabecera anti-CSRF.
 

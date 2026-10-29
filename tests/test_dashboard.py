@@ -152,6 +152,25 @@ def test_la_contrasena_no_sale_nunca(cliente: TestClient) -> None:
     assert '"password_set":true' in cuerpo.replace(" ", "")
 
 
+def test_el_panel_expone_el_permiso_de_envio_directo(cliente: TestClient) -> None:
+    """El permiso del envío directo se ve y se puede cambiar en el panel."""
+    _entrar(cliente)
+    dominio = _dominio(cliente)
+    _cuenta(cliente, dominio["id"])
+    listado = cliente.get("/api/domains").json()
+    assert "allow_direct_send" in listado["domains"][0]
+    assert "allow_direct_send" in listado["domains"][0]["accounts"][0]
+
+    respuesta = cliente.patch(
+        f"/api/accounts/{listado['domains'][0]['accounts'][0]['id']}",
+        json={"allow_direct_send": True},
+        headers=CSRF,
+    )
+    assert respuesta.status_code == 200, respuesta.text
+    listado = cliente.get("/api/domains").json()
+    assert listado["domains"][0]["accounts"][0]["allow_direct_send"] is True
+
+
 def test_un_nombre_repetido_dice_que_ya_existe(cliente: TestClient) -> None:
     _entrar(cliente)
     _dominio(cliente)

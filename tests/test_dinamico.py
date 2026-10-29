@@ -74,7 +74,7 @@ def store(tmp_path: Path) -> Store:
 def cliente(store: Store) -> TestClient:
     settings = load_server_settings()
     source = DatabaseAccounts(store, settings)
-    app, _runtime = create_app(settings, source, TOKEN)
+    app, _runtime = create_app(settings, source, TOKEN, database=store.db)
     with TestClient(app, base_url="http://127.0.0.1:8765") as http:
         yield http
 

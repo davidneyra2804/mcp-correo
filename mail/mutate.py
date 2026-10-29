@@ -20,7 +20,16 @@ from mail.confirm import ConfirmationStore, SendQuota
 from mail.errors import MailError
 from mail.imap import MailService, examine_folder, folder_name
 from mail.mime import decode_header_value, format_addresses
-from mail.smtp_out import SmtpFactory, open_smtp, transmit
+from mail.smtp_out import SmtpFactory, SmtpUncertain, open_smtp, transmit
+from store.direct_send import (
+    PENDING,
+    SENT,
+    UNCERTAIN,
+    DirectSendError,
+    DirectSendStore,
+    fingerprint,
+    normalizar_clave,
+)
 
 logger = logging.getLogger("mcp_correo.mutate")
 
@@ -74,11 +83,16 @@ class MailboxWriter:
         confirm: ConfirmationStore,
         quota: SendQuota,
         smtp_factory: SmtpFactory | None = None,
+        direct_store: DirectSendStore | None = None,
     ) -> None:
         self.service = service
         self.confirm = confirm
         self.quota = quota
         self.smtp_factory = smtp_factory or open_smtp
+        #: El registro de idempotencia del envío directo. Sin él, el
+        #: envío directo no está disponible: el registro es lo que impide
+        #: que un reintento duplique el correo.
+        self.direct_store = direct_store
 
     def plan_send(
         self,
@@ -252,6 +266,151 @@ class MailboxWriter:
             "notice": "Borrado tras confirmación.",
         }
 
+    def send_direct(
+        self,
+        account_key: str,
+        idempotency_key: str,
+        to: list[str],
+        subject: str,
+        body: str,
+        cc: list[str] | None = None,
+        bcc: list[str] | None = None,
+        in_reply_to: str | None = None,
+        references: str | None = None,
+        attachments: list[dict[str, str]] | None = None,
+    ) -> dict[str, Any]:
+        """Envía el mensaje en una sola llamada, sin confirmación previa.
+
+        Es el modo pensado para las rutinas automáticas: el agente entrega
+        el mensaje entero y el servidor lo envía. La contrapartida es que
+        **no hay confirmación humana por mensaje**: la autorización es la
+        que se dio de antemano al habilitar el envío directo para esta
+        cuenta.
+
+        La idempotencia es lo que hace seguro el reintento. La clave la
+        elige el agente y tiene que ser estable para el mismo envío: si
+        la llamada se repite, el servidor devuelve el resultado guardado
+        en vez de volver a enviar.
+        """
+        account = self._gated(account_key, "direct_send")
+        if self.direct_store is None:
+            raise MailError(
+                "El envío directo no está disponible: el servidor no tiene registro "
+                "de idempotencia. Usa prepare_send y send_message."
+            )
+        clave = _idempotency_key(idempotency_key)
+        if self.quota.remaining(account.key) < 1:
+            raise MailError(f"Tope diario de envíos alcanzado ({self.quota.daily_cap}).")
+        raw, public, _preview = build_outgoing(
+            sender=account.username,
+            sender_name=account.sender,
+            to=to,
+            cc=cc,
+            bcc=bcc,
+            subject=subject,
+            body=body,
+            in_reply_to=in_reply_to,
+            references=references,
+            attachments=attachments,
+            settings=self.service.settings,
+        )
+        public["sent_folder"] = account.sent_folder
+        huella = fingerprint(
+            to=to,
+            cc=cc,
+            bcc=bcc,
+            subject=subject,
+            body=body,
+            in_reply_to=in_reply_to,
+            references=references,
+            attachments=attachments,
+        )
+        try:
+            previo = self.direct_store.reservar(account.key, clave, huella)
+        except DirectSendError as exc:
+            raise MailError(str(exc)) from None
+        if previo is not None:
+            try:
+                self.direct_store.comprobar(previo, account.key, huella)
+            except DirectSendError as exc:
+                raise MailError(str(exc)) from None
+            if previo.status == SENT:
+                resultado = dict(previo.result)
+                resultado["duplicate"] = True
+                resultado["status"] = "sent"
+                resultado["sent"] = True
+                resultado["notice"] = (
+                    "Este envío ya se había hecho con esa idempotency_key. "
+                    "No se ha enviado otra vez: se devuelve el resultado anterior."
+                )
+                return resultado
+            if previo.status == PENDING:
+                raise MailError(
+                    "Ese envío está en curso con la misma idempotency_key. "
+                    "Espera a que termine y vuelve a consultarlo."
+                )
+            if previo.status == UNCERTAIN:
+                raise MailError(
+                    "Ese envío quedó en estado incierto: el servidor SMTP pudo "
+                    "aceptarlo y se perdió la respuesta. No se puede reenviar con "
+                    "la misma idempotency_key. Comprueba la carpeta de Enviados "
+                    "antes de decidir, y usa una clave nueva solo si el correo "
+                    "no llegó a salir."
+                )
+            raise MailError(
+                "Ese envío falló antes de completarse con la misma idempotency_key. "
+                "Revisa el error anterior y usa una clave nueva para reintentarlo."
+            )
+        self.quota.reserve(account.key)
+        try:
+            transmit(
+                account,
+                self.service.settings,
+                raw,
+                self.smtp_factory,
+            )
+        except SmtpUncertain:
+            # No se sabe si el correo salió. La clave queda reservada: si
+            # se liberara, un reintento podría duplicar el mensaje. El
+            # agente tiene que comprobar la carpeta de Enviados y decidir.
+            self.direct_store.marcar_incierto(clave, account.key, huella)
+            raise
+        except MailError:
+            # El SMTP rechazó el envío: el mensaje no salió. La clave se
+            # libera y se puede reintentar con la misma.
+            self.quota.release(account.key)
+            self.direct_store.borrar_si_pending(clave)
+            raise
+        folder = str(public.get("sent_folder") or account.sent_folder)
+        copied, sent_uid = self._copy_to_sent(account, folder, raw)
+        resultado = {
+            "account": account.key,
+            "status": "sent",
+            "sent": True,
+            "duplicate": False,
+            "copy_in_sent": copied,
+            "sent_folder": folder if copied else None,
+            "sent_uid": sent_uid,
+            "message_id": public.get("message_id", ""),
+            "to": public["to"],
+            "cc": public["cc"],
+            "bcc": public["bcc"],
+            "subject": public["subject"],
+            "notice": (
+                "Enviado directamente, sin confirmación por mensaje. "
+                "El servidor SMTP aceptó el mensaje."
+            ),
+        }
+        self.direct_store.guardar(
+            clave,
+            account.key,
+            huella,
+            SENT,
+            resultado,
+            message_id=str(public.get("message_id") or ""),
+        )
+        return resultado
+
     def mark(self, account_key: str, uids: list[int], folder: str = "INBOX", *, seen: bool) -> dict:
         account = self._gated(account_key, "mark")
         carpeta = folder_name(folder)
@@ -415,6 +574,19 @@ class MailboxWriter:
         if not account_allows(account, kind, self.service.settings):
             raise MailError(f"{label} está desactivado para la cuenta {account.key}.")
         return account
+
+
+def _idempotency_key(valor: object) -> str:
+    """La clave de idempotencia, validada.
+
+    Vive en un módulo aparte, pero el error que ve el agente tiene que
+    ser un ``MailError`` y no una excepción inesperada: un error de
+    argumentos previsto no puede tumbar la llamada.
+    """
+    try:
+        return normalizar_clave(valor)
+    except DirectSendError as exc:
+        raise MailError(str(exc)) from None
 
 
 def _uid_list(values: list[int], limit: int) -> list[int]:

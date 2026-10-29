@@ -64,6 +64,7 @@ _SERVER_ENV: dict[str, str] = {
     "enable_send": "MCP_ENABLE_SEND",
     "enable_mark": "MCP_ENABLE_MARK",
     "enable_delete": "MCP_ENABLE_DELETE",
+    "enable_direct_send": "MCP_ENABLE_DIRECT_SEND",
     "confirm_ttl_seconds": "MCP_CONFIRM_TTL_SECONDS",
     "max_recipients": "MCP_MAX_RECIPIENTS",
     "max_sends_per_day": "MCP_MAX_SENDS_PER_DAY",
@@ -103,6 +104,9 @@ class ServerSettings:
     enable_send: bool = False
     enable_mark: bool = False
     enable_delete: bool = False
+    #: Envío directo: una sola llamada, sin confirmation_id y sin
+    #: confirmación humana por mensaje. Apagado por defecto.
+    enable_direct_send: bool = False
     confirm_ttl_seconds: int = 600
     max_recipients: int = 10
     max_sends_per_day: int = 30
@@ -151,6 +155,9 @@ class Account:
     allow_mark: bool | None = None
     allow_delete: bool | None = None
     allow_drafts: bool | None = None
+    #: Permiso de envío directo. None = no definido, y entonces hereda
+    #: el interruptor global.
+    allow_direct_send: bool | None = None
     #: Dominio al que pertenece. Vacío si no hay.
     domain: str = ""
     #: Identificador numérico de la cuenta en la base de datos. 0 si no lo
@@ -386,6 +393,7 @@ def _server_settings() -> ServerSettings:
         enable_send=_switch("MCP_ENABLE_SEND"),
         enable_mark=_switch("MCP_ENABLE_MARK"),
         enable_delete=_switch("MCP_ENABLE_DELETE"),
+        enable_direct_send=_switch("MCP_ENABLE_DIRECT_SEND"),
         confirm_ttl_seconds=_positive_int(
             _env_int_or("MCP_CONFIRM_TTL_SECONDS", 600), "MCP_CONFIRM_TTL_SECONDS"
         ),
@@ -455,6 +463,15 @@ WRITE_GATES: dict[str, tuple[str, str, str, str]] = {
     "mark": ("enable_mark", "allow_mark", "marcado", "Marcar mensajes"),
     "delete": ("enable_delete", "allow_delete", "borrado", "La eliminación"),
     "drafts": ("enable_drafts", "allow_drafts", "borradores", "Los borradores"),
+    # El envío directo es una capacidad aparte: no hereda de `send`. Es
+    # opt-in, y una cuenta que lo tiene permitido puede enviar sin pasar
+    # por la preparación con confirmation_id.
+    "direct_send": (
+        "enable_direct_send",
+        "allow_direct_send",
+        "envío directo",
+        "El envío directo",
+    ),
 }
 
 #: Longitud máxima de un nombre de carpeta. La comparten la validación del

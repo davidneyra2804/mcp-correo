@@ -33,10 +33,17 @@ debe persistir y respaldarse junto con una copia separada de la clave.
 
 ## Permisos y límites
 
-`MCP_ENABLE_SEND`, `MCP_ENABLE_MARK`, `MCP_ENABLE_DELETE` y
-`MCP_ENABLE_DRAFTS` son interruptores globales, apagados por defecto. Solo
-admiten `true`, `false`, `1` y `0`. Los permisos de dominio y cuenta se
-configuran en el panel y no pueden saltarse un interruptor global apagado.
+`MCP_ENABLE_SEND`, `MCP_ENABLE_MARK`, `MCP_ENABLE_DELETE`,
+`MCP_ENABLE_DRAFTS` y `MCP_ENABLE_DIRECT_SEND` son interruptores globales,
+apagados por defecto. Solo admiten `true`, `false`, `1` y `0`. Los permisos
+de dominio y cuenta se configuran en el panel y no pueden saltarse un
+interruptor global apagado.
+
+`MCP_ENABLE_DIRECT_SEND` habilita el envío en una sola llamada, sin
+`confirmation_id` y sin confirmación humana por mensaje. Es para rutinas
+automáticas que ya tienen la autorización de antemano. El permiso por
+cuenta es `allow_direct_send` y es independiente de `allow_send`: una
+cuenta puede tener los dos, o solo uno.
 
 | Variable | Valor por defecto |
 | --- | --- |

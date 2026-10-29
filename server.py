@@ -58,6 +58,7 @@ from store.accounts import (
 )
 from store.crypto import Cipher
 from store.db import Database
+from store.direct_send import DirectSendStore
 from store.store import Store
 from version import __version__
 
@@ -114,6 +115,11 @@ Uso:
 - send_message y delete_message exigen ese confirmation_id.
   No las llames hasta una orden explícita en esta conversación,
   después de ver la vista previa.
+- send_message_direct envía en una sola llamada y NO pide confirmación
+  por mensaje: es para rutinas automáticas que ya tienen la autorización
+  de antemano. Solo existe si el servidor la habilitó para esa cuenta.
+  Lleva idempotency_key: la misma clave con el mismo contenido no
+  vuelve a enviar.
 - Flujo de envío, paso a paso:
   1. prepare_send prepara el mensaje y devuelve la vista previa y el
      confirmation_id. No envía nada.
@@ -453,8 +459,9 @@ def build_mcp(
     service: MailService,
     audit: AuditLog,
     writer: MailboxWriter | None = None,
+    dynamic: bool = False,
 ) -> MCPServer:
-    caps = write_capabilities(service.settings, service.accounts)
+    caps = write_capabilities(service.settings, service.accounts, dynamic=dynamic)
     title = "Correo laboral" if any(caps.values()) else "Correo laboral (solo lectura)"
     mcp = MCPServer(
         "mcp-correo",
@@ -478,7 +485,17 @@ def create_app(
     clock: Any | None = None,
     store: Store | None = None,
     dashboard: DashboardSettings | None = None,
+    database: Database | None = None,
 ) -> tuple[BearerAuth, Runtime]:
+    """La aplicación MCP.
+
+    ``database`` es la base del panel. Si se pasa, el envío directo queda
+    disponible con su registro de idempotencia en esa base, y las tools se
+    registran con el criterio de cuentas dinámicas (el interruptor global
+    manda, el permiso por cuenta se comprueba en cada llamada). Sin base,
+    no hay envío directo: el registro de idempotencia es lo que impide
+    duplicar un correo, y no puede vivir en memoria.
+    """
     source = como_fuente(accounts)
     service = MailService(settings, source, client_factory=client_factory)
     audit_log = audit or AuditLog(
@@ -495,8 +512,9 @@ def create_app(
         ConfirmationStore(settings.confirm_ttl_seconds, clock=clock),
         SendQuota(settings.max_sends_per_day, clock=clock),
         smtp_factory=smtp_factory,
+        direct_store=DirectSendStore(database) if database is not None else None,
     )
-    mcp = build_mcp(service, audit_log, writer)
+    mcp = build_mcp(service, audit_log, writer, dynamic=database is not None)
     security = TransportSecuritySettings(
         enable_dns_rebinding_protection=True,
         allowed_hosts=list(settings.allowed_hosts),
@@ -821,6 +839,91 @@ def _register_write_tools(
 
             return run(action)
 
+    if caps["direct_send"]:
+
+        @mcp.tool(annotations=SEND, structured_output=False)
+        def send_message_direct(
+            to: list[str],
+            subject: str,
+            body: str,
+            idempotency_key: str,
+            account: str = "",
+            cc: list[str] | None = None,
+            bcc: list[str] | None = None,
+            in_reply_to: str | None = None,
+            references: str | None = None,
+            attachments: list[dict[str, str]] | None = None,
+        ) -> dict:
+            """Envía el mensaje en una sola llamada, sin confirmación por mensaje.
+
+            Es el modo para las rutinas automáticas. NO pide una
+            confirmación humana previa: la autorización se dio de antemano
+            al habilitar el envío directo para esta cuenta. Úsalo solo si
+            quien opera el asistente ha pedido exactamente este modo.
+
+            idempotency_key es obligatorio y tiene que ser estable para el
+            mismo envío: por ejemplo, el identificador del pendiente de
+            Trello o de la tarea que lo originó. Si la misma llamada se
+            repite con la misma clave y el mismo contenido, NO se vuelve a
+            enviar: se devuelve el resultado anterior con duplicate=true.
+            Si la clave se reutiliza con otro contenido, la llamada se
+            rechaza.
+
+            El resultado se guarda en la base de datos del servidor, así que
+            el reintento después de un reinicio tampoco duplica el correo.
+
+            Devuelve sent: true solo si el servidor SMTP aceptó el
+            mensaje. También devuelve message_id y sent_uid, con los que
+            se localiza la copia en Enviados sin adivinar la carpeta.
+            """
+
+            def action() -> dict:
+                try:
+                    resultado = writer.send_direct(
+                        account,
+                        idempotency_key,
+                        to,
+                        subject,
+                        body,
+                        cc,
+                        bcc,
+                        in_reply_to,
+                        references,
+                        attachments,
+                    )
+                except MailError:
+                    audit.record(
+                        "send_message_direct",
+                        account,
+                        {
+                            "to": to,
+                            "cc": cc,
+                            "bcc": bcc,
+                            "subject": subject,
+                            "filenames": [
+                                item.get("filename")
+                                for item in (attachments or [])
+                                if isinstance(item, dict)
+                            ],
+                            "rejected": True,
+                        },
+                    )
+                    raise
+                audit.record(
+                    "send_message_direct",
+                    account,
+                    {
+                        "to": resultado.get("to"),
+                        "cc": resultado.get("cc"),
+                        "bcc": resultado.get("bcc"),
+                        "subject": resultado.get("subject"),
+                        "duplicate": resultado.get("duplicate", False),
+                    },
+                )
+                return resultado
+
+            return run(action)
+
     if caps["mark"]:
 
         @mcp.tool(annotations=MARK, structured_output=False)
@@ -1075,7 +1178,13 @@ def _bootstrap() -> BearerAuth:
     audit = AuditLog(settings.audit_log, secrets=[token])
     store, source = _preparar_la_base(dashboard, settings, audit)
     application, runtime = create_app(
-        settings, source, token, audit=audit, store=store, dashboard=dashboard
+        settings,
+        source,
+        token,
+        audit=audit,
+        store=store,
+        dashboard=dashboard,
+        database=store.db,
     )
     global RUNTIME
     RUNTIME = runtime

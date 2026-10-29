@@ -1,6 +1,6 @@
 # mcp-correo
 
-**Un servidor [MCP](https://modelcontextprotocol.io) que da a un asistente de IA acceso a buzones IMAP/SMTP de terceros, sin que el asistente pueda escribir sin que una persona lo autorice.**
+**Un servidor [MCP](https://modelcontextprotocol.io) que da a un asistente de IA acceso a buzones IMAP/SMTP de terceros, sin que el asistente pueda escribir sin que una persona lo autorice.** El envío directo, para rutinas automáticas, es la excepción opt-in.
 
 El asistente habla MCP sobre HTTP. El buzón sigue siendo un servidor IMAP/SMTP
 normal: este proyecto no lo administra, no guarda el correo y no decide quién
@@ -24,6 +24,8 @@ y el cliente solo presenta un Bearer.
   lo que quedó sin responder.
 - Escribe, pero solo tras una confirmación explícita de quien opera el
   asistente: enviar, marcar leído o no leído, borrar, dejar borradores.
+  El envío directo es la excepción: una capacidad opt-in, para rutinas
+  automáticas, con la autorización dada de antemano.
 - Aísla buzones entre sí: `/mcp/<cuenta>` expone uno solo, con su propia
   credencial, y `/mcp/<dominio>` expone las cuentas de un dominio.
 - Gestiona las cuentas desde un panel web, en su propio puerto, y las deja
@@ -35,11 +37,13 @@ y el cliente solo presenta un Bearer.
   envíos.
 - **No guarda el estado del buzón.** No hay caché de mensajes ni réplica local:
   cada operación abre una conexión IMAP, hace su cosa y la cierra. Lo único
-  que **persiste** es el log de auditoría y la configuración de las cuentas.
+  que **persiste** es el log de auditoría, la configuración de las cuentas y
+  las claves de idempotencia del envío directo.
 - No es un servidor de correo. No envía ni recibe por su cuenta.
 - No tiene OAuth. La credencial es un Bearer estático.
 - No escala en horizontal. Los `confirmation_id` y el cupo diario de
-  envíos viven en memoria, así que corre **un solo worker**.
+  envíos viven en memoria, así que corre **un solo worker**. Las claves de
+  idempotencia del envío directo sí viven en la base.
 
 ## Características
 
@@ -54,9 +58,12 @@ y el cliente solo presenta un Bearer.
   opcional por dominio y por cuenta, que se gestionan en el panel. El global
   es el maestro: apagado, nada funciona. Encendido, los dominios lo heredan y
   las cuentas heredan del dominio, salvo que digan lo contrario. Apagado, la
-  tool no se registra.
+  tool no se registra. El envío directo es una capacidad aparte, con su
+  propio interruptor y su propio permiso.
 - Enviar y borrar piden confirmación en dos pasos. El `confirmation_id` dura
   10 minutos, es de un solo uso y queda ligado a la cuenta y a la operación.
+- Envío directo opcional para rutinas automáticas: una sola llamada, sin
+  confirmación por mensaje, con idempotencia por `idempotency_key`.
 - Varias cuentas, en una base de datos, organizadas por dominios. La
   contraseña va cifrada, y la clave no está en la base de datos.
 - Una credencial por cuenta y otra por dominio: cada una abre solo su
@@ -86,6 +93,7 @@ interruptor global está en `true` y alguna cuenta lo permite.
 | `list_threads` | lectura | siempre |
 | `prepare_send` | preparación, no envía | `enable_send` y `allow_send` |
 | `send_message` | escritura | los mismos, más `confirmation_id` |
+| `send_message_direct` | escritura, sin confirmación por mensaje | `enable_direct_send` y `allow_direct_send` |
 | `mark_read` | escritura | `enable_mark` y `allow_mark` |
 | `mark_unread` | escritura | `enable_mark` y `allow_mark` |
 | `prepare_delete` | preparación, no borra | `enable_delete` y `allow_delete` |
@@ -157,6 +165,66 @@ La segunda llamada devuelve `status: "sent"` y `sent: true` solo si el
 servidor SMTP aceptó el mensaje. Si el `confirmation_id` caducó, ya se usó o
 no llegó legible, la respuesta dice que hay que volver a preparar: nunca hay
 que inventar uno.
+
+### El envío directo, para rutinas automáticas
+
+El flujo de dos pasos exige una orden humana por mensaje. Eso no sirve para
+un agente que manda correos como parte de una rutina programada: en
+Paperclip, por ejemplo, el agente llama una vez y la plataforma no le deja
+hacer la segunda llamada.
+
+Para eso está `send_message_direct`: **una sola llamada, sin
+`confirmation_id` y sin confirmación por mensaje**. El mensaje entero va en
+los argumentos, y el servidor lo envía.
+
+El modo es **opt-in** y está separado del envío normal:
+
+| | Interruptor global | Permiso |
+| --- | --- | --- |
+| Envío con confirmación | `MCP_ENABLE_SEND` | `allow_send` |
+| Envío directo | `MCP_ENABLE_DIRECT_SEND` | `allow_direct_send` |
+
+Una cuenta puede tener los dos, o solo uno. El permiso por cuenta (y por
+dominio) se pone en el panel; el interruptor global va en el entorno.
+
+La tool exige una `idempotency_key`: una clave estable por envío (por
+ejemplo, el identificador del pendiente de Trello que lo originó). Si la
+misma llamada se repite con la misma clave y el mismo contenido, **no se
+vuelve a enviar**: se devuelve el resultado anterior con `duplicate: true`.
+Si la clave se reutiliza con otro contenido, la llamada se rechaza.
+
+La clave se guarda en la base de datos, así que sobrevive a un reinicio del
+servidor: un reintento después del reinicio no duplica el correo.
+
+### Cuando el envío falla
+
+Los fallos del SMTP no son todos iguales, y la diferencia importa porque
+reenviar a ciegas puede duplicar el correo:
+
+| Situación | Qué hace el servidor | Qué puede hacer el agente |
+| --- | --- | --- |
+| El SMTP **rechaza** el envío (destinatario inválido, política del servidor) | Libera la clave. | Reintentar con la misma clave. |
+| El SMTP **no responde** (se cayó la conexión) | Deja la clave en estado **incierto**: el correo pudo salir. | No reenviar con esa clave. Comprobar la carpeta de Enviados y, solo si el correo no salió, usar una clave nueva. |
+| La llamada **se repite** con la misma clave y el mismo contenido | No envía. Devuelve el resultado anterior con `duplicate: true`. | Nada: ya está hecho. |
+
+Ejemplo de una llamada, en la ruta de la cuenta:
+
+```json
+{
+  "name": "send_message_direct",
+  "arguments": {
+    "to": ["destinatario@example.com"],
+    "subject": "Pendiente Trello-42",
+    "body": "Detalle del pendiente.",
+    "idempotency_key": "trello-42"
+  }
+}
+```
+
+Esto cambia el modelo de seguridad de forma deliberada: en una cuenta con
+envío directo, **el servidor no exige confirmación por mensaje**. La
+autorización es la que se dio de antemano, y conviene limitarla a la cuenta
+que usa la rutina automática.
 
 ### Por qué el campo se llama `confirmation_id` y no `confirm_token`
 

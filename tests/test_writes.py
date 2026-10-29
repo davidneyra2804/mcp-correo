@@ -840,6 +840,7 @@ def test_fallo_smtp_gasta_el_token_y_no_el_cupo(tmp_path: Path) -> None:
                 {"account": "principal", "confirmation_id": prepared["confirmation_id"]},
             )
         assert "rechazo de prueba" not in str(caught.value)
+        assert "recipients refused" not in str(caught.value)
         assert rig.account.password not in str(caught.value)
         with pytest.raises(ToolError, match="ya usado"):
             await rig.mcp.call_tool(

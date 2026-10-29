@@ -181,6 +181,9 @@ class MailService:
                     "can_mark": account_allows(account, "mark", self.settings),
                     "can_delete": account_allows(account, "delete", self.settings),
                     "can_draft": account_allows(account, "drafts", self.settings),
+                    # El envío directo es aparte del envío con
+                    # confirmation_id: no hereda de can_send.
+                    "can_send_direct": account_allows(account, "direct_send", self.settings),
                     # Dónde guarda el servidor la copia de Enviados y el
                     # borrador. Sin esto, el agente tiene que adivinar el
                     # nombre de la carpeta y acaba buscando en la que no

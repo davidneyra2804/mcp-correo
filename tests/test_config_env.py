@@ -51,6 +51,7 @@ def test_los_valores_por_defecto(monkeypatch: pytest.MonkeyPatch) -> None:
         "MCP_ENABLE_MARK",
         "MCP_ENABLE_DELETE",
         "MCP_ENABLE_DRAFTS",
+        "MCP_ENABLE_DIRECT_SEND",
         "MCP_MAX_RESULTS",
         "MCP_MAX_CHARS",
         "MCP_SMTP_SECURITY",
@@ -64,6 +65,7 @@ def test_los_valores_por_defecto(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.enable_mark is False
     assert settings.enable_delete is False
     assert settings.enable_drafts is False
+    assert settings.enable_direct_send is False
     assert settings.smtp_security == "ssl"
     assert settings.confirm_ttl_seconds == 600
     assert settings.max_sends_per_day == 30
@@ -76,12 +78,20 @@ def test_un_texto_no_enciende_un_interruptor(monkeypatch: pytest.MonkeyPatch) ->
         load_server_settings()
 
 
+def test_un_texto_no_enciende_el_envio_directo(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MCP_ENABLE_DIRECT_SEND", "yes")
+    with pytest.raises(SystemExit, match="true, false, 1 o 0"):
+        load_server_settings()
+
+
 def test_los_interruptores_aceptan_uno_y_cero(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MCP_ENABLE_SEND", "1")
     monkeypatch.setenv("MCP_ENABLE_MARK", "0")
+    monkeypatch.setenv("MCP_ENABLE_DIRECT_SEND", "true")
     settings = load_server_settings()
     assert settings.enable_send is True
     assert settings.enable_mark is False
+    assert settings.enable_direct_send is True
 
 
 def test_un_numero_mal_escrito_no_arranca(monkeypatch: pytest.MonkeyPatch) -> None:

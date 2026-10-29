@@ -96,17 +96,109 @@ def test_la_base_nace_con_el_esquema(store: Store) -> None:
         fila["name"]
         for fila in store.db.connect().execute("SELECT name FROM sqlite_master WHERE type='table'")
     }
-    assert {"domains", "accounts", "meta"} <= tablas
+    assert {"domains", "accounts", "meta", "direct_sends"} <= tablas
 
 
 def test_la_version_del_esquema_queda_registrada(store: Store) -> None:
-    assert store.db.meta("schema_version") == "1"
+    from store.db import SCHEMA_VERSION
+
+    assert store.db.meta("schema_version") == str(SCHEMA_VERSION)
 
 
 def test_preparar_dos_veces_no_rompe_nada(store: Store) -> None:
+    from store.db import SCHEMA_VERSION
+
     store.db.prepare()
     store.db.prepare()
-    assert store.db.meta("schema_version") == "1"
+    assert store.db.meta("schema_version") == str(SCHEMA_VERSION)
+
+
+def test_una_base_de_la_version_anterior_migra(tmp_path: Path) -> None:
+    """La migración desde la versión anterior, con datos dentro.
+
+    Esto es lo que se encuentra un despliegue en marcha: la base del
+    volumen tiene la versión anterior y hay que migrarla sin perder las
+    cuentas. Se arma una base v1 a mano, con sus cuentas, y se prepara.
+    """
+    import sqlite3
+
+    from store.db import META_REVISION, META_VERSION, SCHEMA_VERSION
+
+    ruta = tmp_path / "vieja.db"
+    con = sqlite3.connect(ruta)
+    con.executescript(
+        """
+        CREATE TABLE domains (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            label TEXT NOT NULL DEFAULT '',
+            is_default INTEGER NOT NULL DEFAULT 0,
+            bearer TEXT,
+            allow_send INTEGER,
+            allow_mark INTEGER,
+            allow_delete INTEGER,
+            allow_drafts INTEGER,
+            imap_host TEXT NOT NULL DEFAULT '',
+            imap_port INTEGER,
+            imap_ssl INTEGER,
+            smtp_host TEXT NOT NULL DEFAULT '',
+            smtp_port INTEGER,
+            smtp_security TEXT,
+            created_at TEXT NOT NULL
+        );
+        CREATE TABLE accounts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            domain_id INTEGER NOT NULL REFERENCES domains(id) ON DELETE CASCADE,
+            name TEXT NOT NULL UNIQUE,
+            label TEXT NOT NULL DEFAULT '',
+            sender TEXT NOT NULL DEFAULT '',
+            username TEXT NOT NULL UNIQUE,
+            password BLOB NOT NULL,
+            imap_host TEXT NOT NULL DEFAULT '',
+            imap_port INTEGER,
+            imap_ssl INTEGER,
+            smtp_host TEXT NOT NULL DEFAULT '',
+            smtp_port INTEGER,
+            smtp_security TEXT,
+            drafts_folder TEXT NOT NULL DEFAULT '',
+            sent_folder TEXT NOT NULL DEFAULT '',
+            trash_folder TEXT NOT NULL DEFAULT '',
+            allow_send INTEGER,
+            allow_mark INTEGER,
+            allow_delete INTEGER,
+            allow_drafts INTEGER,
+            bearer TEXT,
+            enabled INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL
+        );
+        CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+        INSERT INTO meta(key, value) VALUES('schema_version', '1');
+        INSERT INTO meta(key, value) VALUES('revision', '7');
+        INSERT INTO domains(name, label, created_at)
+            VALUES('corp.example.com', 'Corporación', '2026-10-01T00:00:00+00:00');
+        INSERT INTO accounts(domain_id, name, username, password, created_at)
+            VALUES(1, 'ada@corp.example.com', 'ada@corp.example.com', X'00',
+                   '2026-10-01T00:00:00+00:00');
+        """
+    )
+    con.commit()
+    con.close()
+
+    base = Database(ruta)
+    assert base.prepare() == SCHEMA_VERSION
+    # La cuenta está y la revisión no se ha perdido.
+    fila = base.connect().execute("SELECT name FROM accounts").fetchone()
+    assert fila["name"] == "ada@corp.example.com"
+    # La migración es una escritura: sube el contador de revisiones, como
+    # cualquier otra. No se reinicia.
+    assert base.revision() == 8
+    # Y la tabla nueva está, con el permiso por cuenta.
+    assert "direct_sends" in {
+        f["name"]
+        for f in base.connect().execute("SELECT name FROM sqlite_master WHERE type='table'")
+    }
+    assert base.meta(META_VERSION) == str(SCHEMA_VERSION)
+    assert base.meta(META_REVISION) == "8"
 
 
 # --- las escrituras -----------------------------------------------------------
@@ -274,6 +366,30 @@ def test_sin_definir_hereda(store: Store) -> None:
     source = DatabaseAccounts(store, store.settings)
     cuenta = next(iter(source.snapshot().accounts.values()))
     assert cuenta.allow_send is None
+
+
+def test_el_envio_directo_tiene_su_propia_cadena_de_permisos(store: Store) -> None:
+    """El permiso directo no se mezcla con el del envío normal."""
+    dominio = _dominio(store)
+    _cuenta(store, dominio, allow_send=True)
+    source = DatabaseAccounts(store, store.settings)
+    cuenta = next(iter(source.snapshot().accounts.values()))
+    assert cuenta.allow_send is True
+    # Sin definir: hereda del dominio, y el dominio no dice nada.
+    assert cuenta.allow_direct_send is None
+
+    store.cambiar_dominio(dominio, {"allow_direct_send": True})
+    source = DatabaseAccounts(store, store.settings)
+    cuenta = next(iter(source.snapshot().accounts.values()))
+    assert cuenta.allow_direct_send is True
+
+    # Y la cuenta puede prohibirlo aunque el dominio lo permita.
+    identificador = store.cuenta_por_nombre("ada@corp.example.com")
+    assert identificador is not None
+    store.cambiar_cuenta(identificador.id, {"allow_direct_send": False})
+    source = DatabaseAccounts(store, store.settings)
+    cuenta = next(iter(source.snapshot().accounts.values()))
+    assert cuenta.allow_direct_send is False
 
 
 # --- la fuente de cuentas ------------------------------------------------------
