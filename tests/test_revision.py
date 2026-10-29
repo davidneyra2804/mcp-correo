@@ -104,7 +104,7 @@ def test_el_fichero_de_referencia_existe() -> None:
 
 
 def test_los_marcadores_del_prompt_coinciden_con_los_de_la_skill() -> None:
-    """Los cuatro marcadores tienen que estar en los dos sitios.
+    """Los marcadores del prompt tienen que estar en los dos sitios.
 
     Si la skill lista un marcador que el prompt no tiene, el prompt se
     lanza con un `{{...}}` sin rellenar. Y al revés.
@@ -118,6 +118,18 @@ def test_los_marcadores_del_prompt_coinciden_con_los_de_la_skill() -> None:
         f"Los marcadores no coinciden: en el prompt {sorted(marcadores_prompt)}, "
         f"en la skill {sorted(marcadores_skill)}"
     )
+
+
+def test_el_prompt_pide_la_salida_de_las_pruebas() -> None:
+    """El revisor no ejecuta nada: el agente principal le pasa la salida.
+
+    Sin esto, el revisor se queda sin forma de saber si los tests pasan,
+    y su informe pierde el control más importante.
+    """
+    prompt = PROMPT.read_text(encoding="utf-8")
+    assert "{{SALIDA_PRUEBAS}}" in prompt, "El prompt no pide la salida de las pruebas"
+    skill = SKILL.read_text(encoding="utf-8")
+    assert "{{SALIDA_PRUEBAS}}" in skill, "La skill no rellena la salida de las pruebas"
 
 
 # --- el agente ------------------------------------------------------------------
@@ -184,6 +196,251 @@ def test_el_agente_que_usa_la_skill_existe() -> None:
     assert (ROOT / ".opencode" / "agents" / f"{nombre}.md").is_file(), (
         f"La skill lanza el agente {nombre!r} y no existe .opencode/agents/{nombre}.md"
     )
+
+
+# --- el presupuesto ------------------------------------------------------------
+
+
+def test_la_revision_tiene_presupuesto_de_tiempo() -> None:
+    """La revisión tiene que declarar su límite de tiempo.
+
+    Las primeras tardaron entre 5 y 66 minutos. El límite no es un
+    detalle: es lo que impide que la revisión se coma el tiempo de quien
+    espera. Y tiene que estar en los tres sitios: el prompt del revisor,
+    el agente y la skill.
+    """
+    skill = _plano(SKILL.read_text(encoding="utf-8"))
+    prompt = _plano(PROMPT.read_text(encoding="utf-8"))
+    agente = _plano(AGENTE.read_text(encoding="utf-8"))
+    for nombre, texto in (("la skill", skill), ("el prompt", prompt), ("el agente", agente)):
+        assert "10 minutos" in texto or "diez minutos" in texto, (
+            f"{nombre} no dice cuál es el presupuesto de tiempo"
+        )
+
+
+def test_el_revisor_no_clona_ni_instala() -> None:
+    """Las tres reglas del presupuesto, en el prompt y en el agente.
+
+    Son las que quitan el tiempo: clonar, instalar un entorno de cero y
+    construir arneses de pruebas era lo que costaba 30 y 60 minutos.
+
+    Se buscan **conjuntos de sinónimos**, no una frase literal: un test
+    que falla por estilo y no por señal no vigila nada.
+    """
+    for nombre, texto in (
+        ("el prompt", _plano(PROMPT.read_text(encoding="utf-8"))),
+        ("el agente", _plano(AGENTE.read_text(encoding="utf-8"))),
+    ):
+        assert any(frase in texto for frase in ("no clones", "no clonas", "no hagas un clon")), (
+            f"{nombre} no prohíbe clonar"
+        )
+        assert any(
+            frase in texto
+            for frase in ("no instales nada", "no instales", "ni instales nada", "no instalar")
+        ), f"{nombre} no prohíbe instalar"
+        assert any(frase in texto for frase in ("no montes arneses", "no montas arneses")), (
+            f"{nombre} no prohíbe los arneses"
+        )
+        assert any(
+            frase in texto
+            for frase in ("no investigues la plataforma", "no investigas la plataforma")
+        ), f"{nombre} no prohíbe investigar la plataforma"
+
+
+def test_las_mutaciones_las_hace_el_agente_principal() -> None:
+    """El revisor no revierte arreglos: eso lo hace el agente principal.
+
+    Revertir el arreglo para comprobar que el test falla es un comando o
+    dos. Pedírselo al revisor era lo que costaba los minutos largos.
+
+    Se comprueba la **regla del presupuesto**, que es la que asigna las
+    mutaciones, y no una frase que aparece en otro contexto: si se
+    borrara la regla, la frase del paso 4 seguiría ahí y el test pasaría
+    sin vigilar lo que dice vigilar.
+    """
+    skill = _plano(SKILL.read_text(encoding="utf-8"))
+    agentes_md = _plano((ROOT / "AGENTS.md").read_text(encoding="utf-8"))
+    assert "el agente principal hace las mutaciones" in skill, (
+        "La skill no dice, en el presupuesto, que las mutaciones las hace el agente principal"
+    )
+    assert "las mutaciones las hace el agente principal" in agentes_md, (
+        "El AGENTS.md no dice que las mutaciones las hace el agente principal"
+    )
+
+
+def test_el_clon_limpio_lo_hace_el_agente_principal() -> None:
+    """El clon limpio tiene dueño, y tiene que llevar el cambio.
+
+    Pedirle al revisor que clone e instale un entorno de cero era lo que
+    costaba una hora. Si nadie lo asume, el control se queda sin dueño y
+    el `AGENTS.md` deja de ser cierto.
+
+    Y el clon tiene que **llevar el cambio**: `git clone` sale del último
+    commit, así que sin el diff el clon valida el código anterior y el
+    control da verde en falso. Con `--index`, además, los ficheros nuevos
+    quedan versionados (si no, el detector de datos ficticios no los
+    mira).
+    """
+    skill = _plano(SKILL.read_text(encoding="utf-8"))
+    agentes_md = _plano((ROOT / "AGENTS.md").read_text(encoding="utf-8"))
+    assert "clon limpio" in skill, "La skill no habla del clon limpio"
+    assert "git clone" in skill, "La skill no dice cómo se hace el clon limpio"
+    assert "git apply --index" in skill, (
+        "La skill no aplica el diff en el clon: el clon validaría el código "
+        "anterior y el control daría verde en falso"
+    )
+    # Y el `AGENTS.md`, que es el fichero que se inyecta en cada sesión.
+    assert "git apply --index" in agentes_md, (
+        "El AGENTS.md no aplica el diff en el clon: es el fichero que se "
+        "inyecta en cada sesión, y ahí el control se pierde"
+    )
+    assert "si el `git apply` falla" in agentes_md or "si el git apply falla" in agentes_md, (
+        "El AGENTS.md no avisa de que un `git apply` fallido invalida el control"
+    )
+    # Y el prompt del revisor no le pide clonar: lo prohíbe (para eso se
+    # lo quitamos). Se comprueba que "clon" **solo** aparece en la
+    # prohibición: una lista de literales negativos se deja reventar con
+    # una frase ("Crea un clon del repositorio...").
+    prompt = _plano(PROMPT.read_text(encoding="utf-8"))
+    assert "no clones" in prompt, "El prompt no le prohíbe clonar al revisor"
+    for mencion in re.findall(r"[^.]*clon[^.]*\.", prompt):
+        prohibicion = any(
+            frase in mencion
+            for frase in ("no clones", "no hagas", "no ejecutes", "no creas", "no clones")
+        )
+        assert prohibicion, f"El prompt menciona el clon fuera de la prohibición: {mencion!r}"
+
+
+def test_las_herramientas_de_escritura_estan_denegadas() -> None:
+    """Ninguna herramienta que escriba puede quedarse sin denegar.
+
+    `edit` cubre edit/write/patch según la plataforma, pero la garantía
+    de que el revisor no toca el árbol no puede depender de cómo se
+    llame la acción: se deniegan una por una.
+    """
+    datos = _frontmatter(AGENTE)
+    reglas = datos.get("permissions") or []
+    for accion in (
+        "edit",
+        "write",
+        "patch",
+        "shell",
+        "subagent",
+        "execute",
+        "webfetch",
+        "websearch",
+    ):
+        que_casan = [r for r in reglas if str(r.get("action")) in {accion, "*"}]
+        assert que_casan, f"La acción {accion!r} no tiene ninguna regla"
+        ultima = que_casan[-1]
+        assert ultima.get("effect") == "deny", (
+            f"La última regla de {accion!r} es {ultima!r}: debería denegar."
+        )
+
+
+def test_el_revisor_no_puede_modificar_el_arbol() -> None:
+    """El revisor no tiene shell: no puede tocar el árbol.
+
+    Ahora trabaja en el árbol del agente principal, así que "no edita" no
+    basta: el `edit` está denegado, pero un `git checkout` desde el shell
+    también lo destroza.
+
+    Y una allowlist de comandos **no es defendible**: cualquier
+    subcomando con un argumento de escritura la cuela (`ruff check
+    --fix`, `git diff --output=`, `pytest --junit-xml=`). Por eso el shell
+    está denegado entero, y el agente principal le pasa la salida de las
+    pruebas ya hecha.
+    """
+    datos = _frontmatter(AGENTE)
+    reglas = datos.get("permissions") or []
+    shell = [r for r in reglas if str(r.get("action")) in {"shell", "*"}]
+    assert shell, "El shell no tiene reglas: el revisor podría hacer lo que sea"
+    # Ninguna regla permite el shell, ni de forma general ni por excepción.
+    for regla in shell:
+        if str(regla.get("action")) == "shell":
+            assert regla.get("effect") == "deny", (
+                f"Hay una excepción de shell: {regla!r}. El revisor podría "
+                "escribir en el árbol con un argumento de salida."
+            )
+        else:
+            # Una regla comodín vale para el shell: tiene que ser deny.
+            assert str(regla.get("action")) == "*" and regla.get("effect") == "deny", (
+                f"La regla comodín {regla!r} deja el shell abierto."
+            )
+
+
+def test_el_revisor_no_puede_lanzar_subagentes() -> None:
+    """Un subagente tiene sus propios permisos: sería la puerta de atrás.
+
+    La política base permite todo, y los agentes de serie (como `general`)
+    niegan el lanzamiento de subagentes. El `reviewer` tiene que hacerlo
+    también: si no, podría lanzar un agente con `edit` permitido y
+    saltarse la denegación.
+    """
+    datos = _frontmatter(AGENTE)
+    reglas = datos.get("permissions") or []
+    de_subagente = [r for r in reglas if str(r.get("action")) in {"subagent", "*"}]
+    assert de_subagente, "El revisor puede lanzar subagentes: es la puerta de atrás"
+    ultima = de_subagente[-1]
+    assert ultima.get("effect") == "deny", f"La regla de subagent es {ultima!r}: debería denegar."
+
+
+def test_el_codigo_mode_esta_denegado() -> None:
+    """Code Mode da acceso a herramientas propias: también queda fuera.
+
+    Con `execute` permitido, el revisor podría usar las tools que solo se
+    alcanzan por ahí (por ejemplo, una que borra un worktree), y todo lo
+    que la denegación de `edit` y `shell` protegía.
+    """
+    datos = _frontmatter(AGENTE)
+    reglas = datos.get("permissions") or []
+    de_execute = [r for r in reglas if str(r.get("action")) in {"execute", "*"}]
+    assert de_execute, "Code Mode no está denegado: es una puerta de atrás"
+    ultima = de_execute[-1]
+    assert ultima.get("effect") == "deny", f"La regla de execute es {ultima!r}: debería denegar."
+
+
+def test_el_revisor_no_lee_los_ficheros_de_secretos() -> None:
+    """El revisor no tiene shell: no puede saltarse el `ask` de los secretos.
+
+    La plataforma pone `read *.env` en `ask` para que nadie lea los
+    secretos por delante. La acción `shell` es otra, y no hereda esa
+    protección: un `cat *` dejaría leer el `.env` sin preguntar. Por eso
+    no hay shell, y el revisor usa la herramienta `read`, que sí lo pide.
+    """
+    datos = _frontmatter(AGENTE)
+    reglas = datos.get("permissions") or []
+    excepciones = [
+        r for r in reglas if str(r.get("action")) == "shell" and r.get("effect") == "allow"
+    ]
+    assert not excepciones, (
+        f"Hay una excepción de shell: {excepciones!r}. Podría leer secretos "
+        "saltándose el `ask` de .env."
+    )
+    # Y la lectura de secretos queda a la política de la plataforma, que
+    # el revisor no puede esquivar: no tiene shell. Lo que no puede haber
+    # es una regla que **permita** leer saltándose el `ask`.
+    assert not any(str(r.get("action")) == "read" and r.get("effect") == "allow" for r in reglas), (
+        "Hay una regla que permite leer saltándose el `ask` de la plataforma"
+    )
+
+
+def test_la_repeticion_no_es_automatica() -> None:
+    """Una revisión, no un ciclo.
+
+    Repetir sin criterio es lo que se come el tiempo: el agente decide,
+    según si el arreglo toca el comportamiento o es un detalle.
+
+    Lo comprueban la skill y el `AGENTS.md`, que son los dos que la
+    cuentan. El prompt y el agente no la mencionan: son el Aviso, no el
+    que decide.
+    """
+    skill = _plano(SKILL.read_text(encoding="utf-8"))
+    agentes_md = _plano((ROOT / "AGENTS.md").read_text(encoding="utf-8"))
+    assert "no es un ciclo" in skill, "La skill no dice que una revisión no es un ciclo"
+    assert "decides" in skill or "decide" in skill, "La skill no deja decidir al agente"
+    assert "no es un ciclo" in agentes_md, "El AGENTS.md no dice que no es un ciclo"
+    assert "repite" in agentes_md, "El AGENTS.md no menciona la repetición"
 
 
 # --- coherencia con el AGENTS.md ------------------------------------------------

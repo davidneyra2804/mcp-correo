@@ -181,13 +181,29 @@ Sin red y sin buzón real: los tests llevan un doble de IMAP y otro de SMTP.
 comportan igual, y la diferencia hay que buscarla:
 
 ```bash
+# El diff se regenera DESPUÉS de los arreglos: el clon tiene que validar
+# el código que se va a fusionar, no el anterior.
+git add -A && git diff --cached > /tmp/revision.diff
+set -e
 TMP=$(mktemp -d); git clone . "$TMP/ci"; cd "$TMP/ci"
+# Si el cambio no está commiteado, aplícalo (con --index).
+# Si ya está commiteado, el clon lo lleva: no apliques nada.
+git apply --index /tmp/revision.diff
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt -r requirements-dev.txt
 .venv/bin/ruff format --check . && .venv/bin/ruff check .
 .venv/bin/pytest
 PYTHONSAFEPATH=1 .venv/bin/pytest    # el entorno de Actions
 ```
+
+**El clon tiene que llevar el cambio.** `git clone` sale del último
+commit, así que si el cambio no está commiteado, el clon sale con el
+código anterior y el control da verde en falso. Por eso se aplica el
+diff dentro del clon, con `--index` para que los ficheros nuevos queden
+versionados. Si el cambio **ya** está commiteado, el clon lo lleva y no
+se aplica nada. Y el `set -e` no es opcional: **si el `git apply`
+falla, el control no vale**, porque los tests se correrían contra el
+código anterior y pasarían.
 
 **`ruff format --check`, no `ruff format`.** Para comprobar, es
 `--check`: `ruff format` reescribe los ficheros y luego `ruff check`
@@ -197,8 +213,7 @@ clon ya no sería lo que se iba a revisar.
 **El clon tiene que ser un clon de verdad, con su `.git`.** Una copia con
 `rsync` o `cp` no sirve: el detector de datos ficticios usa `git ls-files`,
 y sin repositorio falla con `returned non-zero exit status 128` en vez de
-comprobar nada. Si hay cambios sin commitear, hay que commitearlos antes:
-el clon sale del último commit, no del directorio de trabajo.
+comprobar nada.
 
 Tres cosas que el clon limpio pilla y el directorio de trabajo no:
 
@@ -544,20 +559,46 @@ propio fichero ya pedía**. El fallo no fue no saber la regla: fue no
 ejecutarla. Un revisor con contexto fresco y una lista de comprobaciones
 es una red que atrapa eso.
 
-La skill hace cinco cosas:
+La skill hace siete cosas:
 
 1. Prepara el diff completo (`git add -A` y `git diff --cached`), para
    que el revisor vea también los ficheros nuevos.
-2. Lanza un subagente revisor, con contexto limpio, que trabaja en un
-   **clon aparte** y comprueba el cambio ejecutando, no opinando.
-3. Obliga a **verificar los hallazgos** antes de arreglarlos.
-4. Repite la revisión si el arreglo cambió el código.
-5. Obliga a **informar**: qué se revisó, qué era real y qué quedó sin
+2. **Corre los tests y el lint**, y le pasa la salida al revisor.
+3. Lanza un subagente revisor, con contexto limpio, que **lee y razona**
+   sobre el diff y esa salida. No ejecuta nada.
+4. Obliga a **verificar los hallazgos** antes de arreglarlos.
+5. Asigna al agente principal las dos comprobaciones caras: el **clon
+   limpio** y que **el test nuevo falle sin el arreglo**.
+6. Deja decidir al agente principal si **repite**: una revisión no es un
+   ciclo.
+7. Obliga a **informar**: qué se revisó, qué era real y qué quedó sin
    comprobar.
 
+**La revisión tiene presupuesto: diez minutos.** Las primeras tardaron
+entre 5 y 66 minutos, y el tiempo no se iba en revisar, se iba en
+**verificar de más**: clonar, instalar un entorno de cero, construir
+arneses de pruebas de mutación e investigar la plataforma. Eso lo hace
+mejor el agente principal, en segundos. De ahí las tres reglas, que no son
+negociables: el revisor no clona ni instala nada, las mutaciones las hace
+el agente principal, y el revisor no investiga la plataforma. En la skill,
+la regla es "**El agente principal hace las mutaciones**".
+
+Y como el revisor trabaja en el árbol, **no puede escribir en los ficheros
+del proyecto**: no tiene shell, y la edición, la escritura, el parcheo, el
+lanzamiento de subagentes y Code Mode están denegados. Una allowlist de
+comandos **no es defendible**: cualquier subcomando con un argumento de
+escritura la cuela (`ruff check --fix`, `git diff --output=`, `pytest
+--junit-xml=`...). Por eso el revisor no ejecuta nada: el agente principal
+le pasa la salida de las pruebas.
+
+(Las tools propias de OpenCode —crear un worktree, mover la sesión— no
+pasan por esas denegaciones. No tocan los ficheros del proyecto, pero
+conviene saberlo.)
+
 Lo que **no** es la revisión: no sustituye a las pruebas, no arregla lo
-que no sabe, y no es independiente del modelo (si el revisor usa el mismo
-modelo, comparte los puntos ciegos). Es una red, no una garantía.
+que no sabe, no es independiente del modelo (si el revisor usa el mismo
+modelo, comparte los puntos ciegos) y no es una auditoría exhaustiva. Es
+una red, no una garantía.
 
 ## Antes de fusionar a `main`
 

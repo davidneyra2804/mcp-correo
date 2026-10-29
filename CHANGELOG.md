@@ -7,6 +7,28 @@ el versionado es [SemVer](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+### Changed
+
+- **La revisión tiene presupuesto: diez minutos.** Las primeras
+  revisiones tardaron entre 5 y 66 minutos, y el tiempo no se iba en
+  revisar: se iba en **verificar de más** (clonar, instalar un entorno de
+  cero, construir arneses de pruebas de mutación e investigar la
+  plataforma). Ahora:
+
+  - el revisor **no ejecuta nada**: el agente principal le pasa la salida
+    de las pruebas y el lint, y él lee, razona y reporta. No tiene shell,
+    la edición y el lanzamiento de subagentes están denegados, y Code
+    Mode también. Una allowlist de comandos **no es defendible**: cualquier
+    subcomando con un argumento de escritura la cuela (`ruff check
+    --fix`, `git diff --output=`, `pytest --junit-xml=`);
+  - el **clon limpio** y la comprobación de que **el test nuevo falla sin
+    el arreglo** los hace el agente principal, que los tiene en segundos;
+  - la **repetición** es a criterio del agente principal: una revisión, no
+    un ciclo.
+
+  Y el prompt del revisor se ha recortado: se busca lo grave, no se hace
+  una auditoría exhaustiva.
+
 ## [2.1.0] — 2026-10-29
 
 El **envío directo** para las rutinas automáticas, y la herramienta que
