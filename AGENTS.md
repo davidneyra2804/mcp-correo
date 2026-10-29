@@ -184,10 +184,15 @@ comportan igual, y la diferencia hay que buscarla:
 TMP=$(mktemp -d); git clone . "$TMP/ci"; cd "$TMP/ci"
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt -r requirements-dev.txt
-.venv/bin/ruff format . && .venv/bin/ruff check .
+.venv/bin/ruff format --check . && .venv/bin/ruff check .
 .venv/bin/pytest
 PYTHONSAFEPATH=1 .venv/bin/pytest    # el entorno de Actions
 ```
+
+**`ruff format --check`, no `ruff format`.** Para comprobar, es
+`--check`: `ruff format` reescribe los ficheros y luego `ruff check`
+pasa siempre, así que una violación de formato pasaría desapercibida y el
+clon ya no sería lo que se iba a revisar.
 
 **El clon tiene que ser un clon de verdad, con su `.git`.** Una copia con
 `rsync` o `cp` no sirve: el detector de datos ficticios usa `git ls-files`,
@@ -208,6 +213,12 @@ Tres cosas que el clon limpio pilla y el directorio de trabajo no:
 Y una regla de orden: **`ruff format` antes que `ruff check`**, y los dos
 después de cada edición. Un cambio puede dejar líneas largas y hacer fallar
 el linter donde antes pasaba.
+
+Ojo con la diferencia: `ruff format` **reescribe**, `ruff format --check`
+**comprueba**. Mientras se edita, se reescribe (que es lo que quiere: que
+el código quede formateado). Para **verificar** que algo está formateado,
+el comando es `--check`: con `format` primero, el linter pasa siempre y
+el problema ya no está.
 
 Antes de dar algo por bueno:
 
@@ -513,8 +524,38 @@ re-ejecutar la etiqueta (`git tag -f` y `git push --force origin vX.Y.Z`), que
 vuelve a publicar la imagen. Por eso el cuerpo se compone en el workflow y no
 a mano.
 
+## La revisión
+
+**Al terminar una implementación, antes del commit y del push, hay que
+pasar la skill `revision`.** No es opcional, y no es "si te acuerdas": la
+regla está aquí porque este fichero se inyecta en cada sesión. Lo único
+que se salta es lo que no toca comportamiento (un texto, un comentario).
+
+Por qué existe: el error del `ALTER TABLE` que faltó en la migración, y
+el clon limpio que no se llegó a hacer, eran **validaciones que este
+propio fichero ya pedía**. El fallo no fue no saber la regla: fue no
+ejecutarla. Un revisor con contexto fresco y una lista de comprobaciones
+es una red que atrapa eso.
+
+La skill hace cinco cosas:
+
+1. Prepara el diff completo (`git add -A` y `git diff --cached`), para
+   que el revisor vea también los ficheros nuevos.
+2. Lanza un subagente revisor, con contexto limpio, que trabaja en un
+   **clon aparte** y comprueba el cambio ejecutando, no opinando.
+3. Obliga a **verificar los hallazgos** antes de arreglarlos.
+4. Repite la revisión si el arreglo cambió el código.
+5. Obliga a **informar**: qué se revisó, qué era real y qué quedó sin
+   comprobar.
+
+Lo que **no** es la revisión: no sustituye a las pruebas, no arregla lo
+que no sabe, y no es independiente del modelo (si el revisor usa el mismo
+modelo, comparte los puntos ciegos). Es una red, no una garantía.
+
 ## Antes de fusionar a `main`
 
+- [ ] La revisión de la skill `revision` está pasada, y sus hallazgos
+      reales están corregidos.
 - [ ] Los tests pasan en local **y** en un clon limpio.
 - [ ] La imagen arranca: `docker compose -f docker-compose.yml -f docker-compose.local.yml up --build`.
 - [ ] La prueba de humo pasa: `python herramientas/humo.py`.

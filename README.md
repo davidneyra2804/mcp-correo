@@ -634,6 +634,8 @@ herramientas/             # scripts de apoyo, como la prueba de humo
 deploy/                   # systemd, nginx, Caddy opcional y logrotate
 docs/                     # configuración, despliegue, panel y checklist
 tests/                    # pytest con IMAP y SMTP simulados, sin red
+.opencode/skills/         # la revisión automática antes de dar algo por bueno
+.opencode/agents/         # el agente revisor, sin permiso de editar
 AGENTS.md                 # directrices para quien trabaje en el proyecto
 ```
 

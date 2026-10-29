@@ -50,7 +50,7 @@ el versionado es [SemVer](https://semver.org/lang/es/).
   es **idempotente y no depende del número de versión**: se mira la tabla
   real. Eso repara también las bases que quedaron a medias (marcadas como
   la versión nueva pero sin la columna), que es lo que pasó en el
-  despliegue queitersalió el error.
+  despliegue que falló.
 
   **Despliegue:** actualiza la imagen y reinicia. La reparación es
   automática al arrancar: no hay que tocar la base a mano y las cuentas no
@@ -69,7 +69,39 @@ el versionado es [SemVer](https://semver.org/lang/es/).
 
 ### Documentación
 
-- **Las lecciones de esta versión quedan en el `AGENTS.md`.** Siete trampas
+- **La revisión automática antes de dar algo por bueno.** La skill
+  `revision` (`.opencode/skills/revision/`) lanza un subagente revisor
+  con contexto limpio al terminar una implementación, antes del commit y
+  del push. El revisor es el agente `reviewer`
+  (`.opencode/agents/reviewer.md`), que **no puede usar las tools de
+  edición**: la garantía no depende de que el prompt se lo pida. (Puede
+  usar el shell, que necesita para clonar y correr tests, pero trabaja
+  siempre en un clon desechable.)
+
+  El revisor trabaja en un clon aparte, comprueba el cambio
+  **ejecutando** (tests, clon limpio con dependencias de verdad, y que el
+  test nuevo falla sin el arreglo) y contrasta el cambio con la lista de
+  trampas del `AGENTS.md`. El agente principal verifica sus hallazgos
+  antes de arreglarlos, y repite la revisión si el arreglo cambió el
+  código.
+
+  La regla que la hace obligatoria está en el `AGENTS.md`, que se inyecta
+  en cada sesión: no depende de que el modelo "se acuerde".
+
+  Existe porque las dos últimas implementaciones se dieron por buenas sin
+  ejecutar validaciones que el propio `AGENTS.md` ya pedía: una migración
+  sin `ALTER TABLE` y un clon limpio sin hacer. La skill se corrigió
+  cuatro veces con la ayuda del revisor antes de estar lista: encontró,
+  entre otros, que el detector de datos ficticios pasaba en falso sobre
+  los ficheros nuevos sin versionar.
+
+- **`tests/test_revision.py`.** La skill se vigila a sí misma: que el
+  frontmatter sea válido, que los marcadores del prompt coincidan con los
+  que lista la skill, que el fichero de referencia exista, que el agente
+  no pueda editar, que la skill y el `AGENTS.md` no se contradigan y que
+  no se cuelen palabras en otro idioma.
+
+- **Las lecciones de esta versión quedan en el `AGENTS.md`.** Seis trampas
   nuevas, cada una con su historia: el nombre de un campo puede hacer que el
   agente nunca reciba el valor; la respuesta de una tool es texto con JSON
   dentro y también se redacta; el cliente cachea el catálogo de las tools;
