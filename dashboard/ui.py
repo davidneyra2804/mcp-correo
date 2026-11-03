@@ -23,13 +23,17 @@ _LOGIN = """<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Panel de mcp-correo</title>
+<title>VYR Mail Hub · Panel</title>
+<meta name="description" content="Acceso al panel de cuentas y dominios de VYR Mail Hub.">
+<meta name="theme-color" content="#0c1017">
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/static/favicon.svg">
 <link rel="stylesheet" href="/static/panel.css">
 </head>
 <body class="login">
 <main class="acceso">
   <section class="acceso-historia" aria-label="Correo conectado">
-    <div class="acceso-marca"><span aria-hidden="true">✉</span> mcp-correo</div>
+    <div class="acceso-marca"><span aria-hidden="true">✉</span> VYR Mail Hub</div>
     <div class="sobre" aria-hidden="true">✉</div>
     <p class="eyebrow">MENOS CONFIGURACIÓN. MÁS CONEXIÓN.</p>
     <h1>Tu correo.<br>Tu asistente.<br>Un mismo espacio.</h1>
