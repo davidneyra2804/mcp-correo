@@ -461,14 +461,27 @@ button.menu {
 
 /* El cuerpo del acordeón: la lista de cuentas. Vive fuera del `details`
  * para que las acciones del dominio se vean con el dominio cerrado, así
- * que se muestra con `:has()` cuando el `details` está abierto. */
+ * que se muestra cuando el `details` está abierto.
+ *
+ * Se usa `@supports` para no depender de `:has()`: si el navegador no lo
+ * entiende, la regla no se aplica y el cuerpo se muestra siempre. Es un
+ * panel de administración, no una aplicación pública: es preferible
+ * mostrar las cuentas de más a no mostrar ninguna. El JavaScript marca
+ * además `data-abierto` en el bloque, para poder saber el estado desde
+ * el DOM sin depender del selector. */
 .dominio-cuerpo {
-  display: none;
+  display: block;
   padding: 0.35rem 1.1rem 1rem;
 }
 
-.dominio-bloque:has(> details.dominio[open]) > .dominio-cuerpo {
-  display: block;
+@supports selector(:has(*)) {
+  .dominio-cuerpo {
+    display: none;
+  }
+
+  .dominio-bloque:has(> details.dominio[open]) > .dominio-cuerpo {
+    display: block;
+  }
 }
 
 .dominio-vacio {

@@ -162,6 +162,13 @@ function pintarDominio(dominio) {
   caja.className = "dominio";
   caja.open = Boolean(dominio.default);
 
+  /* El estado del acordeón, marcado también como atributo: así se puede
+   * saber desde el DOM y desde CSS sin depender de `:has()`. */
+  contenedor.dataset.abierto = caja.open ? "true" : "false";
+  caja.addEventListener("toggle", () => {
+    contenedor.dataset.abierto = caja.open ? "true" : "false";
+  });
+
   const cabecera = document.createElement("summary");
   cabecera.className = "dominio-cabecera";
   cabecera.append(pintarCabeceraDominio(dominio));
@@ -471,8 +478,17 @@ function menuMasOpciones(opciones) {
         cerrar(true);
         break;
       case "Tab":
-        /* El Tab sale del menú: se cierra y el foco sigue su camino. */
+        /* El Tab sale del menú. Como las entradas están fuera del orden
+         * secuencial (tabindex="-1"), el navegador no calcula solo a
+         * dónde va el foco: hay que carriedlo a mano.
+         *
+         * El destino se calcula desde el disparador, que es el control
+         * que estaba en el orden de Tab antes de abrir el menú. Así el
+         * foco sigue su camino natural: el siguiente control con Tab, el
+         * anterior con Mayús+Tab. */
+        evento.preventDefault();
         cerrar();
+        moverFocoDesde(disparador, evento.shiftKey ? -1 : 1);
         break;
       default:
         break;
@@ -492,6 +508,11 @@ function elementoMenu(opcion) {
   b.className = opcion.peligro ? "peligro" : "";
   b.textContent = opcion.texto;
   b.setAttribute("role", "menuitem");
+  /* Las entradas de un menú ARIA quedan fuera del orden secuencial de
+   * Tab: se enfocan por código, con las flechas. Si no, el Tab se
+   * saltaría entrada por entrada dentro del menú en vez de salir de
+   * él. */
+  b.tabIndex = -1;
   if (opcion.ayuda) {
     b.title = opcion.ayuda;
     b.setAttribute("aria-label", `${opcion.texto}. ${opcion.ayuda}`);
@@ -555,6 +576,41 @@ function menuGlobal() {
       }
     }
   });
+}
+
+/* --- el foco ------------------------------------------------------------------ */
+
+/* Los controles que pueden recibir foco, en el orden en que los recorre
+ * el Tab. Se calculan a mano porque, dentro de un menú ARIA, las entradas
+ * están fuera de ese orden (`tabindex="-1"`) y el navegador no sabe a
+ * dónde tiene que ir el foco cuando sale del menú. */
+const SELECTOR_FOCO =
+  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), ' +
+  'textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+function controlesEnFoco() {
+  return [...document.querySelectorAll(SELECTOR_FOCO)].filter((el) => {
+    /* Lo que no se ve, no recibe el foco. */
+    if (el.hidden) return false;
+    if (el.closest("[hidden]")) return false;
+    if (!el.getClientRects().length) return false;
+    return el.getAttribute("aria-hidden") !== "true";
+  });
+}
+
+/* Lleva el foco al control siguiente (o al anterior) al que `origen`,
+ * como si el usuario hubiera pulsado Tab. Si no hay ninguno, el foco se
+ * queda donde está. */
+function moverFocoDesde(origen, sentido) {
+  const controles = controlesEnFoco();
+  const indice = controles.indexOf(origen);
+  if (indice === -1) {
+    /* El origen no está en la lista (puede que se haya repintado): el
+     * foco se queda donde está, que es lo menos raro. */
+    return;
+  }
+  const destino = controles[indice + sentido];
+  if (destino) destino.focus();
 }
 
 /* --- acciones ---------------------------------------------------------------- */

@@ -39,10 +39,19 @@ el versionado es [SemVer](https://semver.org/lang/es/).
   - El menú "⋯" es un patrón de *menu button* del WAI-ARIA: `aria-haspopup="menu"`,
     `role="menu"` y `role="menuitem"`, navegación con flechas, Inicio y Fin,
     y Escape que cierra y devuelve el foco al disparador.
+  - Las entradas del menú llevan `tabindex="-1"`: quedan fuera del orden
+    secuencial de Tab, como manda el patrón. El Tab y el Mayús+Tab
+    abandonan el menú, lo cierran y llevan el foco al control siguiente o
+    anterior de la página. Sin eso, el destino dependía de cómo
+    recalculara el navegador el foco al ocultarse la lista.
   - `aria-expanded` se restablece al elegir una opción, no solo al cerrar
     con Escape.
   - Los listeners de `document` son uno solo para todos los menús, en vez
     de uno por menú: si no, se acumulaban con cada repintado.
+  - La lista de cuentas no depende de `:has()`: si el navegador no lo
+    entiende, se muestra siempre. Es preferible mostrar cuentas de más a
+    no mostrar ninguna. El estado del acordeón va además en el atributo
+    `data-abierto` del bloque.
 
 - **La revisión tiene presupuesto: diez minutos.** Las primeras
   revisiones tardaron entre 5 y 66 minutos, y el tiempo no se iba en
