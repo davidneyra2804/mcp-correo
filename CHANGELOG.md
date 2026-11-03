@@ -44,6 +44,11 @@ el versionado es [SemVer](https://semver.org/lang/es/).
     abandonan el menú, lo cierran y llevan el foco al control siguiente o
     anterior de la página. Sin eso, el destino dependía de cómo
     recalculara el navegador el foco al ocultarse la lista.
+  - El cálculo de ese destino incluye los `summary`, que son controles
+    nativos del acordeón y reciben el foco con el Tab: si no, al salir de
+    un menú se saltaba la cabecera del dominio siguiente. Y si no hay
+    ningún control en esa dirección, el foco vuelve al disparador, en
+    vez de quedarse en la entrada del menú que se acaba de ocultar.
   - `aria-expanded` se restablece al elegir una opción, no solo al cerrar
     con Escape.
   - Los listeners de `document` son uno solo para todos los menús, en vez

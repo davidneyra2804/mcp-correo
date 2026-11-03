@@ -583,10 +583,14 @@ function menuGlobal() {
 /* Los controles que pueden recibir foco, en el orden en que los recorre
  * el Tab. Se calculan a mano porque, dentro de un menú ARIA, las entradas
  * están fuera de ese orden (`tabindex="-1"`) y el navegador no sabe a
- * dónde tiene que ir el foco cuando sale del menú. */
+ * dónde tiene que ir el foco cuando sale del menú.
+ *
+ * Los `summary` van incluidos: son controles nativos del acordeón y
+ * reciben el foco con el Tab. Si no estuvieran, al salir de un menú se
+ * saltaría la cabecera del dominio siguiente. */
 const SELECTOR_FOCO =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), ' +
-  'textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+  'textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"])';
 
 function controlesEnFoco() {
   return [...document.querySelectorAll(SELECTOR_FOCO)].filter((el) => {
@@ -599,8 +603,12 @@ function controlesEnFoco() {
 }
 
 /* Lleva el foco al control siguiente (o al anterior) al que `origen`,
- * como si el usuario hubiera pulsado Tab. Si no hay ninguno, el foco se
- * queda donde está. */
+ * como si el usuario hubiera pulsado Tab.
+ *
+ * Si no hay ningún control en esa dirección, el foco se queda en el
+ * propio `origen`: es el control que estaba en el orden de Tab, así que
+ * es donde pertenece. Dejarlo en la entrada del menú que se acaba de
+ * ocultar lo dejaría en un elemento invisible. */
 function moverFocoDesde(origen, sentido) {
   const controles = controlesEnFoco();
   const indice = controles.indexOf(origen);
@@ -610,7 +618,13 @@ function moverFocoDesde(origen, sentido) {
     return;
   }
   const destino = controles[indice + sentido];
-  if (destino) destino.focus();
+  if (destino) {
+    destino.focus();
+    return;
+  }
+  /* No hay a dónde ir: el foco vuelve al disparador, que es el control
+   * que estaba en el orden de tabulación. */
+  if (document.contains(origen)) origen.focus();
 }
 
 /* --- acciones ---------------------------------------------------------------- */
