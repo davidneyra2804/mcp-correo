@@ -9,6 +9,55 @@ el versionado es [SemVer](https://semver.org/lang/es/).
 
 ### Changed
 
+- **El panel de administración se rediseña.** Solo la interfaz: ni la API,
+  ni el backend, ni las rutas `/mcp/...` cambian.
+
+  - **Modo oscuro** por defecto, con acento azul y buen contraste.
+  - **Acordeón por dominio**: solo el principal viene abierto, y el que se
+    abre es el que la API marca como principal, no uno fijado en el
+    frontend. La cabecera lleva el nombre, el número de cuentas y la
+    etiqueta "Principal" / "Secundario".
+  - **Acciones reorganizadas**: las del día a día a la vista; las que
+    rompen algo (renovar la clave, desactivar, eliminar) en un menú "⋯"
+    con separador, aviso de que no se pueden deshacer y estilo de peligro.
+  - **Confirmaciones propias** en vez de `confirm()`: título por acción,
+    Escape cancela y el clic fuera cancela. Al cerrarse, el foco vuelve al
+    control que lo abrió.
+  - **Textos claros** y una explicación en cada acción (`title` y
+    `aria-label`).
+  - **Título y favicon** propios: "VYR Mail Hub · Panel".
+  - **Responsive**: comprobado a 390px, sin desbordamiento horizontal.
+
+  Y con el patrón de accesibilidad que pidió la revisión del CTO:
+
+  - El disparador del acordeón (`summary`) solo lleva texto. Los botones y
+    el menú están en su propia fila, fuera: dentro serían controles
+    anidados en el disparador.
+  - Esa fila está fuera del `details`, así que se ve con el dominio
+    cerrado. Meterla dentro la escondía, y entonces no se podía añadir
+    una cuenta a un dominio que estuviera cerrado.
+  - El menú "⋯" es un patrón de *menu button* del WAI-ARIA: `aria-haspopup="menu"`,
+    `role="menu"` y `role="menuitem"`, navegación con flechas, Inicio y Fin,
+    y Escape que cierra y devuelve el foco al disparador.
+  - Las entradas del menú llevan `tabindex="-1"`: quedan fuera del orden
+    secuencial de Tab, como manda el patrón. El Tab y el Mayús+Tab
+    abandonan el menú, lo cierran y llevan el foco al control siguiente o
+    anterior de la página. Sin eso, el destino dependía de cómo
+    recalculara el navegador el foco al ocultarse la lista.
+  - El cálculo de ese destino incluye los `summary`, que son controles
+    nativos del acordeón y reciben el foco con el Tab: si no, al salir de
+    un menú se saltaba la cabecera del dominio siguiente. Y si no hay
+    ningún control en esa dirección, el foco vuelve al disparador, en
+    vez de quedarse en la entrada del menú que se acaba de ocultar.
+  - `aria-expanded` se restablece al elegir una opción, no solo al cerrar
+    con Escape.
+  - Los listeners de `document` son uno solo para todos los menús, en vez
+    de uno por menú: si no, se acumulaban con cada repintado.
+  - La lista de cuentas no depende de `:has()`: si el navegador no lo
+    entiende, se muestra siempre. Es preferible mostrar cuentas de más a
+    no mostrar ninguna. El estado del acordeón va además en el atributo
+    `data-abierto` del bloque.
+
 - **La revisión tiene presupuesto: diez minutos.** Las primeras
   revisiones tardaron entre 5 y 66 minutos, y el tiempo no se iba en
   revisar: se iba en **verificar de más** (clonar, instalar un entorno de

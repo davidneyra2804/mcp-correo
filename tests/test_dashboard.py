@@ -109,7 +109,7 @@ def test_el_token_correcto_abre_sesion(cliente: TestClient) -> None:
     _entrar(cliente)
     respuesta = cliente.get("/")
     assert respuesta.status_code == 200
-    assert "Panel de mcp-correo" in respuesta.text
+    assert "VYR Mail Hub · Panel" in respuesta.text
 
 
 def test_la_sesion_cierra(cliente: TestClient) -> None:

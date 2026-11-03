@@ -3,26 +3,55 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Panel de mcp-correo</title>
+<title>VYR Mail Hub · Panel</title>
+<meta name="description" content="Panel de administración de cuentas y dominios de correo de VYR Mail Hub.">
+<meta name="theme-color" content="#0c1017">
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/static/favicon.svg">
 <link rel="stylesheet" href="/static/panel.css">
 </head>
 <body>
 <header>
-  <div><span class="marca">✉</span><strong>Correo</strong><span class="submarca"> / Panel de administración</span></div>
+  <div class="titulo-marca">
+    <span class="marca" aria-hidden="true">✉</span>
+    <strong>VYR Mail Hub</strong>
+    <span class="submarca">· Panel de administración</span>
+  </div>
   <form method="post" action="/logout" class="salir">
-    <button type="submit">Salir</button>
+    <button type="submit" class="secundario" title="Cerrar la sesión de este panel">Salir</button>
   </form>
 </header>
 
 <main>
-  <section class="bienvenida"><div><span class="eyebrow">TU ESPACIO DE CORREO</span><h1>Todo tu correo, en un solo lugar.</h1><p>Organiza tus cuentas y decide cómo se conecta tu asistente.</p></div><div class="ilustracion" aria-hidden="true">✉</div></section>
-  <section class="acciones">
-    <div><h2>Tus dominios y cuentas</h2><p class="pista">Cada dominio agrupa las cuentas de una organización.</p></div>
-    <div class="fila"><button id="nuevo-dominio" class="secundario">+ Añadir dominio</button><button id="nueva-cuenta" class="primario">+ Añadir cuenta</button></div>
+  <section class="bienvenida">
+    <div>
+      <span class="eyebrow">Tu espacio de correo</span>
+      <h1>Todo tu correo, en un solo lugar.</h1>
+      <p>Organiza tus cuentas y decide cómo se conecta tu asistente.</p>
+    </div>
+    <div class="ilustracion" aria-hidden="true">✉</div>
   </section>
+
+  <section class="acciones">
+    <div>
+      <h2>Tus dominios y cuentas</h2>
+      <p class="pista">Cada dominio agrupa las cuentas de una organización.</p>
+    </div>
+    <div class="fila">
+      <button id="nuevo-dominio" class="secundario" type="button"
+        title="Añade un dominio nuevo: el grupo que reúne tus cuentas de ese mismo correo.">
+        + Añadir dominio
+      </button>
+      <button id="nueva-cuenta" class="primario" type="button"
+        title="Añade una cuenta de correo a uno de tus dominios.">
+        + Añadir cuenta
+      </button>
+    </div>
+  </section>
+
   <p id="destacado" class="estado-general"></p>
 
-  <p id="aviso" class="aviso" hidden></p>
+  <p id="aviso" class="aviso" role="status" aria-live="polite" hidden></p>
 
   <div id="dominios"></div>
 
@@ -31,14 +60,15 @@
   </p>
 </main>
 
-<dialog id="editor">
+<dialog id="editor" aria-labelledby="titulo">
   <form method="dialog" id="formulario">
     <h2 id="titulo">Cuenta</h2>
     <div id="campos"></div>
-    <p id="resultado" class="resultado"></p>
+    <p id="resultado" class="resultado" role="status" aria-live="polite"></p>
     <menu>
       <button value="cancelar" type="submit" class="secundario">Cancelar</button>
-      <button id="probar" type="button" class="secundario">Comprobar conexión</button>
+      <button id="probar" type="button" class="secundario"
+        title="Comprueba la conexión con el servidor de correo sin guardar nada.">Comprobar conexión</button>
       <button value="guardar" type="submit" class="primario">Guardar cambios</button>
     </menu>
   </form>

@@ -54,6 +54,9 @@ PERMITIDOS = frozenset(
         "python.org",
         "pypi.org",
         "docker.io",
+        # El espacio de nombres de SVG. No es un dominio al que se conecte
+        # el proyecto: lo exige el formato del fichero del favicon.
+        "www.w3.org",
         "localhost",
         "ip6.me",
     }
