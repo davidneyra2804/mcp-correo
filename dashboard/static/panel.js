@@ -64,6 +64,11 @@ function conAyuda(explicacion, etiqueta = "¿") {
  * traducir con el resto de la interfaz.
  */
 function confirmar({ titulo, mensaje, confirmar: textoConfirmar, peligro = true }) {
+  /* El control que abrió el diálogo. Al cerrarse, el foco vuelve a él:
+   * si no, quien está con el teclado se queda perdido en el cuerpo de la
+   * página. */
+  const abridor = document.activeElement;
+
   return new Promise((resolver) => {
     const dialogo = document.createElement("dialog");
     dialogo.className = "confirmacion";
@@ -92,6 +97,9 @@ function confirmar({ titulo, mensaje, confirmar: textoConfirmar, peligro = true 
     const cerrar = (respuesta) => {
       dialogo.close();
       dialogo.remove();
+      /* El foco vuelve a donde estaba. Si ese control ya no existe (la
+       * lista se ha repintado mientras tanto), no se hace nada. */
+      if (abridor && document.contains(abridor)) abridor.focus();
       resolver(respuesta);
     };
 
@@ -132,14 +140,37 @@ function pintar() {
 function pintarDominio(dominio) {
   /* El acordeón: un `details` con su `summary`. El principal viene abierto
    * porque es el que se usa a diario; los demás, cerrados.
+   *
+   * El `summary` solo lleva texto: los botones y el menú van fuera, en una
+   * fila propia. Meter controles interactivos dentro del disparador del
+   * acordeón confunde al teclado y a los lectores de pantalla, porque el
+   * `summary` ya es un control.
+   *
+   * El `details` contiene solo el `summary`. Las acciones y la lista de
+   * cuentas son hermanas suyas, dentro del bloque: así las acciones se
+   * ven aunque el dominio esté cerrado (dentro del `details` no se verían)
+   * y el orden de lectura es cabecera, acciones y cuentas.
+   *
+   * La lista de cuentas se muestra con `:has()` cuando el `details` está
+   * abierto. La alternativa —meter el cuerpo dentro del `details`— es lo
+   * que escondía las acciones con el dominio cerrado.
    */
+  const contenedor = document.createElement("div");
+  contenedor.className = "dominio-bloque";
+
   const caja = document.createElement("details");
   caja.className = "dominio";
   caja.open = Boolean(dominio.default);
 
   const cabecera = document.createElement("summary");
+  cabecera.className = "dominio-cabecera";
   cabecera.append(pintarCabeceraDominio(dominio));
   caja.append(cabecera);
+
+  /* Las acciones del dominio, fuera del disparador y fuera del `details`. */
+  const acciones = document.createElement("div");
+  acciones.className = "dominio-acciones";
+  acciones.append(pintarAccionesDominio(dominio));
 
   const cuerpo = document.createElement("div");
   cuerpo.className = "dominio-cuerpo";
@@ -155,11 +186,12 @@ function pintarDominio(dominio) {
     }
   }
 
-  caja.append(cuerpo);
-  return caja;
+  contenedor.append(caja, acciones, cuerpo);
+  return contenedor;
 }
 
 function pintarCabeceraDominio(dominio) {
+  /* Solo texto: esto va dentro del `summary`, que ya es un control. */
   const fragmento = document.createDocumentFragment();
 
   const chevron = document.createElement("span");
@@ -182,15 +214,19 @@ function pintarCabeceraDominio(dominio) {
     etiqueta.title = "Se accede a sus cuentas por su propia ruta.";
   }
 
-  const contador = document.createElement("span");
-  contador.className = "cuenta-cuento";
-
   const numero = document.createElement("span");
   numero.className = "numero";
   const cuentas = dominio.accounts.length;
   numero.textContent = cuentas === 1 ? "1 cuenta" : `${cuentas} cuentas`;
 
-  const acciones = document.createElement("span");
+  fragmento.append(chevron, nombre, etiqueta, numero);
+  return fragmento;
+}
+
+/* Las acciones del dominio. Van fuera del `summary`, en su propia fila:
+ * dentro, serían controles anidados en el disparador del acordeón. */
+function pintarAccionesDominio(dominio) {
+  const acciones = document.createElement("div");
   acciones.className = "cuenta-acciones";
   acciones.append(
     boton("Añadir cuenta", () => editarCuenta(null, dominio.id), {
@@ -226,10 +262,7 @@ function pintarCabeceraDominio(dominio) {
       },
     ])
   );
-
-  contador.append(numero, acciones);
-  fragmento.append(chevron, nombre, etiqueta, contador);
-  return fragmento;
+  return acciones;
 }
 
 function pintarCuenta(cuenta) {
@@ -309,6 +342,15 @@ function boton(textoBoton, accion, opciones = {}) {
 
 /* El menú de "más opciones": lo que no es la acción del día a día. Las
  * acciones que rompen algo van al final, separadas por una línea.
+ *
+ * Sigue el patrón de "menu button" del WAI-ARIA: el disparador es un
+ * botón con `aria-haspopup="menu"`, la lista es un `role="menu"` y sus
+ * entradas son `role="menuitem"`. Se navega con las flechas, con Inicio
+ * y Fin, y Escape cierra y devuelve el foco al disparador.
+ *
+ * Los listeners de `document` son uno solo, compartidos por todos los
+ * menús (ver `menuGlobal`), en vez de uno por menú: si no, se acumulan
+ * con cada repintado de la lista.
  */
 function menuMasOpciones(opciones) {
   const envoltorio = document.createElement("div");
@@ -319,12 +361,14 @@ function menuMasOpciones(opciones) {
   disparador.className = "menu";
   disparador.textContent = "⋯";
   disparador.setAttribute("aria-label", "Más opciones");
-  disparador.setAttribute("aria-haspopup", "true");
+  disparador.setAttribute("aria-haspopup", "menu");
   disparador.setAttribute("aria-expanded", "false");
   disparador.title = "Más opciones: renovar la clave, desactivar o eliminar.";
 
   const lista = document.createElement("ul");
   lista.className = "menu-lista";
+  lista.setAttribute("role", "menu");
+  lista.setAttribute("aria-label", "Más opciones");
   lista.hidden = true;
 
   const visibles = opciones.filter((opcion) => !opcion.oculto);
@@ -348,60 +392,169 @@ function menuMasOpciones(opciones) {
     const aviso = document.createElement("li");
     aviso.className = "menu-pista";
     aviso.textContent = "Estas acciones no se pueden deshacer.";
+    aviso.setAttribute("role", "presentation");
     lista.append(aviso);
 
     for (const opcion of peligrosos) lista.append(elementoMenu(opcion));
   }
 
-  const cerrar = () => {
+  /* El disparador lleva el `aria-controls` de su lista, para que se
+   * pueda relacionar una con otra. */
+  const idLista = `menu-${++numerosMenu}`;
+  lista.id = idLista;
+  disparador.setAttribute("aria-controls", idLista);
+
+  const cerrar = (devolverFoco = false) => {
     lista.hidden = true;
     disparador.setAttribute("aria-expanded", "false");
+    if (devolverFoco) disparador.focus();
   };
+
+  const abrir = () => {
+    lista.hidden = false;
+    disparador.setAttribute("aria-expanded", "true");
+    /* Al abrir, el foco va a la primera entrada: el menú se usa con el
+     * teclado desde el principio. */
+    const primera = lista.querySelector('[role="menuitem"]');
+    if (primera) primera.focus();
+  };
+
+  const entradas = () =>
+    [...lista.querySelectorAll('[role="menuitem"]')].filter((e) => !e.disabled);
 
   disparador.addEventListener("click", (evento) => {
     evento.stopPropagation();
-    const abierto = !lista.hidden;
-    if (abierto) {
-      cerrar();
+    if (lista.hidden) {
+      abrir();
       return;
     }
-    lista.hidden = false;
-    disparador.setAttribute("aria-expanded", "true");
+    cerrar();
   });
 
-  // Fuera del menú, se cierra. En el teclado también.
-  document.addEventListener("click", (evento) => {
-    if (!envoltorio.contains(evento.target)) cerrar();
+  disparador.addEventListener("keydown", (evento) => {
+    /* Con el menú cerrado, las flechas lo abren directamente. */
+    if (evento.key === "ArrowDown" || evento.key === "ArrowUp") {
+      evento.preventDefault();
+      abrir();
+      const todas = entradas();
+      const destino = evento.key === "ArrowDown" ? todas[0] : todas[todas.length - 1];
+      if (destino) destino.focus();
+    }
   });
-  document.addEventListener("keydown", (evento) => {
-    if (evento.key === "Escape" && !lista.hidden) {
-      cerrar();
-      disparador.focus();
+
+  /* La navegación con teclado dentro del menú. */
+  lista.addEventListener("keydown", (evento) => {
+    const todas = entradas();
+    if (!todas.length) return;
+    const actual = todas.indexOf(document.activeElement);
+
+    switch (evento.key) {
+      case "ArrowDown":
+        evento.preventDefault();
+        todas[(actual + 1) % todas.length].focus();
+        break;
+      case "ArrowUp":
+        evento.preventDefault();
+        todas[(actual - 1 + todas.length) % todas.length].focus();
+        break;
+      case "Home":
+        evento.preventDefault();
+        todas[0].focus();
+        break;
+      case "End":
+        evento.preventDefault();
+        todas[todas.length - 1].focus();
+        break;
+      case "Escape":
+        evento.preventDefault();
+        evento.stopPropagation();
+        cerrar(true);
+        break;
+      case "Tab":
+        /* El Tab sale del menú: se cierra y el foco sigue su camino. */
+        cerrar();
+        break;
+      default:
+        break;
     }
   });
 
   envoltorio.append(disparador, lista);
+  envoltorio.dataset.menu = "1";
   return envoltorio;
 }
 
 function elementoMenu(opcion) {
   const item = document.createElement("li");
+  item.setAttribute("role", "none");
   const b = document.createElement("button");
   b.type = "button";
   b.className = opcion.peligro ? "peligro" : "";
   b.textContent = opcion.texto;
+  b.setAttribute("role", "menuitem");
   if (opcion.ayuda) {
     b.title = opcion.ayuda;
     b.setAttribute("aria-label", `${opcion.texto}. ${opcion.ayuda}`);
   }
   b.addEventListener("click", () => {
-    // El menú se cierra antes de la acción: si la acción abre un
-    // diálogo, el menú no se queda detrás.
-    b.closest(".menu-lista").hidden = true;
+    /* El menú se cierra antes de la acción: si la acción abre un
+     * diálogo, el menú no se queda detrás.
+     *
+     * Al cerrar se devuelve el foco al disparador. Si no, la entrada del
+     * menú pierde el foco al ocultarse y el diálogo que abra la acción
+     * no tendría a quién devolverlo. */
+    const lista = b.closest(".menu-lista");
+    const disparador = lista?.parentElement?.querySelector(".menu");
+    if (lista) lista.hidden = true;
+    /* `aria-expanded` vuelve a "false": el menú ya no está abierto. */
+    if (disparador) {
+      disparador.setAttribute("aria-expanded", "false");
+      disparador.focus();
+    }
     opcion.accion();
   });
   item.append(b);
   return item;
+}
+
+/* Un único par de listeners para todos los menús, en vez de uno por
+ * menú. Se instalan una vez y atienden a cualquier menú que exista en el
+ * documento, así que repintar la lista no deja listeners acumulados.
+ */
+let numerosMenu = 0;
+let menuGlobalInstalado = false;
+
+function menuGlobal() {
+  if (menuGlobalInstalado) return;
+  menuGlobalInstalado = true;
+
+  /* Un clic fuera de un menú lo cierra. */
+  document.addEventListener("click", (evento) => {
+    for (const envoltorio of document.querySelectorAll(".menu-envoltorio")) {
+      if (envoltorio.contains(evento.target)) continue;
+      const lista = envoltorio.querySelector(".menu-lista");
+      const disparador = envoltorio.querySelector(".menu");
+      if (lista && !lista.hidden) {
+        lista.hidden = true;
+        if (disparador) disparador.setAttribute("aria-expanded", "false");
+      }
+    }
+  });
+
+  /* Escape cierra el menú abierto y devuelve el foco al disparador. */
+  document.addEventListener("keydown", (evento) => {
+    if (evento.key !== "Escape") return;
+    for (const envoltorio of document.querySelectorAll(".menu-envoltorio")) {
+      const lista = envoltorio.querySelector(".menu-lista");
+      if (!lista || lista.hidden) continue;
+      lista.hidden = true;
+      const disparador = envoltorio.querySelector(".menu");
+      if (disparador) {
+        disparador.setAttribute("aria-expanded", "false");
+        disparador.focus();
+      }
+    }
+  });
 }
 
 /* --- acciones ---------------------------------------------------------------- */
@@ -708,6 +861,9 @@ function editarCuenta(cuenta, dominioId) {
 }
 
 /* --- arranque ---------------------------------------------------------------- */
+
+/* Los listeners globales de los menús se instalan una sola vez. */
+menuGlobal();
 
 $(".salir").addEventListener("submit", async (evento) => {
   evento.preventDefault();

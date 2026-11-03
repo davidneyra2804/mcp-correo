@@ -345,10 +345,20 @@ button.menu {
   gap: 0.75rem;
 }
 
-.dominio {
+/* El bloque de un dominio: la cabecera (con su disparador), las acciones
+ * y la lista de cuentas. Son tres hermanos, así que las acciones se ven
+ * aunque el dominio esté cerrado. */
+.dominio-bloque {
   background: var(--fondo-1);
   border: 1px solid var(--borde);
   border-radius: var(--radio);
+  overflow: hidden;
+}
+
+.dominio {
+  background: var(--fondo-1);
+  border: 0;
+  border-radius: 0;
   overflow: hidden;
 }
 
@@ -372,6 +382,36 @@ button.menu {
 
 .dominio[open] > summary {
   border-bottom: 1px solid var(--borde-suave);
+}
+
+/* Las acciones del dominio: su propia fila, fuera del `summary`. El
+ * disparador del acordeón solo lleva texto, así que aquí no hay
+ * controles anidados. */
+.dominio-acciones {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.55rem 1.1rem 0.6rem 3.15rem;
+  border-bottom: 1px solid var(--borde-suave);
+}
+
+/* Con el acordeón abierto, las acciones quedan entre la cabecera y las
+ * cuentas: el borde inferior lo pone la cabecera. */
+.dominio-bloque:has(> details.dominio[open]) > .dominio-acciones {
+  border-bottom: 0;
+  border-top: 1px solid var(--borde-suave);
+}
+
+.dominio-acciones .cuenta-acciones {
+  margin-left: 0;
+}
+
+/* El número de cuentas, en la fila de identidad. */
+.dominio-cabecera .numero {
+  margin-left: auto;
+  font-size: 0.8rem;
+  color: var(--texto-3);
+  white-space: nowrap;
 }
 
 /* La flechita del acordeón. */
@@ -419,24 +459,16 @@ button.menu {
   color: var(--texto-3);
 }
 
-/* El número de cuentas. */
-.cuenta-cuento {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  flex: none;
-}
-
-.cuenta-cuento .numero {
-  font-size: 0.8rem;
-  color: var(--texto-3);
-  white-space: nowrap;
-}
-
-/* El cuerpo del acordeón. */
+/* El cuerpo del acordeón: la lista de cuentas. Vive fuera del `details`
+ * para que las acciones del dominio se vean con el dominio cerrado, así
+ * que se muestra con `:has()` cuando el `details` está abierto. */
 .dominio-cuerpo {
+  display: none;
   padding: 0.35rem 1.1rem 1rem;
+}
+
+.dominio-bloque:has(> details.dominio[open]) > .dominio-cuerpo {
+  display: block;
 }
 
 .dominio-vacio {
@@ -1005,27 +1037,21 @@ body.login main.acceso {
     padding: 0.85rem 0.9rem;
   }
 
-  /* El contador y las acciones van a su propia línea: en una pantalla
-   * estrecha no caben al lado del nombre del dominio.
-   *
-   * El margen izquierdo deja el contador alineado con el nombre, pero
-   * el ancho tiene que descontarlo: si no, la caja se sale de la
-   * pantalla por la derecha. */
-  .cuenta-cuento {
+  /* El contador de cuentas va a su propia línea: en una pantalla estrecha
+   * no cabe al lado del nombre del dominio. */
+  .dominio-cabecera .numero {
     order: 3;
     width: calc(100% - 2.2rem);
     margin-left: 2.2rem;
+  }
+
+  /* Las acciones del dominio, en su propia fila y sin salirse. */
+  .dominio-acciones {
+    padding: 0.5rem 0.9rem 0.6rem 0.9rem;
     flex-wrap: wrap;
-    row-gap: 0.5rem;
   }
 
-  .cuenta-cuento .numero {
-    width: 100%;
-  }
-
-  /* Las acciones del dominio: la de "más opciones" al borde, sin salirse. */
-  .cuenta-cuento .cuenta-acciones {
-    margin-left: 0;
+  .dominio-acciones .cuenta-acciones {
     width: 100%;
     justify-content: flex-start;
   }
