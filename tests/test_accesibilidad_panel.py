@@ -12,6 +12,28 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 JS = (ROOT / "dashboard" / "static" / "panel.js").read_text(encoding="utf-8")
+CSS = (ROOT / "dashboard" / "static" / "panel.css").read_text(encoding="utf-8")
+
+
+def test_las_acciones_del_dialogo_no_se_desalinean_con_el_boton_de_opciones() -> None:
+    """El margen del menú del diálogo no puede alcanzar al botón «…».
+
+    La clase `.menu` la usan dos cosas: el `<menu>` nativo del diálogo de
+    edición y el botón de opciones que el JavaScript crea en cada
+    dominio. Si la regla del diálogo sigue siendo `.menu`, su margen
+    superior desalinea ese botón con «Añadir» y «Editar».
+    """
+    assert "dialog menu {" in CSS
+    assert "\n.menu {" not in CSS
+
+
+def test_el_boton_de_opciones_muestra_un_glifo_visible() -> None:
+    """El botón «…» no puede quedarse vacío si la fuente no tiene el glifo.
+
+    El punto medio matemático (`⋯`) no está en todas las fuentes de
+    interfaz; la elipsis horizontal (`…`) sí.
+    """
+    assert 'disparador.textContent = "…"' in JS
 
 
 def test_el_summary_del_acordeon_no_lleva_controles_interactivos() -> None:

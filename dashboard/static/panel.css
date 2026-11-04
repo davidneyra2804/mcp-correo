@@ -804,7 +804,10 @@ dialog h2 {
   align-items: center;
 }
 
-.menu {
+/* El menú HTML del diálogo de edición. No seleccionar `.menu`: esa clase
+ * pertenece también al botón ⋯ de cada dominio y el margen superior del
+ * diálogo desalineaba ese botón con Añadir y Editar. */
+dialog menu {
   display: flex;
   gap: 0.5rem;
   justify-content: flex-end;
