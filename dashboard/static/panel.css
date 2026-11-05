@@ -329,6 +329,27 @@ button.menu {
   color: #ffe0a3;
 }
 
+/* Los avisos de copiar: el de éxito y el de fallo. El valor que hay que
+ * copiar a mano se muestra en monoespaciado, para que se distinga del
+ * texto del aviso. */
+.aviso.aviso-ok {
+  border-color: #4ade8055;
+  background: var(--ok-suave);
+  color: #a7f3c4;
+}
+
+.aviso.aviso-error {
+  border-color: var(--peligro-borde);
+  background: var(--peligro-suave);
+  color: #ffb4b4;
+}
+
+/* El valor a copiar va separado del texto del aviso. */
+.aviso.aviso-valor {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 0.85rem;
+}
+
 .error {
   color: var(--peligro);
 }
@@ -570,6 +591,47 @@ button.menu {
   flex: none;
   margin-left: auto;
   min-width: 0;
+}
+
+/* Los botones de copiar: URL del MCP y token de la cuenta.
+ *
+ * Solo usan variables del tema, así que se ven igual en el modo claro y
+ * en el oscuro. El botón copiado cambia de color con la misma semántica
+ * que el resto del panel: el verde es lo que ha ido bien. */
+button.copiar {
+  background: transparent;
+  border-color: var(--acento-borde);
+  color: var(--acento);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+button.copiar:hover {
+  background: var(--acento-suave);
+  border-color: var(--acento);
+  color: var(--acento);
+}
+
+button.copiar.copiado {
+  border-color: #4ade8055;
+  background: var(--ok-suave);
+  color: #86efac;
+}
+
+button.copiar.fallido {
+  border-color: var(--peligro-borde);
+  background: var(--peligro-suave);
+  color: var(--peligro);
+}
+
+/* El textarea del copia de emergencia: se usa un momento y se quita.
+ * No puede verse ni cogerse el foco. */
+.copiar-area {
+  position: fixed;
+  top: -1000px;
+  left: -1000px;
+  opacity: 0;
+  pointer-events: none;
 }
 
 /* --- el menú de "más opciones" ------------------------------------------------ */
@@ -1089,10 +1151,20 @@ body.login main.acceso {
     margin-left: 0;
     width: 100%;
     padding-top: 0.3rem;
+    /* Con los botones de copiar, las acciones no caben en una línea: se
+     * reparten en varias y ninguno se queda fuera de la pantalla. */
+    flex-wrap: wrap;
   }
 
   .cuenta-acciones button {
     flex: 0 1 auto;
+  }
+
+  /* Los botones de copiar ocupan la fila entera en un móvil: su texto es
+   * más largo que el de «Editar» y metidos en la misma línea se leen mal. */
+  button.copiar {
+    flex: 1 1 100%;
+    text-align: center;
   }
 
   .menu-lista {

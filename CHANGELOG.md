@@ -7,6 +7,37 @@ el versionado es [SemVer](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+### Added
+
+- **Botones para copiar la URL del MCP y el token de cada cuenta.** En el
+  panel, cada cuenta tiene dos botones nuevos:
+
+  - **Copiar URL** pone en el portapapeles la URL completa de esa cuenta,
+    con el host público (`https://mcp.example.com/mcp/ada@corp.example.com`),
+    lista para pegar en un cliente MCP.
+  - **Copiar token** pone el token de acceso **vigente** de esa cuenta. No
+    lo renueva: la operación es una lectura, y el token copiado sigue
+    valiendo en la ruta de la cuenta.
+
+  Los dos botones son `<button>` de verdad, con `aria-label` y `title`,
+  funcionan con el teclado y tienen foco visible. Al copiar, el botón
+  confirma con «Copiado» y el aviso del panel (que es `role="status"`)
+  lo anuncia a los lectores de pantalla. Si el portapapeles no está
+  disponible, el panel **no** dice «Copiado»: avisa y enseña el valor
+  para copiarlo a mano.
+
+  La URL y el token se piden a una ruta nueva del panel,
+  `GET /api/accounts/{id}/credenciales`. **El modelo de seguridad no
+  cambia**: el token ya se guardaba en la base en claro y ahora se lee.
+  La contraseña sigue cifrada con `MCP_DASHBOARD_KEY`, y la lista de
+  dominios sigue sin enseñar ningún token: solo dice si cada cuenta
+  tiene credencial. La lectura queda auditada
+  (`dashboard_read_account_token`), con el valor tapado.
+
+  El contrato de las rutas del MCP pasa a un módulo propio (`rutas.py`),
+  que usan el servidor y el panel: así la URL que se copia no puede
+  desviarse de la que el servidor acepta.
+
 ### Changed
 
 - **El panel de administración se rediseña.** Solo la interfaz: ni la API,

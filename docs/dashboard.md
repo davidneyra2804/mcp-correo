@@ -109,6 +109,13 @@ con el token y se abre una sesión.
 - Los **dominios** se listan como secciones, cada una con sus cuentas.
 - Cada cuenta muestra su **ruta**, tal y como se escribe:
   `/mcp/ada@corp.example.com`. Es lo que se le pasa a un cliente.
+- Cada cuenta tiene dos botones de copiar: **Copiar URL** pone en el
+  portapapeles la URL completa del MCP de esa cuenta, con el host
+  público (`https://mcp.example.com/mcp/ada@corp.example.com`), y
+  **Copiar token** pone el token de acceso vigente de esa cuenta.
+  Ninguno de los dos renueva el token: copiarlo no cambia nada. Si el
+  portapapeles no está disponible, el panel avisa y enseña el valor
+  para copiarlo a mano.
 - Un botón marca el dominio como **por defecto**: es el que abre `/mcp`.
   Solo uno puede estarlo.
 - El botón **Token** genera uno nuevo para una cuenta o un dominio, y lo
@@ -119,6 +126,28 @@ con el token y se abre una sesión.
   buzón.
 - Una cuenta se puede **desactivar** sin borrarla: deja de exponerse, y
   sus datos siguen ahí.
+
+### Copiar la URL y el token
+
+Los dos botones de copiar resuelven el paso que más molesta al configurar
+un cliente MCP: tener que leer la ruta de la pantalla, acordarse del host
+público y buscar el token en algún sitio.
+
+- **Copiar URL** devuelve la URL completa: esquema, host público y la
+  ruta de la cuenta. El host es el de `MCP_PUBLIC_HOST`, no el de
+  escucha: el cliente habla con el servidor por fuera del túnel.
+- **Copiar token** devuelve el token **vigente** de esa cuenta, el mismo
+  que abre su ruta. No lo renueva: la operación es una lectura.
+
+El token de una cuenta se guarda en la base en claro, igual que estaba
+antes de este botón: no se ha cambiado el modelo de seguridad, solo se
+lee lo que ya había. La contraseña sí sigue cifrada con
+`MCP_DASHBOARD_KEY`.
+
+Lo que el panel **no** hace es enseñar los tokens de golpe: la lista de
+dominios solo dice si cada cuenta tiene credencial o no. El token de una
+cuenta se pide cuando alguien lo copia, y la petición queda en la
+auditoría (`dashboard_read_account_token`), con el valor tapado.
 
 ### Probar antes de guardar
 

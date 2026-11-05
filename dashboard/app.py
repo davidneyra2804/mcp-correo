@@ -166,6 +166,7 @@ def crear_app(
             Route("/api/accounts/{id}", api.cambiar_cuenta, methods=["PATCH"]),
             Route("/api/accounts/{id}", api.borrar_cuenta, methods=["DELETE"]),
             Route("/api/accounts/{id}/token", api.token_cuenta, methods=["POST"]),
+            Route("/api/accounts/{id}/credenciales", api.credenciales_cuenta, methods=["GET"]),
             Route("/api/test/imap", api.probar_conexion_imap, methods=["POST"]),
             Route("/api/test/smtp", api.probar_conexion_smtp, methods=["POST"]),
             Route("/health", salud, methods=["GET"]),

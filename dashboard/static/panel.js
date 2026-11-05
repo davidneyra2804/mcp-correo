@@ -298,6 +298,12 @@ function pintarCuenta(cuenta) {
   const acciones = document.createElement("div");
   acciones.className = "cuenta-acciones";
   acciones.append(
+    botonCopiar(cuenta, "url", "Copiar URL", {
+      ayuda: "Copia la URL completa del MCP de esta cuenta, lista para pegar en un cliente MCP.",
+    }),
+    botonCopiar(cuenta, "token", "Copiar token", {
+      ayuda: "Copia el token de acceso vigente de esta cuenta, sin renovarlo.",
+    }),
     boton("Editar", () => editarCuenta(cuenta, cuenta.domain_id), {
       ayuda: "Cambia los datos de la cuenta: su contraseña, su nombre o sus permisos.",
     }),
@@ -333,6 +339,142 @@ function pintarCuenta(cuenta) {
 
   fila.append(info, acciones);
   return fila;
+}
+
+/* El botón de copiar: URL del MCP o token de la cuenta.
+ *
+ * No se pinta el valor en la página. Se pide a la API cuando quien lo
+ * copia lo pide, y se pone en el portapapeles. El botón dice qué va a
+ * copiar y, cuando lo ha copiado, lo confirma y vuelve a su estado.
+ *
+ * El token no se renueva: la ruta de credenciales devuelve el vigente.
+ */
+function botonCopiar(cuenta, que, textoBoton, opciones = {}) {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "copiar";
+  b.dataset.copiar = que;
+  b.dataset.cuenta = cuenta.id;
+  b.textContent = textoBoton;
+  if (opciones.ayuda) {
+    b.title = opciones.ayuda;
+    b.setAttribute("aria-label", `${textoBoton}. ${opciones.ayuda}`);
+  }
+  b.addEventListener("click", () => copiar(cuenta, que, b, textoBoton));
+  return b;
+}
+
+/* Copia un valor al portapapeles y lo confirma.
+ *
+ * Hay tres pasos, y el orden importa: primero se copia, después se
+ * confirma. Si el portapapeles falla, no se dice «Copiado»: se avisa de
+ * que no se pudo y se enseña el valor para copiarlo a mano. Decir
+ * «Copiado» cuando no se copió es peor que no decir nada.
+ */
+async function copiar(cuenta, que, boton, textoBoton) {
+  const estado = estadoDeCopia(boton);
+  try {
+    const cuerpo = await pedir(`/api/accounts/${cuenta.id}/credenciales`);
+    if (!cuerpo.ok) {
+      estado.error(cuerpo.error || "No se pudo leer la credencial de la cuenta.");
+      return;
+    }
+    const valor = que === "url" ? cuerpo.url : cuerpo.token;
+    if (!valor) {
+      estado.error(
+        que === "url"
+          ? "Esta cuenta todavía no tiene URL de MCP."
+          : "Esta cuenta no tiene token propio: usa el de su dominio."
+      );
+      return;
+    }
+    const copiado = await escribirEnElPortapapeles(valor);
+    if (copiado) {
+      estado.ok();
+      return;
+    }
+    /* El portapapeles no estaba disponible: se enseña el valor para
+     * copiarlo a mano, que es la alternativa que pedía el requisito. */
+    estado.manual(valor);
+  } catch (error) {
+    estado.error("No se pudo copiar. Copia el valor a mano.");
+  }
+}
+
+/* Escribe en el portapapeles y dice si pudo.
+ *
+ * `navigator.clipboard` necesita un contexto seguro y permiso. Cuando
+ * no está, se intenta el camino viejo con un textarea oculto y
+ * `execCommand`. Si tampoco, se devuelve false y quien llama avisa.
+ */
+async function escribirEnElPortapapeles(valor) {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(valor);
+      return true;
+    }
+  } catch (error) {
+    /* Sigue al camino de abajo: el permiso puede estar denegado. */
+  }
+  try {
+    const area = document.createElement("textarea");
+    area.value = valor;
+    area.setAttribute("readonly", "");
+    area.className = "copiar-area";
+    document.body.append(area);
+    area.select();
+    area.setSelectionRange(0, valor.length);
+    const ok = document.execCommand("copy");
+    area.remove();
+    return ok;
+  } catch (error) {
+    return false;
+  }
+}
+
+/* El estado del botón de copiar: lo normal, la confirmación y el fallo.
+ *
+ * El aviso del panel (#aviso) es el que anuncia el resultado a los lectores
+ * de pantalla, porque es `role="status"`. El botón cambia su texto para
+ * quien ve la pantalla, y el aviso explica lo que pasó.
+ */
+function estadoDeCopia(boton) {
+  const original = boton.textContent;
+  const aviso = $("#aviso");
+  const ocultar = () => {
+    boton.textContent = original;
+    boton.classList.remove("copiado", "fallido");
+    boton.removeAttribute("aria-live");
+  };
+  return {
+    ok() {
+      boton.textContent = "Copiado";
+      boton.classList.add("copiado");
+      boton.classList.remove("fallido");
+      aviso.textContent = `${original}: copiado al portapapeles.`;
+      aviso.className = "aviso aviso-ok";
+      aviso.hidden = false;
+      setTimeout(ocultar, 2200);
+    },
+    error(mensaje) {
+      boton.textContent = "No se pudo";
+      boton.classList.add("fallido");
+      boton.classList.remove("copiado");
+      aviso.textContent = mensaje;
+      aviso.className = "aviso aviso-error";
+      aviso.hidden = false;
+      setTimeout(ocultar, 4200);
+    },
+    manual(valor) {
+      boton.textContent = "Copia a mano";
+      boton.classList.add("fallido");
+      boton.classList.remove("copiado");
+      aviso.textContent = `No se pudo usar el portapapeles. Copia a mano: ${valor}`;
+      aviso.className = "aviso aviso-error aviso-valor";
+      aviso.hidden = false;
+      setTimeout(ocultar, 9000);
+    },
+  };
 }
 
 function boton(textoBoton, accion, opciones = {}) {

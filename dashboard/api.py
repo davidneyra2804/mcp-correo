@@ -24,6 +24,7 @@ from config import Account, ServerSettings
 from mail.errors import MailError
 from mail.imap import probar_imap
 from mail.smtp_out import probar_smtp
+from rutas import url_del_mcp
 from store.models import AccountRecord, DomainRecord, to_account
 from store.store import Store, StoreError
 
@@ -275,6 +276,49 @@ async def token_cuenta(request: Request) -> JSONResponse:
         return _error(exc)
     _auditar(request, "dashboard_rotate_account_token", str(identificador), {})
     return JSONResponse({"ok": True, "token": token})
+
+
+async def credenciales_cuenta(request: Request) -> JSONResponse:
+    """La URL del MCP y el token vigente de una cuenta, sin cambiar nada.
+
+    Es una lectura: el token que devuelve es el mismo que sigue valiendo
+    en la ruta de la cuenta. No lo rota ni lo sustituye.
+
+    La lista de dominios no lleva nunca el token —solo si la cuenta tiene
+    credencial o no— porque esa lista se pinta entera en la pantalla. Aquí
+    se pide una cuenta concreta y se devuelve su token, que es lo que
+    quien lo copia necesita.
+
+    El token vive en la base en claro, como la contraseña se cifra aparte:
+    el modelo de seguridad no cambia, solo se lee lo que ya había.
+    """
+    store: Store = request.app.state.store
+    settings: ServerSettings = request.app.state.settings
+    identificador = int(request.path_params["id"])
+
+    def _leer() -> tuple[str, str] | None:
+        cuenta = store.cuenta(identificador)
+        if cuenta is None:
+            return None
+        return (cuenta.name, cuenta.bearer or "")
+
+    try:
+        datos = await _en_hilo(_leer)
+    except StoreError as exc:
+        return _error(exc)
+    if datos is None:
+        return JSONResponse({"ok": False, "error": "No existe esa cuenta."}, status_code=404)
+    nombre, token = datos
+    _auditar(request, "dashboard_read_account_token", str(identificador), {})
+    return JSONResponse(
+        {
+            "ok": True,
+            "name": nombre,
+            "url": url_del_mcp(settings.public_host, nombre),
+            "token": token,
+            "has_credential": bool(token),
+        }
+    )
 
 
 # --- pruebas de conexión -------------------------------------------------------

@@ -46,6 +46,7 @@ from mail.errors import MailError
 from mail.imap import ClientFactory, MailService
 from mail.mutate import MailboxWriter
 from mail.smtp_out import SmtpFactory
+from rutas import MCP_ROOT, ruta_de_cuenta
 from scope import Scope as RouteScope
 from scope import reset_scope, set_scope
 from store.accounts import (
@@ -63,9 +64,6 @@ from store.store import Store
 from version import __version__
 
 logger = logging.getLogger("mcp_correo.server")
-
-#: Raíz del transporte MCP. /mcp/<cuenta> se resuelve al mismo handler.
-MCP_ROOT = "/mcp"
 
 
 def _configure_logging() -> None:
@@ -324,7 +322,7 @@ class BearerAuth:
         if not self._permite(kind, key, route_kind, resolved):
             await _error(send, 403, "forbidden")
             return
-        route = f"/mcp/{resolved}" if route_kind != "root" else MCP_ROOT
+        route = ruta_de_cuenta(resolved) if route_kind != "root" else MCP_ROOT
         scope_token = set_scope(
             RouteScope(keys=allowed, route=route, kind=route_kind, ident=resolved, reach=reach)
         )

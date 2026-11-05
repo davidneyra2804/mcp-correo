@@ -19,7 +19,7 @@ RUN groupadd --system --gid 10001 mcp \
 
 COPY --from=build /opt/venv /opt/venv
 WORKDIR /app
-COPY --chown=mcp:mcp server.py config.py audit.py scope.py version.py /app/
+COPY --chown=mcp:mcp server.py config.py audit.py scope.py rutas.py version.py /app/
 COPY --chown=mcp:mcp mail /app/mail
 COPY --chown=mcp:mcp store /app/store
 COPY --chown=mcp:mcp dashboard /app/dashboard
