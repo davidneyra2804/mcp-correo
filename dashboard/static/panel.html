@@ -9,6 +9,21 @@
 <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/static/favicon.svg">
 <link rel="stylesheet" href="/static/panel.css">
+<script>
+/* El tema, antes de pintar. Este script va en la cabecera a propósito:
+ * si espera a que se cargue panel.js, la página se pinta primero con el
+ * tema oscuro y luego salta al que el usuario había elegido. */
+(function () {
+  try {
+    var guardado = window.localStorage.getItem("mcp-correo-tema");
+    if (guardado === "claro" || guardado === "oscuro") {
+      document.documentElement.setAttribute("data-tema", guardado);
+    }
+  } catch (error) {
+    /* Sin almacenamiento: se deja que mande la media query. */
+  }
+})();
+</script>
 </head>
 <body>
 <header>
@@ -17,9 +32,22 @@
     <strong>VYR Mail Hub</strong>
     <span class="submarca">· Panel de administración</span>
   </div>
-  <form method="post" action="/logout" class="salir">
-    <button type="submit" class="secundario" title="Cerrar la sesión de este panel">Salir</button>
-  </form>
+  <div class="cabecera-derecha">
+    <div class="tema" role="group" aria-label="Tema del panel">
+      <span class="tema-etiqueta" id="tema-etiqueta">Tema</span>
+      <div class="tema-botones">
+        <button type="button" class="tema-opcion" data-tema-opcion="claro"
+          aria-pressed="false" title="Ver el panel en claro">Claro</button>
+        <button type="button" class="tema-opcion" data-tema-opcion="oscuro"
+          aria-pressed="false" title="Ver el panel en oscuro">Oscuro</button>
+        <button type="button" class="tema-opcion" data-tema-opcion="sistema"
+          aria-pressed="false" title="Seguir la apariencia del dispositivo">Sistema</button>
+      </div>
+    </div>
+    <form method="post" action="/logout" class="salir">
+      <button type="submit" class="secundario" title="Cerrar la sesión de este panel">Salir</button>
+    </form>
+  </div>
 </header>
 
 <main>

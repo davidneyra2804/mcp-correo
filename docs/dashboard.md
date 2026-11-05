@@ -236,12 +236,43 @@ El panel lo dice con `credential_source` en cada cuenta del listado:
 Y la API que devuelve el token vigente de una cuenta es una lectura:
 
 ```
+GET /api/accounts/{id}/credenciales
 GET /api/accounts/{id}/credentials
 ```
 
-Devuelve `token`, `origen` y `has_token`. **No rota nada**: leer el token
-vigente no invalida el anterior. El valor no se escribe en la auditoría:
-en el registro solo queda el origen.
+Las dos rutas son lo mismo —mismo manejador, mismo contrato—. La primera
+es la del panel, en español como el resto de la API; la segunda es la que
+usa la entrega de VYRA-33.
+
+Devuelve `token`, `origen` y `has_token`, y además `name` y `url`: la URL
+completa del MCP de esa cuenta es lo que se pega en un cliente. **No rota
+nada**: leer el token vigente no invalida el anterior. El valor no se
+escribe en la auditoría: en el registro solo queda el origen.
+
+Renovar el token es otra operación, y es aparte:
+
+```
+POST /api/accounts/{id}/token
+```
+
+Esa **rota**: genera uno nuevo e invalida el anterior. El botón de copiar
+usa la lectura, nunca esta.
+
+## El tema del panel
+
+El panel se puede ver en **claro**, en **oscuro** o **como el sistema**.
+La elección se guarda en el navegador y sobrevive a la recarga; en
+«sistema» el panel sigue los cambios de apariencia del dispositivo, sin
+recargar.
+
+Los colores del panel son variables CSS (`--fondo`, `--texto`, `--borde`,
+`--acento`…). El tema claro y el oscuro solo cambian los valores de esas
+variables: ninguna regla escribe un color a pelo. Así, cambiar de tema no
+deja ninguna parte de la interfaz en el color del otro.
+
+El atributo `data-tema` en el `<html>` vale `claro` u `oscuro`. En
+«sistema» **no** se pone: es la media query `prefers-color-scheme` la que
+decide, y por eso puede seguir al dispositivo en vivo.
 
 ## Los permisos
 

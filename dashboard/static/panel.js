@@ -295,6 +295,35 @@ function pintarCuenta(cuenta) {
 
   info.append(nombre, ruta, estado);
 
+  /* De dónde sale el token de esta cuenta.
+   *
+   * No es un adorno: es la diferencia entre «el botón copia el token de
+   * esta cuenta» y «el botón copia el token del dominio, que también abre
+   * esta cuenta». Una cuenta sin credencial propia se abre con el token
+   * de su dominio, y quien configura un cliente MCP necesita saberlo.
+   *
+   * Solo se enseña cuando no es lo normal (token propio): si la cuenta
+   * tiene el suyo, no hay nada que aclarar.
+   */
+  const origen = cuenta.credential_source;
+  if (origen === "dominio") {
+    const aviso = document.createElement("span");
+    aviso.className = "origen-Token";
+    aviso.textContent = "Token del dominio";
+    aviso.title =
+      "Esta cuenta no tiene credencial propia: se abre con el token de su dominio. " +
+      "El botón «Copiar token» copia ese, y es el que abre su ruta.";
+    info.append(aviso);
+  } else if (origen === "general") {
+    const aviso = document.createElement("span");
+    aviso.className = "origen-Token sin-token";
+    aviso.textContent = "Solo con el token general";
+    aviso.title =
+      "Ni esta cuenta ni su dominio tienen token: la cuenta solo se abre con el " +
+      "token general, que no es de esta cuenta. No hay un token que copiar.";
+    info.append(aviso);
+  }
+
   const acciones = document.createElement("div");
   acciones.className = "cuenta-acciones";
   acciones.append(
@@ -302,7 +331,7 @@ function pintarCuenta(cuenta) {
       ayuda: "Copia la URL completa del MCP de esta cuenta, lista para pegar en un cliente MCP.",
     }),
     botonCopiar(cuenta, "token", "Copiar token", {
-      ayuda: "Copia el token de acceso vigente de esta cuenta, sin renovarlo.",
+      ayuda: ayudaDelToken(cuenta),
     }),
     boton("Editar", () => editarCuenta(cuenta, cuenta.domain_id), {
       ayuda: "Cambia los datos de la cuenta: su contraseña, su nombre o sus permisos.",
@@ -348,6 +377,18 @@ function pintarCuenta(cuenta) {
  * copiar y, cuando lo ha copiado, lo confirma y vuelve a su estado.
  *
  * El token no se renueva: la ruta de credenciales devuelve el vigente.
+ *
+ * Del token hay que saber de dónde sale, porque no todas las cuentas
+ * tienen el suyo propio:
+ *
+ * - `cuenta`: la cuenta tiene credencial propia. Es lo normal.
+ * - `dominio`: la cuenta no tiene credencial propia, pero la abre la de
+ *   su dominio. El token que se copia es ese, y **sí** sirve para abrir
+ *   la cuenta: es el que el servidor acepta.
+ * - `general`: ni la cuenta ni su dominio tienen token. La cuenta solo la
+ *   abre el bearer general, que no es de esta cuenta: no hay un token que
+ *   copiar, y el botón lo dice en vez de prometer una copia que no va a
+ *   funcionar.
  */
 function botonCopiar(cuenta, que, textoBoton, opciones = {}) {
   const b = document.createElement("button");
@@ -362,6 +403,31 @@ function botonCopiar(cuenta, que, textoBoton, opciones = {}) {
   }
   b.addEventListener("click", () => copiar(cuenta, que, b, textoBoton));
   return b;
+}
+
+/* El texto de ayuda del botón de copiar el token, según de dónde venga
+ * el token de esa cuenta.
+ *
+ * El listado ya dice de dónde sale (`credential_source`), así que la
+ * ayuda se puede dar antes de pedir nada: quien mira la pantalla ya
+ * sabe qué va a pasar al pulsar.
+ */
+function ayudaDelToken(cuenta) {
+  const origen = cuenta.credential_source;
+  if (origen === "dominio") {
+    return (
+      "Copia el token de acceso vigente de esta cuenta. No tiene credencial " +
+      "propia: el token que se copia es el de su dominio, y es el que abre " +
+      "su ruta."
+    );
+  }
+  if (origen === "general") {
+    return (
+      "Esta cuenta no tiene credencial propia ni de su dominio: solo se abre " +
+      "con el token general, que no es de esta cuenta. No hay un token que copiar."
+    );
+  }
+  return "Copia el token de acceso vigente de esta cuenta, sin renovarlo.";
 }
 
 /* Copia un valor al portapapeles y lo confirma.
@@ -381,11 +447,23 @@ async function copiar(cuenta, que, boton, textoBoton) {
     }
     const valor = que === "url" ? cuerpo.url : cuerpo.token;
     if (!valor) {
-      estado.error(
-        que === "url"
-          ? "Esta cuenta todavía no tiene URL de MCP."
-          : "Esta cuenta no tiene token propio: usa el de su dominio."
-      );
+      /* El token que se copia es el efectivo: el propio de la cuenta, o el
+       * de su dominio. Los dos se copian igual. Solo cuando no hay ninguno
+       * de los dos no hay nada que copiar: la cuenta solo la abre el token
+       * general, que no es de esta cuenta.
+       *
+       * El backend dice de dónde sale (`origen`), así que el aviso dice la
+       * verdad en vez de un texto genérico. */
+      const origen = cuerpo.origen;
+      if (que === "url") {
+        estado.error("Esta cuenta todavía no tiene URL de MCP.");
+      } else if (origen === "general" || !origen) {
+        estado.error(
+          "Esta cuenta no tiene token propio ni de su dominio: solo se abre con el token general."
+        );
+      } else {
+        estado.error("No se pudo leer el token de esta cuenta.");
+      }
       return;
     }
     const copiado = await escribirEnElPortapapeles(valor);
@@ -437,14 +515,28 @@ async function escribirEnElPortapapeles(valor) {
  * El aviso del panel (#aviso) es el que anuncia el resultado a los lectores
  * de pantalla, porque es `role="status"`. El botón cambia su texto para
  * quien ve la pantalla, y el aviso explica lo que pasó.
+ *
+ * Cada botón guarda su propio temporizador de vuelta al estado normal.
+ * Sin eso, copiar dos veces seguidas hacía que el temporizador de la
+ * primera copia borrara la confirmación de la segunda: el botón volvía a
+ * su texto original mientras la segunda copia sí se había hecho.
  */
 function estadoDeCopia(boton) {
   const original = boton.textContent;
   const aviso = $("#aviso");
+  /* Se cancela el temporizador anterior de este botón, si lo había. */
+  if (boton._temporizadorCopia) {
+    clearTimeout(boton._temporizadorCopia);
+    boton._temporizadorCopia = null;
+  }
   const ocultar = () => {
     boton.textContent = original;
     boton.classList.remove("copiado", "fallido");
     boton.removeAttribute("aria-live");
+    boton._temporizadorCopia = null;
+  };
+  const programar = (ms) => {
+    boton._temporizadorCopia = setTimeout(ocultar, ms);
   };
   return {
     ok() {
@@ -454,7 +546,7 @@ function estadoDeCopia(boton) {
       aviso.textContent = `${original}: copiado al portapapeles.`;
       aviso.className = "aviso aviso-ok";
       aviso.hidden = false;
-      setTimeout(ocultar, 2200);
+      programar(2200);
     },
     error(mensaje) {
       boton.textContent = "No se pudo";
@@ -463,7 +555,7 @@ function estadoDeCopia(boton) {
       aviso.textContent = mensaje;
       aviso.className = "aviso aviso-error";
       aviso.hidden = false;
-      setTimeout(ocultar, 4200);
+      programar(4200);
     },
     manual(valor) {
       boton.textContent = "Copia a mano";
@@ -472,7 +564,7 @@ function estadoDeCopia(boton) {
       aviso.textContent = `No se pudo usar el portapapeles. Copia a mano: ${valor}`;
       aviso.className = "aviso aviso-error aviso-valor";
       aviso.hidden = false;
-      setTimeout(ocultar, 9000);
+      programar(9000);
     },
   };
 }
@@ -1074,10 +1166,111 @@ function editarCuenta(cuenta, dominioId) {
   );
 }
 
+/* --- el tema ---------------------------------------------------------------- */
+
+/* Tres temas: claro, oscuro y sistema.
+ *
+ * La elección se guarda en `localStorage` y sobrevive a la recarga. En
+ * «sistema» no se pone ningún atributo en el `<html>`: es la hoja de
+ * estilos la que decide, con su media query de `prefers-color-scheme`.
+ * Así, si el dispositivo cambia de apariencia con el panel abierto, el
+ * panel se entera sin recargar.
+ *
+ * El atributo se pone antes de pintar nada (en la cabecera del HTML, con
+ * un script en línea) para que no haya un destello del tema equivocado.
+ * Aquí se hace lo mismo por si ese script no llegó a ejecutarse.
+ */
+
+const CLAVE_TEMA = "mcp-correo-tema";
+const TEMAS = ["claro", "oscuro", "sistema"];
+
+function temaGuardado() {
+  try {
+    const guardado = window.localStorage.getItem(CLAVE_TEMA);
+    return TEMAS.includes(guardado) ? guardado : "sistema";
+  } catch (error) {
+    /* Sin almacenamiento (modo privado, cookies bloqueadas): se usa el
+     * tema del sistema, que siempre funciona. */
+    return "sistema";
+  }
+}
+
+/* Pone el tema en el `<html>`. En «sistema» se quita el atributo: manda
+ * la media query. */
+function aplicarTema(tema) {
+  const raiz = document.documentElement;
+  if (tema === "sistema") {
+    raiz.removeAttribute("data-tema");
+  } else {
+    raiz.setAttribute("data-tema", tema);
+  }
+  raiz.dataset.temaElegido = tema;
+  marcarTemaEnElSelector(tema);
+  marcarColorDelNavegador();
+}
+
+/* El `theme-color` es lo que se ve en la barra del navegador, sobre todo
+ * en el móvil. Si se queda en el oscuro con el panel en claro, parece
+ * que la página va en oscuro. */
+function marcarColorDelNavegador() {
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (!meta) return;
+  const claro = document.documentElement.getAttribute("data-tema") === "claro";
+  const delSistema =
+    !document.documentElement.hasAttribute("data-tema") &&
+    window.matchMedia &&
+    window.matchMedia("(prefers-color-scheme: light)").matches;
+  meta.setAttribute("content", claro || delSistema ? "#f4f6fb" : "#0c1017");
+}
+
+/* El selector marca la opción elegida con `aria-pressed`, para que se
+ * sepa con el teclado y con un lector de pantalla cuál está activa. */
+function marcarTemaEnElSelector(tema) {
+  document.querySelectorAll("[data-tema-opcion]").forEach((boton) => {
+    const activo = boton.dataset.temaOpcion === tema;
+    boton.setAttribute("aria-pressed", activo ? "true" : "false");
+    boton.classList.toggle("activo", activo);
+  });
+}
+
+function instalarTema() {
+  aplicarTema(temaGuardado());
+
+  document.querySelectorAll("[data-tema-opcion]").forEach((boton) => {
+    boton.addEventListener("click", () => {
+      const tema = boton.dataset.temaOpcion;
+      if (!TEMAS.includes(tema)) return;
+      try {
+        window.localStorage.setItem(CLAVE_TEMA, tema);
+      } catch (error) {
+        /* Si no se puede guardar, el tema cambia igualmente en esta
+         * pantalla: solo no sobrevive a la recarga. */
+      }
+      aplicarTema(tema);
+    });
+  });
+
+  /* En «sistema» se sigue al dispositivo en vivo. El evento `change` es
+   * el que avisa de que la apariencia del sistema ha cambiado. */
+  if (window.matchMedia) {
+    const consulta = window.matchMedia("(prefers-color-scheme: light)");
+    const alCambiar = () => {
+      if (temaGuardado() === "sistema") aplicarTema("sistema");
+    };
+    if (consulta.addEventListener) {
+      consulta.addEventListener("change", alCambiar);
+    } else if (consulta.addListener) {
+      consulta.addListener(alCambiar);
+    }
+  }
+}
+
 /* --- arranque ---------------------------------------------------------------- */
 
 /* Los listeners globales de los menús se instalan una sola vez. */
 menuGlobal();
+
+instalarTema();
 
 $(".salir").addEventListener("submit", async (evento) => {
   evento.preventDefault();

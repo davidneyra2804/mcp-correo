@@ -1,8 +1,14 @@
 /* El panel de mcp-correo.
  *
- * Modo oscuro por defecto: el panel es una herramienta de operación y se
- * usa de noche más que de día. Una sola variable de acento (--acento) manda
- * en toda la interfaz, para que el color signifique siempre lo mismo.
+ * Tres temas: claro, oscuro y sistema. El oscuro es el que se ve por
+ * defecto, porque el panel es una herramienta de operación y se usa de
+ * noche más que de día; pero se puede cambiar a claro, y en «sistema» el
+ * panel sigue al dispositivo.
+ *
+ * Una sola variable de acento (--acento) manda en toda la interfaz, para
+ * que el color signifique siempre lo mismo. Los colores que dependen del
+ * tema son variables: así el tema claro y el oscuro se diferencian solo
+ * en los valores de `:root`, no en cada regla.
  */
 
 :root {
@@ -40,6 +46,167 @@
   --sombra: 0 18px 50px #00000066;
   --radio: 14px;
   --radio-s: 9px;
+
+  /* --- los colores que dependen del tema -------------------------------------
+   *
+   * Estos son los que estaban escritos a pelo en cada regla. Al traerlos
+   * aquí, el tema claro solo cambia los valores de este bloque.
+   */
+
+  /* El texto de color, sobre su fondo suave. */
+  --texto-acento: #b9c9ff;
+  --texto-peligro: #ffb4b4;
+  --texto-ok: #a7f3c4;
+  --texto-aviso: #ffe0a3;
+  --texto-etiqueta: #a9bcff;
+
+  /* El borde de un borde que cambia de color. */
+  --borde-elevado: #35425c;
+  --borde-ok: #4ade8055;
+
+  /* El texto sobre el botón de acento: siempre claro. */
+  --sobre-acento: #fff;
+
+  /* El fondo translúcido de la cabecera y el velo del diálogo. */
+  --cabecera-fondo: #0c1017e6;
+  --velo: #04070ccc;
+
+  /* Los degradados del fondo y de las tarjetas. */
+  --degradado-bienvenida: linear-gradient(135deg, #1a2338, #131a26);
+  --degradado-acceso: linear-gradient(150deg, #243063, #182048);
+  --degradado-acceso-1: #1c2647;
+  --degradado-acceso-2: #161d33;
+
+  /* El botón de peligro sólido, y su sombra. */
+  --peligro-solido-texto: #2a0808;
+  --peligro-solido-hover: #ff8484;
+  --sombra-marca: 0 4px 14px #4f6ff055;
+}
+
+/* El tema claro. Se activa con `data-tema="claro"` en el `<html>`, o con
+ * la clase `tema-claro` cuando se fuerza desde el selector.
+ *
+ * El JS pone el atributo `data-tema` en el `<html>` para los dos casos
+ * explícitos (claro y oscuro). Para «sistema» no pone nada: se deja que
+ * lo decida la media query.
+ */
+
+:root[data-tema="claro"],
+:root.tema-claro {
+  color-scheme: light;
+
+  /* El acento se oscurece un poco: el de arriba no tiene contraste
+   * suficiente sobre fondo blanco. */
+  --acento: #3b5bdb;
+  --acento-fuerte: #2f4bc0;
+  --acento-suave: #3b5bdb1f;
+  --acento-borde: #3b5bdb59;
+
+  --fondo: #f4f6fb;
+  --fondo-1: #ffffff;
+  --fondo-2: #f8faff;
+  --fondo-3: #eaeefb;
+
+  --texto: #16203a;
+  --texto-2: #4a5878;
+  --texto-3: #6b7897;
+
+  --borde: #d3dbee;
+  --borde-suave: #e4e9f7;
+
+  --peligro: #d63c3c;
+  --peligro-suave: #d63c3c1f;
+  --peligro-borde: #d63c3c4d;
+  --aviso: #a06a00;
+  --aviso-suave: #ffc85729;
+  --ok: #1a8a4a;
+  --ok-suave: #1a8a4a1f;
+
+  --sombra: 0 14px 40px #1b274a1f;
+  --radio: 14px;
+  --radio-s: 9px;
+
+  --texto-acento: #2f4bc0;
+  --texto-peligro: #a82a2a;
+  --texto-ok: #14713c;
+  --texto-aviso: #7a5000;
+  --texto-etiqueta: #2f4bc0;
+
+  --borde-elevado: #b9c4de;
+  --borde-ok: #1a8a4a55;
+
+  --sobre-acento: #fff;
+
+  --cabecera-fondo: #ffffffd9;
+  --velo: #1b274a4d;
+
+  --degradado-bienvenida: linear-gradient(135deg, #e8edff, #f4f6fb);
+  --degradado-acceso: linear-gradient(150deg, #dfe6ff, #eef1fd);
+  --degradado-acceso-1: #dde5ff;
+  --degradado-acceso-2: #eef1fd;
+
+  --peligro-solido-texto: #2a0808;
+  --peligro-solido-hover: #ef7a7a;
+  --sombra-marca: 0 4px 14px #4f6ff033;
+}
+
+/* El tema claro pedido por el sistema, cuando el selector está en
+ * «sistema». El `data-tema` no está puesto en ese caso, así que este
+ * bloque solo decide cuando el usuario no ha elegido nada.
+ */
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-tema]):not(.tema-oscuro) {
+    color-scheme: light;
+
+    --acento: #3b5bdb;
+    --acento-fuerte: #2f4bc0;
+    --acento-suave: #3b5bdb1f;
+    --acento-borde: #3b5bdb59;
+
+    --fondo: #f4f6fb;
+    --fondo-1: #ffffff;
+    --fondo-2: #f8faff;
+    --fondo-3: #eaeefb;
+
+    --texto: #16203a;
+    --texto-2: #4a5878;
+    --texto-3: #6b7897;
+
+    --borde: #d3dbee;
+    --borde-suave: #e4e9f7;
+
+    --peligro: #d63c3c;
+    --peligro-suave: #d63c3c1f;
+    --peligro-borde: #d63c3c4d;
+    --aviso: #a06a00;
+    --aviso-suave: #ffc85729;
+    --ok: #1a8a4a;
+    --ok-suave: #1a8a4a1f;
+
+    --sombra: 0 14px 40px #1b274a1f;
+
+    --texto-acento: #2f4bc0;
+    --texto-peligro: #a82a2a;
+    --texto-ok: #14713c;
+    --texto-aviso: #7a5000;
+    --texto-etiqueta: #2f4bc0;
+
+    --borde-elevado: #b9c4de;
+    --borde-ok: #1a8a4a55;
+
+    --cabecera-fondo: #ffffffd9;
+    --velo: #1b274a4d;
+
+    --degradado-bienvenida: linear-gradient(135deg, #e8edff, #f4f6fb);
+    --degradado-acceso: linear-gradient(150deg, #dfe6ff, #eef1fd);
+    --degradado-acceso-1: #dde5ff;
+    --degradado-acceso-2: #eef1fd;
+
+    --peligro-solido-texto: #2a0808;
+    --peligro-solido-hover: #ef7a7a;
+    --sombra-marca: 0 4px 14px #4f6ff033;
+  }
 }
 
 * {
@@ -101,11 +268,71 @@ body > header {
   gap: 1rem;
   padding: 0.85rem clamp(1rem, 4vw, 2.5rem);
   border-bottom: 1px solid var(--borde);
-  background: #0c1017e6;
+  background: var(--cabecera-fondo);
   backdrop-filter: blur(10px);
   position: sticky;
   top: 0;
   z-index: 20;
+}
+
+/* El selector de tema, junto al botón de salir. */
+.cabecera-derecha {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  flex-wrap: wrap;
+}
+
+.tema {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.tema-etiqueta {
+  color: var(--texto-3);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* Los tres botones van juntos, como un grupo: se ve que son opciones
+ * del mismo tema y cuál está activa. */
+.tema-botones {
+  display: inline-flex;
+  border: 1px solid var(--borde);
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--fondo-1);
+}
+
+.tema-opcion {
+  border: 1px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--texto-2);
+  padding: 0.3rem 0.7rem;
+  font-size: 0.8rem;
+  line-height: 1.2;
+  cursor: pointer;
+  transition:
+    background 0.14s ease,
+    color 0.14s ease;
+}
+
+.tema-opcion + .tema-opcion {
+  border-left: 1px solid var(--borde);
+}
+
+.tema-opcion:hover {
+  background: var(--fondo-3);
+  color: var(--texto);
+}
+
+.tema-opcion.activo {
+  background: var(--acento-suave);
+  color: var(--texto-acento);
+  font-weight: 600;
 }
 
 .marca {
@@ -114,11 +341,11 @@ body > header {
   width: 34px;
   height: 34px;
   margin-right: 0.6rem;
-  color: #fff;
+  color: var(--sobre-acento);
   background: linear-gradient(145deg, var(--acento), var(--acento-fuerte));
   border-radius: 10px;
   font-size: 1rem;
-  box-shadow: 0 4px 14px #4f6ff055;
+  box-shadow: var(--sombra-marca);
 }
 
 .titulo-marca {
@@ -158,7 +385,7 @@ button {
 
 button:hover {
   background: var(--fondo-3);
-  border-color: #35425c;
+  border-color: var(--borde-elevado);
 }
 
 button:focus-visible,
@@ -183,7 +410,7 @@ button.secundario:hover {
 button.primario {
   background: var(--acento-fuerte);
   border-color: var(--acento-fuerte);
-  color: #fff;
+  color: var(--sobre-acento);
 }
 
 button.primario:hover {
@@ -206,12 +433,12 @@ button.peligro:hover {
 button.peligro-solido {
   background: var(--peligro);
   border-color: var(--peligro);
-  color: #2a0808;
+  color: var(--peligro-solido-texto);
 }
 
 button.peligro-solido:hover {
-  background: #ff8484;
-  border-color: #ff8484;
+  background: var(--peligro-solido-hover);
+  border-color: var(--peligro-solido-hover);
 }
 
 /* El botón de menú: tres puntitos. */
@@ -229,7 +456,7 @@ button.menu {
   justify-content: space-between;
   align-items: center;
   gap: 1.5rem;
-  background: linear-gradient(135deg, #1a2338, #131a26);
+  background: var(--degradado-bienvenida);
   border: 1px solid var(--borde);
   border-radius: var(--radio);
   padding: 2rem 2.2rem;
@@ -299,7 +526,7 @@ button.menu {
   border-radius: var(--radio-s);
   background: var(--acento-suave);
   border: 1px solid var(--acento-borde);
-  color: #b9c9ff;
+  color: var(--texto-acento);
   font-size: 0.88rem;
 }
 
@@ -314,34 +541,34 @@ button.menu {
 .aviso.error {
   border-color: var(--peligro-borde);
   background: var(--peligro-suave);
-  color: #ffb4b4;
+  color: var(--texto-peligro);
 }
 
 .aviso.ok {
-  border-color: #4ade8055;
+  border-color: var(--borde-ok);
   background: var(--ok-suave);
-  color: #a7f3c4;
+  color: var(--texto-ok);
 }
 
 .aviso.aviso-clave {
   border-color: var(--aviso);
   background: var(--aviso-suave);
-  color: #ffe0a3;
+  color: var(--texto-aviso);
 }
 
 /* Los avisos de copiar: el de éxito y el de fallo. El valor que hay que
  * copiar a mano se muestra en monoespaciado, para que se distinga del
  * texto del aviso. */
 .aviso.aviso-ok {
-  border-color: #4ade8055;
+  border-color: var(--borde-ok);
   background: var(--ok-suave);
-  color: #a7f3c4;
+  color: var(--texto-ok);
 }
 
 .aviso.aviso-error {
   border-color: var(--peligro-borde);
   background: var(--peligro-suave);
-  color: #ffb4b4;
+  color: var(--texto-peligro);
 }
 
 /* El valor a copiar va separado del texto del aviso. */
@@ -471,7 +698,7 @@ button.menu {
   border-radius: 20px;
   background: var(--acento-suave);
   border: 1px solid var(--acento-borde);
-  color: #a9bcff;
+  color: var(--texto-etiqueta);
 }
 
 .etiqueta.neutra {
@@ -576,10 +803,35 @@ button.menu {
 
 .estado.activo {
   background: var(--ok-suave);
-  color: #86efac;
+  color: var(--texto-ok);
 }
 
 .estado.inactivo {
+  background: var(--fondo-3);
+  color: var(--texto-3);
+}
+
+/* De dónde sale el token de la cuenta.
+ *
+ * Es una etiqueta, como el estado: pequeña, arriba, y en la columna de
+ * información de la cuenta. Solo aparece cuando el token no es el de la
+ * cuenta, porque entonces hay algo que avisar. */
+.origen-Token {
+  align-self: flex-start;
+  width: fit-content;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 0.15rem 0.5rem;
+  border-radius: 20px;
+  white-space: nowrap;
+  background: var(--aviso-suave);
+  color: var(--texto-aviso);
+  border: 1px solid transparent;
+}
+
+/* Cuando no hay token que copiar: no es un aviso de aviso, es un dato. */
+.origen-Token.sin-token {
   background: var(--fondo-3);
   color: var(--texto-3);
 }
@@ -613,9 +865,9 @@ button.copiar:hover {
 }
 
 button.copiar.copiado {
-  border-color: #4ade8055;
+  border-color: var(--borde-ok);
   background: var(--ok-suave);
-  color: #86efac;
+  color: var(--texto-ok);
 }
 
 button.copiar.fallido {
@@ -824,7 +1076,7 @@ dialog {
 }
 
 dialog::backdrop {
-  background: #04070ccc;
+  background: var(--velo);
   backdrop-filter: blur(3px);
 }
 
@@ -897,8 +1149,8 @@ summary {
 body.login {
   padding: 1.5rem;
   background:
-    radial-gradient(ellipse at top left, #1c2647, transparent 60%),
-    radial-gradient(ellipse at bottom right, #161d33, transparent 55%),
+    radial-gradient(ellipse at top left, var(--degradado-acceso-1), transparent 60%),
+    radial-gradient(ellipse at bottom right, var(--degradado-acceso-2), transparent 55%),
     var(--fondo);
 }
 
@@ -917,8 +1169,8 @@ body.login main.acceso {
 
 .acceso-historia {
   padding: 2.6rem;
-  background: linear-gradient(150deg, #243063, #182048);
-  color: #fff;
+  background: var(--degradado-acceso);
+  color: var(--sobre-acento);
 }
 
 .acceso-marca {
@@ -934,11 +1186,11 @@ body.login main.acceso {
   font-size: 3.6rem;
   line-height: 1.4;
   margin: 1.8rem 0 0.8rem;
-  color: #9fb2ff;
+  color: var(--texto-acento);
 }
 
 .acceso-historia .eyebrow {
-  color: #9fb2ff;
+  color: var(--texto-acento);
   font-size: 0.62rem;
 }
 
@@ -950,13 +1202,13 @@ body.login main.acceso {
 }
 
 .acceso-historia > p:not(.eyebrow) {
-  color: #c3cdf5;
+  color: var(--texto-2);
   max-width: 32ch;
 }
 
 .acceso-sello {
   display: inline-block;
-  border: 1px solid #ffffff2e;
+  border: 1px solid var(--borde);
   border-radius: 20px;
   padding: 0.4rem 0.8rem;
   font-size: 0.76rem;

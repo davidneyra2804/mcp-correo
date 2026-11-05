@@ -338,6 +338,26 @@ def test_la_confirmacion_de_copia_es_visible_y_anunciada() -> None:
     assert "aviso.textContent" in bloque
 
 
+def test_copiar_dos_veces_no_borra_la_confirmacion_de_la_ultima() -> None:
+    """El temporizador de la copia anterior no borra la confirmación nueva.
+
+    Cada botón guarda su propio temporizador de vuelta al estado normal y
+    cancela el anterior. Sin eso, copiar dos veces seguidas dejaba el
+    botón con su texto original mientras la segunda copia sí se había
+    hecho: el usuario veía que no se había copiado, y lo que había
+    copiado era lo correcto.
+    """
+    bloque = JS[JS.index("function estadoDeCopia") : JS.index("function boton(")]
+    assert "clearTimeout" in bloque
+    assert "_temporizadorCopia" in bloque
+    # Y el temporizador se programa por el camino común, no sueltos: los
+    # tres estados (copiado, error y copia a mano) usan `programar(...)`.
+    assert bloque.count("setTimeout(ocultar") == 1
+    assert "programar(2200)" in bloque
+    assert "programar(4200)" in bloque
+    assert "programar(9000)" in bloque
+
+
 def test_el_fallo_del_portapapeles_tiene_alternativa() -> None:
     """Si el portapapeles no está, se enseña el valor para copiarlo a mano.
 
