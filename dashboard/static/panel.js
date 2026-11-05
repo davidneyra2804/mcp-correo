@@ -366,7 +366,9 @@ function menuMasOpciones(opciones) {
   const disparador = document.createElement("button");
   disparador.type = "button";
   disparador.className = "menu";
-  disparador.textContent = "⋯";
+  /* La elipsis horizontal es compatible con las fuentes de interfaz comunes;
+   * el punto medio matemático (⋯) puede no tener glifo y dejar el botón vacío. */
+  disparador.textContent = "…";
   disparador.setAttribute("aria-label", "Más opciones");
   disparador.setAttribute("aria-haspopup", "menu");
   disparador.setAttribute("aria-expanded", "false");
