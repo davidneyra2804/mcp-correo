@@ -233,8 +233,10 @@ def test_el_token_no_llega_al_registro_de_auditoria(tmp_path: Path) -> None:
 
     contenido = registro.read_text(encoding="utf-8")
     assert token not in contenido, "el token aparece en el registro de auditoría"
-    # La operación sí queda registrada: lo que se tapa es el valor.
-    assert "dashboard_read_account_token" in contenido
+    # La operación sí queda registrada: lo que se tapa es el valor. El
+    # nombre de la operación dice que se leen las credenciales de la
+    # cuenta, no solo su token.
+    assert "dashboard_read_account_credentials" in contenido
 
 
 def test_el_token_copiado_abre_la_ruta_de_la_cuenta(tmp_path: Path, monkeypatch) -> None:

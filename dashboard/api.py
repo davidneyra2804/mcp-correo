@@ -73,13 +73,40 @@ def _cuenta_publica(cuenta: AccountRecord) -> dict[str, Any]:
         "allow_delete": cuenta.allow_delete,
         "allow_drafts": cuenta.allow_drafts,
         "allow_direct_send": cuenta.allow_direct_send,
+        # Si la cuenta tiene credencial propia. Si no la tiene, puede que la
+        # abra la de su dominio: eso lo dice ``credential_source``.
         "has_credential": bool(cuenta.bearer),
         "enabled": cuenta.enabled,
         "password_set": bool(cuenta.password),
     }
 
 
-def _dominio_publico(dominio: DomainRecord, cuentas: list[AccountRecord]) -> dict[str, Any]:
+def _cuenta_con_origen(cuenta: AccountRecord, origen: str) -> dict[str, Any]:
+    """La cuenta, con el origen de la credencial que la abre.
+
+    ``origen`` dice de dónde sale el token que el servidor acepta para esta
+    cuenta: ``"cuenta"`` si es el suyo, ``"dominio"`` si es el de su dominio
+    y ``"general"`` si no hay ninguno y solo la abre el bearer general. La
+    UI lo usa para no prometer una copia que no va a funcionar.
+
+    ``own_credential`` dice si la credencial es **suya**, con el mismo
+    nombre que usa la superficie MCP (``mail/imap.py``): ``has_credential``
+    es la respuesta a "hay algún token que abrir esta cuenta", y con una
+    cuenta que hereda el de su dominio la respuesta es que sí.
+    """
+    publica = _cuenta_publica(cuenta)
+    publica["credential_source"] = origen
+    publica["own_credential"] = bool(cuenta.bearer)
+    publica["has_credential"] = origen != "general"
+    return publica
+
+
+def _dominio_publico(
+    dominio: DomainRecord,
+    cuentas: list[AccountRecord],
+    origenes: dict[int, str] | None = None,
+) -> dict[str, Any]:
+    origenes = origenes or {}
     return {
         "id": dominio.id,
         "name": dominio.name,
@@ -97,7 +124,9 @@ def _dominio_publico(dominio: DomainRecord, cuentas: list[AccountRecord]) -> dic
         "allow_delete": dominio.allow_delete,
         "allow_drafts": dominio.allow_drafts,
         "allow_direct_send": dominio.allow_direct_send,
-        "accounts": [_cuenta_publica(cuenta) for cuenta in cuentas],
+        "accounts": [
+            _cuenta_con_origen(cuenta, origenes.get(cuenta.id, "general")) for cuenta in cuentas
+        ],
     }
 
 
@@ -121,12 +150,15 @@ async def listar_dominios(request: Request) -> JSONResponse:
         dominios = store.dominios()
         cuentas = store.cuentas()
         por_dominio: dict[int, list[AccountRecord]] = {}
+        origenes: dict[int, str] = {}
         for cuenta in cuentas:
             por_dominio.setdefault(cuenta.domain_id, []).append(cuenta)
+            origenes[cuenta.id] = store.token_efectivo_de_cuenta(cuenta.id)[1]
         return {
             "ok": True,
             "domains": [
-                _dominio_publico(dominio, por_dominio.get(dominio.id, [])) for dominio in dominios
+                _dominio_publico(dominio, por_dominio.get(dominio.id, []), origenes)
+                for dominio in dominios
             ],
         }
 
@@ -279,10 +311,20 @@ async def token_cuenta(request: Request) -> JSONResponse:
 
 
 async def credenciales_cuenta(request: Request) -> JSONResponse:
-    """La URL del MCP y el token vigente de una cuenta, sin cambiar nada.
+    """La URL del MCP y el token efectivo de una cuenta, sin cambiar nada.
 
     Es una lectura: el token que devuelve es el mismo que sigue valiendo
     en la ruta de la cuenta. No lo rota ni lo sustituye.
+
+    El token es el **efectivo**: el propio de la cuenta si lo tiene, o el
+    de su dominio si no lo tiene pero su dominio sí. Ese es el que el
+    servidor acepta de verdad para abrir la ruta de la cuenta
+    (``BearerAuth._permite``). ``origen`` dice de dónde sale, para que la
+    interfaz no prometa una copia que no va a funcionar.
+
+    Si ni la cuenta ni su dominio tienen token, la cuenta solo se abre con
+    el bearer general: no hay un token que copiar, y se dice con
+    ``has_token`` en false y ``origen`` en ``"general"``.
 
     La lista de dominios no lleva nunca el token —solo si la cuenta tiene
     credencial o no— porque esa lista se pinta entera en la pantalla. Aquí
@@ -296,11 +338,12 @@ async def credenciales_cuenta(request: Request) -> JSONResponse:
     settings: ServerSettings = request.app.state.settings
     identificador = int(request.path_params["id"])
 
-    def _leer() -> tuple[str, str] | None:
+    def _leer() -> tuple[str, str, str] | None:
         cuenta = store.cuenta(identificador)
         if cuenta is None:
             return None
-        return (cuenta.name, cuenta.bearer or "")
+        token, origen = store.token_efectivo_de_cuenta(identificador)
+        return (cuenta.name, token, origen)
 
     try:
         datos = await _en_hilo(_leer)
@@ -308,14 +351,22 @@ async def credenciales_cuenta(request: Request) -> JSONResponse:
         return _error(exc)
     if datos is None:
         return JSONResponse({"ok": False, "error": "No existe esa cuenta."}, status_code=404)
-    nombre, token = datos
-    _auditar(request, "dashboard_read_account_token", str(identificador), {})
+    nombre, token, origen = datos
+    # En la auditoría va el origen, nunca el valor del token.
+    _auditar(
+        request,
+        "dashboard_read_account_credentials",
+        str(identificador),
+        {"origen": origen},
+    )
     return JSONResponse(
         {
             "ok": True,
             "name": nombre,
             "url": url_del_mcp(settings.public_host, nombre),
             "token": token,
+            "origen": origen,
+            "has_token": bool(token),
             "has_credential": bool(token),
         }
     )

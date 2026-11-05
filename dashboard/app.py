@@ -166,7 +166,12 @@ def crear_app(
             Route("/api/accounts/{id}", api.cambiar_cuenta, methods=["PATCH"]),
             Route("/api/accounts/{id}", api.borrar_cuenta, methods=["DELETE"]),
             Route("/api/accounts/{id}/token", api.token_cuenta, methods=["POST"]),
+            # La lectura de las credenciales de una cuenta. Dos rutas para
+            # lo mismo: ``/credenciales`` es la del panel (en español, como
+            # el resto de la API) y ``/credentials`` la que usa la entrega
+            # de VYRA-33. Mismo manejador, mismo contrato.
             Route("/api/accounts/{id}/credenciales", api.credenciales_cuenta, methods=["GET"]),
+            Route("/api/accounts/{id}/credentials", api.credenciales_cuenta, methods=["GET"]),
             Route("/api/test/imap", api.probar_conexion_imap, methods=["POST"]),
             Route("/api/test/smtp", api.probar_conexion_smtp, methods=["POST"]),
             Route("/health", salud, methods=["GET"]),

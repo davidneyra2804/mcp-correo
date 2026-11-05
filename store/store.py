@@ -153,6 +153,29 @@ class Store:
         fila = self.db.connect().execute("SELECT 1 FROM accounts LIMIT 1").fetchone()
         return fila is not None
 
+    def token_efectivo_de_cuenta(self, identificador: int) -> tuple[str, str]:
+        """El token que el servidor acepta para esta cuenta, y de dónde viene.
+
+        Es el token propio de la cuenta si lo tiene. Si no lo tiene, es el
+        del dominio al que pertenece: el servidor abre la ruta de una cuenta
+        de su dominio con la credencial del dominio (ver ``BearerAuth._permite``
+        en ``server.py``). Sin los dos, la cuenta solo se abre con el bearer
+        general, y aquí no se puede decir cuál es: se devuelve la cadena
+        vacía.
+
+        Devuelve ``(token, origen)``, con origen en ``"cuenta"``,
+        ``"dominio"`` o ``"general"``. No rota nada ni escribe nada.
+        """
+        cuenta = self.cuenta(identificador)
+        if cuenta is None:
+            raise StoreError(f"No existe la cuenta {identificador}.")
+        if cuenta.bearer:
+            return cuenta.bearer, "cuenta"
+        dominio = self.dominio(cuenta.domain_id)
+        if dominio is not None and dominio.bearer:
+            return dominio.bearer, "dominio"
+        return "", "general"
+
     # --- dominios ------------------------------------------------------------
 
     def crear_dominio(self, datos: Mapping[str, object]) -> int:

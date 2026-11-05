@@ -210,6 +210,39 @@ El modelo de seguridad es **a nivel de cuenta**: una cuenta, un ámbito,
 una credencial. El dominio y la general son cobertura hacia arriba, para
 quien la necesite.
 
+### El token efectivo de una cuenta
+
+El token que el servidor acepta para una cuenta es:
+
+1. **el suyo propio**, si la cuenta tiene credencial propia;
+2. **el de su dominio**, si no la tiene pero su dominio sí.
+
+La segunda regla no es una cortesía: el servidor abre la ruta de una cuenta
+con la credencial del dominio al que pertenece (`BearerAuth._permite` en
+`server.py`). Por eso el panel puede decir que una cuenta sin credencial
+propia "usa la clave de su dominio" sin mentir.
+
+Si no hay token propio ni de dominio, la cuenta solo la abre el bearer
+general, y no hay un token que copiar.
+
+El panel lo dice con `credential_source` en cada cuenta del listado:
+
+| `credential_source` | Qué significa |
+| --- | --- |
+| `cuenta` | La cuenta tiene credencial propia |
+| `dominio` | La usa la credencial de su dominio |
+| `general` | No hay credencial acotada: solo la general |
+
+Y la API que devuelve el token vigente de una cuenta es una lectura:
+
+```
+GET /api/accounts/{id}/credentials
+```
+
+Devuelve `token`, `origen` y `has_token`. **No rota nada**: leer el token
+vigente no invalida el anterior. El valor no se escribe en la auditoría:
+en el registro solo queda el origen.
+
 ## Los permisos
 
 La cadena es la de siempre, con un nivel más:

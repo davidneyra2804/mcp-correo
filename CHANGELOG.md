@@ -27,16 +27,40 @@ el versionado es [SemVer](https://semver.org/lang/es/).
   para copiarlo a mano.
 
   La URL y el token se piden a una ruta nueva del panel,
-  `GET /api/accounts/{id}/credenciales`. **El modelo de seguridad no
+  `GET /api/accounts/{id}/credenciales` (también en inglés como
+  `/api/accounts/{id}/credentials`). **El modelo de seguridad no
   cambia**: el token ya se guardaba en la base en claro y ahora se lee.
   La contraseña sigue cifrada con `MCP_DASHBOARD_KEY`, y la lista de
-  dominios sigue sin enseñar ningún token: solo dice si cada cuenta
-  tiene credencial. La lectura queda auditada
-  (`dashboard_read_account_token`), con el valor tapado.
+  dominios sigue sin enseñar ningún token: solo dice de dónde sale el
+  token que abre cada cuenta. La lectura queda auditada
+  (`dashboard_read_account_credentials`), con el valor tapado: a la
+  auditoría solo va el origen.
 
   El contrato de las rutas del MCP pasa a un módulo propio (`rutas.py`),
   que usan el servidor y el panel: así la URL que se copia no puede
   desviarse de la que el servidor acepta.
+
+- **El token vigente de una cuenta, sin rotarlo.** La lectura del panel
+  devuelve el token que el servidor acepta de verdad para esa cuenta: el
+  suyo propio si lo tiene, y el de su dominio si no. Es una lectura: no
+  rota, no invalida el anterior y no cambia el modelo de seguridad.
+
+  El listado de cuentas lleva ahora `credential_source` (`cuenta`,
+  `dominio` o `general`) para que la interfaz no prometa una copia que no
+  va a funcionar, y `own_credential` para decir si ese token es propio o
+  heredado del dominio.
+
+  Antes, el panel solo decía si una cuenta tenía credencial propia
+  (`has_credential`), lo que era falso para una cuenta que abría su
+  dominio: la cuenta funcionaba y el panel decía que no. Ahora
+  `has_credential` es la respuesta a "hay algún token que abre esta
+  cuenta", y `own_credential` conserva el sentido anterior. Los dos
+  nombres son los de la superficie MCP (`list_accounts`).
+
+- **El panel se puede ver en claro, en oscuro o como el sistema.** Un
+  selector de tema en la cabecera, con tres opciones, y la elección
+  persiste tras recargar. En «sistema» el panel sigue los cambios de
+  apariencia del dispositivo en vivo, sin recargar.
 
 ### Changed
 
