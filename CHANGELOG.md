@@ -7,6 +7,11 @@ el versionado es [SemVer](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+## [2.2.0] — 2026-11-05
+
+El panel de cuentas vuelve a ser usable: «Cancelar» cierra el diálogo y el
+menú de tres puntos deja de recortarse.
+
 ### Added
 
 - **Botones para copiar la URL del MCP y el token de cada cuenta.** En el
