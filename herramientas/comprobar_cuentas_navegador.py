@@ -8,6 +8,13 @@ de mentira) y lo abre en Chromium. Comprueba:
 - que guardar una cuenta válida sigue funcionando.
 
 No hay datos reales en ninguna parte: todo es de la RFC 2606.
+
+Playwright no está en `requirements-dev.txt`: la suite de tests no lo
+necesita y meterlo ahí ralentiza cada instalación, la de CI incluida. Va
+aparte:
+
+    .venv/bin/pip install -r requirements-browser.txt
+    .venv/bin/playwright install chromium
 """
 
 from __future__ import annotations

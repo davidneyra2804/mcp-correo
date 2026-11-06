@@ -220,6 +220,19 @@ impide dar por buena una implementación sin mirarla.
   derecha, y hacia arriba si no cabe debajo. Al desplazar o redimensionar
   la ventana se vuelve a colocar, para que no se quede desalineado.
 
+- **Las comprobaciones en navegador real, instalables.** Las herramientas
+  de `herramientas/` que abren Chromium (la del tema y la del modal de
+  cuenta) necesitan Playwright, que no estaba declarado en ninguna parte:
+  quien siguiera el flujo de `AGENTS.md` se encontraba con un
+  `ModuleNotFoundError` sin saber por qué.
+
+  Ahora las dependencias de esas herramientas van aparte, en
+  `requirements-browser.txt`. **No** se han metido en
+  `requirements-dev.txt` a propósito: la suite de tests no las usa, y
+  harían más lenta cada instalación, la de CI incluida. El instalador
+  queda en dos líneas, en la cabecera de cada herramienta y en
+  `docs/dashboard.md`.
+
 ### Documentación
 
 - **La revisión automática antes de dar algo por bueno.** La skill

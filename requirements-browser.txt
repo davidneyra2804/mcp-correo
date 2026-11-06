@@ -1,0 +1,19 @@
+# Dependencias de las comprobaciones en navegador real.
+#
+# No están en `requirements-dev.txt` a propósito: la suite de tests no las
+# necesita, y meter Playwright ahí ralentiza cada instalación (la de CI
+# incluida). Solo hacen falta para las herramientas de `herramientas/` que
+# abren Chromium:
+#
+#   - `comprobar_panel_navegador.py` (tema y botones de copiar)
+#   - `comprobar_cuentas_navegador.py` (modal de cuenta y menú de tres puntos)
+#
+# Instalación:
+#
+#   .venv/bin/pip install -r requirements.txt -r requirements-dev.txt
+#   .venv/bin/pip install -r requirements-browser.txt
+#   .venv/bin/playwright install chromium
+#
+# La última línea descarga el navegador. Sin ella, Playwright está pero no
+# sabe con qué navegador abrir la página.
+playwright>=1.64,<2

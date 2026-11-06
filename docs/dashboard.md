@@ -142,6 +142,25 @@ confunden con un fallo:
   abre hacia arriba. Sus entradas —renovar la clave, desactivar y
   eliminar— se pueden pulsar todas.
 
+### Comprobarlo en un navegador real
+
+Lo que un test no puede comprobar —que el modal se cierre de verdad, que
+un menú no se recorte, que el teclado llegue a los controles— se
+comprueba abriendo el panel en Chromium:
+
+```bash
+.venv/bin/pip install -r requirements-browser.txt
+.venv/bin/playwright install chromium
+
+MCP_PUBLIC_HOST=mcp.example.com \
+  .venv/bin/python herramientas/comprobar_cuentas_navegador.py
+```
+
+Levanta el panel sobre una base ficticia (dominios de la RFC 2606 y
+tokens de mentira) y comprueba el modal de cuenta y el menú de tres
+puntos. `herramientas/comprobar_panel_navegador.py` hace lo mismo con el
+tema y los botones de copiar.
+
 ### Copiar la URL y el token
 
 Los dos botones de copiar resuelven el paso que más molesta al configurar
