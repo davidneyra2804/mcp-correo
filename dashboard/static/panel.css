@@ -893,10 +893,22 @@ button.copiar.fallido {
   flex: none;
 }
 
+/* El menú va en `fixed`, no en `absolute`.
+ *
+ * El bloque del dominio —`.dominio-bloque`— recorta con `overflow:
+ * hidden` para que el acordeón no se salga de sus bordes. Como el menú
+ * cuelga de una cuenta, que está dentro de ese bloque, un `absolute`
+ * quedaba recortado: si la cuenta estaba cerca del borde de abajo, la
+ * última entrada del menú —«Eliminar cuenta»— desaparecía.
+ *
+ * Un `fixed` no lo recorta ningún ancestro: se coloca respecto a la
+ * ventana. La posición la calcula el JavaScript al abrirlo, y por eso
+ * aquí no hay `top` ni `right`: los pone el script.
+ */
 .menu-lista {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 0.4rem);
+  position: fixed;
+  left: 0;
+  top: 0;
   min-width: 15rem;
   z-index: 30;
   background: var(--fondo-2);
@@ -1419,9 +1431,10 @@ body.login main.acceso {
     text-align: center;
   }
 
+  /* En un móvil el menú no puede ser más ancho que la pantalla. La
+   * posición la pone el script (ver `colocar` en panel.js), así que aquí
+   * solo se acota el ancho. */
   .menu-lista {
-    right: auto;
-    left: 0;
     min-width: min(15rem, calc(100vw - 2rem));
   }
 

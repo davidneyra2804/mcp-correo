@@ -194,6 +194,32 @@ impide dar por buena una implementación sin mirarla.
   la migración se volvía a aplicar en cada arranque. Ahora se escribe
   siempre.
 
+- **«Cancelar» ya cierra el diálogo de una cuenta.** El formulario del
+  diálogo («Añadir cuenta» y «Editar cuenta») tiene el correo y la
+  contraseña obligatorios. Con el formulario vacío, la validación de los
+  campos bloqueaba el envío del formulario, así que el evento `submit` no
+  llegaba a dispararse y el `method="dialog"` no cerraba nada: el
+  diálogo se quedaba abierto, con los campos marcados en rojo, sin poder
+  salir. Pulsar «Cancelar» no cerraba el modal.
+
+  Ahora el botón lleva `formnovalidate`, y el cierre se hace en el
+  manejador del `submit` en vez de fiarse del envío nativo. «Cancelar»
+  cierra el diálogo sin guardar nada, sin errores de validación y sin
+  enviar nada al servidor. «Guardar cambios» sigue validando: un correo
+  o una contraseña que no valen son un error, y no se guarda.
+
+- **El menú de tres puntos ya no se recorta.** El bloque de cada dominio
+  recorta su contenido con `overflow: hidden`, para que el acordeón no
+  se salga de sus bordes. El menú de más opciones cuelga de una cuenta, que
+  está dentro de ese bloque, así que también se recortaba: cuando la
+  cuenta estaba cerca del borde de abajo, la última entrada —«Eliminar
+  cuenta»— desaparecía y no se podía pulsar.
+
+  El menú pasa a `position: fixed`, que ningún ancestro recorta, y su
+  posición la calcula el script al abrirlo: bajo el botón y pegado a su
+  derecha, y hacia arriba si no cabe debajo. Al desplazar o redimensionar
+  la ventana se vuelve a colocar, para que no se quede desalineado.
+
 ### Documentación
 
 - **La revisión automática antes de dar algo por bueno.** La skill

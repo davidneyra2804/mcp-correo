@@ -127,6 +127,21 @@ con el token y se abre una sesión.
 - Una cuenta se puede **desactivar** sin borrarla: deja de exponerse, y
   sus datos siguen ahí.
 
+### Cancelar y el menú de tres puntos
+
+Dos detalles del comportamiento del panel que conviene que no se
+confunden con un fallo:
+
+- **«Cancelar»** cierra el diálogo sin guardar nada y sin preguntar por
+  los campos vacíos. «Guardar cambios» sí los valida: un correo o una
+  contraseña que no valen son un error, y no se guarda. Cancelar es la
+  vía de salida, así que no puede depender de que el formulario esté
+  relleno.
+- El **menú de tres puntos** de cada cuenta se abre **entero**, aunque la
+  cuenta esté cerca del borde de abajo del panel. Si no cabe debajo, se
+  abre hacia arriba. Sus entradas —renovar la clave, desactivar y
+  eliminar— se pueden pulsar todas.
+
 ### Copiar la URL y el token
 
 Los dos botones de copiar resuelven el paso que más molesta al configurar

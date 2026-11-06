@@ -647,6 +647,49 @@ function menuMasOpciones(opciones) {
   lista.id = idLista;
   disparador.setAttribute("aria-controls", idLista);
 
+  /* La posición del menú la pone el script, no el CSS: el menú es
+   * `fixed` para que el `overflow: hidden` del bloque del dominio no lo
+   * recorte (ver panel.css), y un `fixed` sin `top` ni `left` se pinta
+   * en la esquina de la ventana.
+   *
+   * Se coloca bajo el disparador y pegado a su derecha, como el
+   * `absolute` de antes. Si no cabe debajo —porque la cuenta está cerca
+   * del borde de abajo de la ventana—, se abre hacia arriba: así siempre
+   * se ve entero.
+   */
+  const colocar = () => {
+    const caja = disparador.getBoundingClientRect();
+    const alto = lista.offsetHeight || 0;
+    const ancho = lista.offsetWidth || 0;
+    const margen = 6;
+
+    /* Abajo, pegado al borde derecho del disparador. */
+    let top = caja.bottom + margen;
+    let left = caja.right - ancho;
+
+    /* Si no cabe debajo, se abre hacia arriba. */
+    if (top + alto > window.innerHeight - margen) {
+      const arriba = caja.top - margen - alto;
+      /* Solo se voltea si arriba hay sitio; si no, se deja abajo, que al
+       * menos muestra el principio del menú. */
+      if (arriba >= margen) top = arriba;
+    }
+
+    /* Si se sale por la izquierda, se empuja hacia dentro. */
+    if (left < margen) left = margen;
+    /* Y por la derecha, igual. */
+    if (left + ancho > window.innerWidth - margen) {
+      left = Math.max(margen, window.innerWidth - margen - ancho);
+    }
+
+    lista.style.top = `${Math.round(top)}px`;
+    lista.style.left = `${Math.round(left)}px`;
+  };
+
+  /* Se guarda en el propio elemento para que el listener global de
+   * desplazamiento pueda volver a colocarlo sin duplicar el cálculo. */
+  lista.colocar = colocar;
+
   const cerrar = (devolverFoco = false) => {
     lista.hidden = true;
     disparador.setAttribute("aria-expanded", "false");
@@ -656,6 +699,7 @@ function menuMasOpciones(opciones) {
   const abrir = () => {
     lista.hidden = false;
     disparador.setAttribute("aria-expanded", "true");
+    colocar();
     /* Al abrir, el foco va a la primera entrada: el menú se usa con el
      * teclado desde el principio. */
     const primera = lista.querySelector('[role="menuitem"]');
@@ -784,6 +828,21 @@ let menuGlobalInstalado = false;
 function menuGlobal() {
   if (menuGlobalInstalado) return;
   menuGlobalInstalado = true;
+
+  /* El menú es `fixed`: si la página se mueve mientras está abierto, se
+   * queda pegado donde estaba y deja de estar alineado con su botón.
+   * Por eso, al desplazar o al redimensionar la ventana, se vuelve a
+   * colocar. */
+  const recolocar = () => {
+    for (const lista of document.querySelectorAll(".menu-lista")) {
+      if (lista.hidden) continue;
+      /* Se llama al mismo `colocar` que se usó al abrir: se guarda en el
+       * propio elemento para no duplicar el cálculo. */
+      if (typeof lista.colocar === "function") lista.colocar();
+    }
+  };
+  window.addEventListener("scroll", recolocar, { passive: true });
+  window.addEventListener("resize", recolocar);
 
   /* Un clic fuera de un menú lo cierra. */
   document.addEventListener("click", (evento) => {
@@ -1279,7 +1338,24 @@ $(".salir").addEventListener("submit", async (evento) => {
 });
 
 $("#formulario").addEventListener("submit", async (evento) => {
-  if (evento.submitter && evento.submitter.value === "cancelar") return;
+  /* «Cancelar» cierra el diálogo y no toca nada más.
+   *
+   * El botón lleva `formnovalidate` (ver panel.html): sin eso, la
+   * validación de los campos obligatorios —el correo y la contraseña,
+   * vacíos al abrir «Añadir cuenta»— bloquea el envío del formulario y el
+   * `submit` no llega a dispararse. El diálogo se quedaba abierto con
+   * los errores de validación marcados, sin poder salir.
+   *
+   * Aun así, el cierre se hace aquí y no se fía del `method="dialog"`: que
+   * el botón sea el que ha enviado el formulario se lee de
+   * `evento.submitter`, que es lo que distingue «Cancelar» de «Guardar
+   * cambios».
+   */
+  if (evento.submitter && evento.submitter.value === "cancelar") {
+    evento.preventDefault();
+    $("#editor").close("cancelar");
+    return;
+  }
   evento.preventDefault();
   if (guardando) {
     const ok = await guardando();
